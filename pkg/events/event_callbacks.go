@@ -21,6 +21,7 @@ import (
 type BSky struct {
 	Client          *xrpc.Client
 	MentionCounters map[string]int
+	ReplyCounters   map[string]int
 }
 
 func NewBSky() (*BSky, error) {
@@ -32,6 +33,7 @@ func NewBSky() (*BSky, error) {
 	return &BSky{
 		Client:          client,
 		MentionCounters: make(map[string]int),
+		ReplyCounters:   make(map[string]int),
 	}, nil
 }
 
@@ -121,9 +123,42 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 
 				postBody := strings.ReplaceAll(pst.Text, "\n", "\n\t")
 
+				replyingTo := ""
+				if pst.Reply != nil && pst.Reply.Parent != nil {
+					thread, err := appbsky.FeedGetPostThread(ctx, bsky.Client, 2, pst.Reply.Parent.Uri)
+					if err != nil {
+						fmt.Printf("error getting thread for %s: %s", pst.Reply.Parent.Cid, err)
+					} else {
+						if thread != nil &&
+							thread.Thread != nil &&
+							thread.Thread.FeedDefs_ThreadViewPost != nil &&
+							thread.Thread.FeedDefs_ThreadViewPost.Post != nil &&
+							thread.Thread.FeedDefs_ThreadViewPost.Post.Author != nil {
+							replyingTo = thread.Thread.FeedDefs_ThreadViewPost.Post.Author.Handle
+						}
+					}
+				}
+
+				// Track reply counts
+				if replyingTo != "" {
+					bsky.ReplyCounters[replyingTo]++
+				}
+
 				// Print the content of the post and any mentions or links
 				if pst.LexiconTypeID == "app.bsky.feed.post" {
-					fmt.Printf("\u001b[90m[%s]\u001b[0m %s: \n\t%s\n", t.Local().Format("02.01.06 15:04:05"), authorProfile.Handle, postBody)
+					// Print a Timestamp
+					fmt.Printf("\u001b[90m[%s]\u001b[0m", t.Local().Format("02.01.06 15:04:05"))
+
+					// Print the user and who they are replying to if they are
+					fmt.Printf(" %s", authorProfile.Handle)
+					if replyingTo != "" {
+						fmt.Printf(" \u001b[90m->\u001b[0m %s", replyingTo)
+					}
+
+					// Print the Post Body
+					fmt.Printf(": \n\t%s\n", postBody)
+
+					// Print any Mentions or Links
 					if len(mentions) > 0 {
 						fmt.Printf("\tMentions: %s\n", mentions)
 					}
