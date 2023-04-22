@@ -144,6 +144,10 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 					bsky.ReplyCounters[replyingTo]++
 				}
 
+				// Grab Post ID from the Path
+				pathParts := strings.Split(op.Path, "/")
+				postID := pathParts[len(pathParts)-1]
+
 				// Print the content of the post and any mentions or links
 				if pst.LexiconTypeID == "app.bsky.feed.post" {
 					// Print a Timestamp
@@ -154,6 +158,9 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 					if replyingTo != "" {
 						fmt.Printf(" \u001b[90m->\u001b[0m %s", replyingTo)
 					}
+
+					// Print a Link to the post in the Web UI
+					fmt.Printf(" \u001b[90m| %s\u001b[0m", fmt.Sprintf("https://staging.bsky.app/profile/%s/post/%s", authorProfile.Handle, postID))
 
 					// Print the Post Body
 					fmt.Printf(": \n\t%s\n", postBody)
