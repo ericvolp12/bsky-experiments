@@ -107,7 +107,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				authorProfile, err := appbsky.ActorGetProfile(ctx, bsky.Client, evt.Repo)
 				if err != nil {
 					fmt.Printf("error getting profile for %s: %s", evt.Repo, err)
-					return err
+					continue
 				}
 
 				mentions, links, err := bsky.DecodeFacets(ctx, pst.Facets)
