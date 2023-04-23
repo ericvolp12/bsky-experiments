@@ -84,12 +84,12 @@ func main() {
 		for {
 			select {
 			case <-authTicker.C:
-				fmt.Printf("\u001b[90m[%s]\u001b[32m refreshing auth token...\u001b[0m", time.Now().Format("02.01.06 15:04:05"))
+				fmt.Printf("\u001b[90m[%s]\u001b[32m refreshing auth token...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
 				err := bsky.RefreshAuthToken(ctx)
 				if err != nil {
 					log.Printf("error refreshing auth token: %s", err)
 				} else {
-					fmt.Printf("\u001b[90m[%s]\u001b[32m auth token refreshed successfully\u001b[0m", time.Now().Format("02.01.06 15:04:05"))
+					fmt.Printf("\u001b[90m[%s]\u001b[32m auth token refreshed successfully\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
 				}
 			case <-quit:
 				authTicker.Stop()
