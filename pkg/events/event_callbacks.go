@@ -114,14 +114,14 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				rc, rec, err := rr.GetRecord(ctx, op.Path)
 				if err != nil {
 					e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
-					log.Printf("failed to get a record from the event: %w\n", e)
-					return nil
+					log.Printf("failed to get a record from the event: %+v\n", e)
+					continue
 				}
 
 				if lexutil.LexLink(rc) != *op.Cid {
 					e := fmt.Errorf("mismatch in record and op cid: %s != %s", rc, *op.Cid)
-					log.Printf("failed to LexLink the record in the event: %w\n", e)
-					return nil
+					log.Printf("failed to LexLink the record in the event: %+v\n", e)
+					continue
 				}
 
 				postAsCAR := lexutil.LexiconTypeDecoder{
@@ -131,14 +131,14 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				var pst = appbsky.FeedPost{}
 				b, err := postAsCAR.MarshalJSON()
 				if err != nil {
-					log.Printf("failed to marshal post as CAR: %w\n", err)
-					return nil
+					log.Printf("failed to marshal post as CAR: %+v\n", err)
+					continue
 				}
 
 				err = json.Unmarshal(b, &pst)
 				if err != nil {
-					log.Printf("failed to unmarshal post into a FeedPost: %w\n", err)
-					return nil
+					log.Printf("failed to unmarshal post into a FeedPost: %+v\n", err)
+					continue
 				}
 
 				// Lock the client
@@ -147,20 +147,20 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 
 				authorProfile, err := appbsky.ActorGetProfile(ctx, bsky.Client, evt.Repo)
 				if err != nil {
-					log.Printf("error getting profile for %s: %s\n", evt.Repo, err)
-					return nil
+					log.Printf("error getting profile for %s: %+v\n", evt.Repo, err)
+					continue
 				}
 
 				mentions, links, err := bsky.DecodeFacets(ctx, pst.Facets)
 				if err != nil {
-					log.Printf("error decoding post facets: %+e\n", err)
+					log.Printf("error decoding post facets: %+v\n", err)
 				}
 
 				// Parse time from the event time string
 				t, err := time.Parse(time.RFC3339, evt.Time)
 				if err != nil {
-					log.Printf("error parsing time: %s\n", err)
-					return nil
+					log.Printf("error parsing time: %+v\n", err)
+					continue
 				}
 
 				postBody := strings.ReplaceAll(pst.Text, "\n", "\n\t")
