@@ -7,12 +7,12 @@ DOCKERFILE = Dockerfile
 LOCAL_DATA_DIR = data/
 DOCKER_MOUNT_PATH = /app/data/
 ENV_FILE = .env
-GO_CMD = CGO_ENABLED=0 GOOS=linux go
+GO_CMD = CGO_ENABLED=1 GOOS=linux go
 
 # Build the Go binary
 build:
 	@echo "Building Go binary..."
-	$(GO_CMD) build -o mention-counter cmd/mention-counter/*.go
+	$(GO_CMD) build -race -o mention-counter cmd/mention-counter/*.go
 
 clean:
 	@echo "Cleaning Go binary..."
@@ -28,7 +28,7 @@ docker-run: docker-build
 	@echo "Running Docker container..."
 	docker stop $(DOCKER_CONTAINER_NAME) || true
 	docker rm $(DOCKER_CONTAINER_NAME) || true
-	docker run --name $(DOCKER_CONTAINER_NAME) -d --env-file $(ENV_FILE) -v $(shell pwd)/$(LOCAL_DATA_DIR):$(DOCKER_MOUNT_PATH) $(DOCKER_IMAGE_NAME)
+	docker run --name $(DOCKER_CONTAINER_NAME) -d --env-file $(ENV_FILE) -p 6060:6060 -v $(shell pwd)/$(LOCAL_DATA_DIR):$(DOCKER_MOUNT_PATH) $(DOCKER_IMAGE_NAME)
 	docker logs -f $(DOCKER_CONTAINER_NAME)
 
 # Remove the Docker container

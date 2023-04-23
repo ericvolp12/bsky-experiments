@@ -6,9 +6,13 @@ require (
 	github.com/bluesky-social/indigo v0.0.0-20230421215042-8c8248dc2d27
 	github.com/gorilla/websocket v1.5.0
 	github.com/pkg/errors v0.9.1
+	golang.org/x/time v0.3.0
 )
 
 require (
+	github.com/VividCortex/ewma v1.2.0 // indirect
+	github.com/cheggaaa/pb/v3 v3.1.2 // indirect
+	github.com/fatih/color v1.14.1 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -43,7 +47,9 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.4 // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.18 // indirect
+	github.com/mattn/go-runewidth v0.0.12 // indirect
 	github.com/minio/sha256-simd v1.0.0 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
@@ -54,6 +60,7 @@ require (
 	github.com/multiformats/go-varint v0.0.7 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/polydawn/refmt v0.89.1-0.20221221234430-40501e09de1f // indirect
+	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/whyrusleeping/cbor-gen v0.0.0-20230331140348-1f892b517e70 // indirect
 	go.opentelemetry.io/otel v1.14.0 // indirect

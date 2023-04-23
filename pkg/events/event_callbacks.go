@@ -115,13 +115,13 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				if err != nil {
 					e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
 					log.Printf("failed to get a record from the event: %+v\n", e)
-					continue
+					return nil
 				}
 
 				if lexutil.LexLink(rc) != *op.Cid {
 					e := fmt.Errorf("mismatch in record and op cid: %s != %s", rc, *op.Cid)
 					log.Printf("failed to LexLink the record in the event: %+v\n", e)
-					continue
+					return nil
 				}
 
 				postAsCAR := lexutil.LexiconTypeDecoder{
@@ -132,23 +132,23 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				b, err := postAsCAR.MarshalJSON()
 				if err != nil {
 					log.Printf("failed to marshal post as CAR: %+v\n", err)
-					continue
+					return nil
 				}
 
 				err = json.Unmarshal(b, &pst)
 				if err != nil {
 					log.Printf("failed to unmarshal post into a FeedPost: %+v\n", err)
-					continue
+					return nil
 				}
 
 				// Lock the client
 				bsky.ClientMux.Lock()
-				defer bsky.ClientMux.Unlock()
 
 				authorProfile, err := appbsky.ActorGetProfile(ctx, bsky.Client, evt.Repo)
 				if err != nil {
 					log.Printf("error getting profile for %s: %+v\n", evt.Repo, err)
-					continue
+					bsky.ClientMux.Unlock()
+					return nil
 				}
 
 				mentions, links, err := bsky.DecodeFacets(ctx, pst.Facets)
@@ -160,7 +160,8 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				t, err := time.Parse(time.RFC3339, evt.Time)
 				if err != nil {
 					log.Printf("error parsing time: %+v\n", err)
-					continue
+					bsky.ClientMux.Unlock()
+					return nil
 				}
 
 				postBody := strings.ReplaceAll(pst.Text, "\n", "\n\t")
@@ -181,18 +182,20 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 					}
 				}
 
+				bsky.ClientMux.Unlock()
+
 				// Track reply counts
 				if replyingTo != "" {
 					// Add to the social graph
 					// Lock the Social Graph and Reply Counters
 					bsky.ReplyCountersMux.Lock()
-					defer bsky.ReplyCountersMux.Unlock()
-
 					bsky.SocialGraphMux.Lock()
-					defer bsky.SocialGraphMux.Unlock()
 
 					bsky.SocialGraph.IncrementEdge(graph.NodeID(authorProfile.Handle), graph.NodeID(replyingTo), 1)
 					bsky.ReplyCounters[replyingTo]++
+
+					bsky.ReplyCountersMux.Unlock()
+					bsky.SocialGraphMux.Unlock()
 				}
 
 				// Grab Post ID from the Path

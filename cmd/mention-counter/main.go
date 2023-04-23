@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"sort"
 	"time"
+
+	_ "net/http/pprof"
 
 	"github.com/bluesky-social/indigo/events"
 	intEvents "github.com/ericvolp12/bsky-experiments/pkg/events"
@@ -24,6 +27,7 @@ type Count struct {
 
 func main() {
 	ctx := context.Background()
+
 	// Replace with the WebSocket URL you want to connect to.
 	u := url.URL{Scheme: "wss", Host: "bsky.social", Path: "/xrpc/com.atproto.sync.subscribeRepos"}
 
@@ -96,6 +100,11 @@ func main() {
 				return
 			}
 		}
+	}()
+
+	// Server for pprof
+	go func() {
+		fmt.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
 	events.HandleRepoStream(ctx, c, &events.RepoStreamCallbacks{
