@@ -21,17 +21,24 @@ import (
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 )
 
+// BSky is a struct that holds the state of the social graph and the
+// authenticated XRPC client
 type BSky struct {
-	Client             *xrpc.Client
-	ClientMux          sync.Mutex
+	Client    *xrpc.Client
+	ClientMux sync.Mutex
+
 	MentionCounters    map[string]int
 	MentionCountersMux sync.Mutex
-	ReplyCounters      map[string]int
-	ReplyCountersMux   sync.Mutex
-	SocialGraph        graph.Graph
-	SocialGraphMux     sync.Mutex
+
+	ReplyCounters    map[string]int
+	ReplyCountersMux sync.Mutex
+
+	SocialGraph    graph.Graph
+	SocialGraphMux sync.Mutex
 }
 
+// NewBSky creates a new BSky struct with an authenticated XRPC client
+// and a social graph, initializing mutexes for cross-routine access
 func NewBSky(ctx context.Context) (*BSky, error) {
 	client, err := intXRPC.GetXRPCClient(ctx)
 	if err != nil {
@@ -39,14 +46,17 @@ func NewBSky(ctx context.Context) (*BSky, error) {
 	}
 
 	return &BSky{
-		Client:             client,
-		ClientMux:          sync.Mutex{},
+		Client:    client,
+		ClientMux: sync.Mutex{},
+
 		MentionCounters:    make(map[string]int),
 		MentionCountersMux: sync.Mutex{},
-		ReplyCounters:      make(map[string]int),
-		ReplyCountersMux:   sync.Mutex{},
-		SocialGraph:        graph.NewGraph(),
-		SocialGraphMux:     sync.Mutex{},
+
+		ReplyCounters:    make(map[string]int),
+		ReplyCountersMux: sync.Mutex{},
+
+		SocialGraph:    graph.NewGraph(),
+		SocialGraphMux: sync.Mutex{},
 	}, nil
 }
 
