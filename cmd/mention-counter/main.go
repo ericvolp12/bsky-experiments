@@ -55,6 +55,7 @@ func main() {
 
 	// Run a routine that dumps mention counts to a file every 30 seconds
 	go func() {
+		binReaderWriter := graph.BinaryGraphReaderWriter{}
 		for {
 			select {
 			case <-ticker.C:
@@ -72,14 +73,24 @@ func main() {
 				}
 				writeCountsToFile(bsky.ReplyCounters, replyFile, "reply")
 
-				fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+				fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to plaintext file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
 				graphFile := os.Getenv("GRAPH_FILE")
 				if graphFile == "" {
 					graphFile = "social-graph.txt"
 				}
 				err := bsky.SocialGraph.WriteGraph(graphFile)
 				if err != nil {
-					fmt.Printf("error writing social graph to file: %s", err)
+					fmt.Printf("error writing social graph to plaintext file: %s", err)
+				}
+
+				fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to binary file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+				binGraphFile := os.Getenv("BINARY_GRAPH_FILE")
+				if binGraphFile == "" {
+					binGraphFile = "social-graph.bin"
+				}
+				err = binReaderWriter.WriteGraph(bsky.SocialGraph, binGraphFile)
+				if err != nil {
+					fmt.Printf("error writing social graph to binary file: %s", err)
 				}
 			case <-quit:
 				ticker.Stop()
