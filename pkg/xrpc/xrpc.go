@@ -1,3 +1,5 @@
+// Package xrpc provides a simple wrapper around the xrpc client
+// with some helper functions for authentication
 package xrpc
 
 import (
@@ -13,6 +15,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+// RefreshAuth refreshes the auth token for the client
 func RefreshAuth(ctx context.Context, client *xrpc.Client) error {
 	// Set the AccessJWT to the RefreshJWT so we have permission to refresh
 	client.Auth.AccessJwt = client.Auth.RefreshJwt
@@ -33,6 +36,8 @@ func RefreshAuth(ctx context.Context, client *xrpc.Client) error {
 	return nil
 }
 
+// GetXRPCClient returns an XRPC client for the ATProto server
+// with Authentication from the ATP_AUTH environment variable
 func GetXRPCClient(ctx context.Context) (*xrpc.Client, error) {
 	client := xrpc.Client{
 		Client: &http.Client{

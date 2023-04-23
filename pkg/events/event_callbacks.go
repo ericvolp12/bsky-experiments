@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
@@ -21,10 +22,14 @@ import (
 )
 
 type BSky struct {
-	Client          *xrpc.Client
-	MentionCounters map[string]int
-	ReplyCounters   map[string]int
-	SocialGraph     graph.Graph
+	Client             *xrpc.Client
+	ClientMux          sync.Mutex
+	MentionCounters    map[string]int
+	MentionCountersMux sync.Mutex
+	ReplyCounters      map[string]int
+	ReplyCountersMux   sync.Mutex
+	SocialGraph        graph.Graph
+	SocialGraphMux     sync.Mutex
 }
 
 func NewBSky(ctx context.Context) (*BSky, error) {
@@ -34,15 +39,21 @@ func NewBSky(ctx context.Context) (*BSky, error) {
 	}
 
 	return &BSky{
-		Client:          client,
-		MentionCounters: make(map[string]int),
-		ReplyCounters:   make(map[string]int),
-		SocialGraph:     graph.NewGraph(),
+		Client:             client,
+		ClientMux:          sync.Mutex{},
+		MentionCounters:    make(map[string]int),
+		MentionCountersMux: sync.Mutex{},
+		ReplyCounters:      make(map[string]int),
+		ReplyCountersMux:   sync.Mutex{},
+		SocialGraph:        graph.NewGraph(),
+		SocialGraphMux:     sync.Mutex{},
 	}, nil
 }
 
 // RefreshAuthToken refreshes the auth token for the client
 func (bsky *BSky) RefreshAuthToken(ctx context.Context) error {
+	bsky.ClientMux.Lock()
+	defer bsky.ClientMux.Unlock()
 	return intXRPC.RefreshAuth(ctx, bsky.Client)
 }
 
@@ -50,6 +61,10 @@ func (bsky *BSky) RefreshAuthToken(ctx context.Context) error {
 func (bsky *BSky) DecodeFacets(ctx context.Context, facets []*appbsky.RichtextFacet) ([]string, []string, error) {
 	mentions := []string{}
 	links := []string{}
+	// Lock the mentions counter
+	bsky.MentionCountersMux.Lock()
+	defer bsky.MentionCountersMux.Unlock()
+
 	for _, facet := range facets {
 		if facet.Features != nil {
 			for _, feature := range facet.Features {
@@ -107,15 +122,19 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				var pst = appbsky.FeedPost{}
 				b, err := postAsCAR.MarshalJSON()
 				if err != nil {
-					fmt.Printf("failed to marshal post as CAR: %e\n", err)
+					log.Printf("failed to marshal post as CAR: %e\n", err)
 					continue
 				}
 
 				err = json.Unmarshal(b, &pst)
 				if err != nil {
-					fmt.Printf("failed to unmarshal post into a FeedPost: %e\n", err)
+					log.Printf("failed to unmarshal post into a FeedPost: %e\n", err)
 					continue
 				}
+
+				// Lock the client
+				bsky.ClientMux.Lock()
+				defer bsky.ClientMux.Unlock()
 
 				authorProfile, err := appbsky.ActorGetProfile(ctx, bsky.Client, evt.Repo)
 				if err != nil {
@@ -132,6 +151,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				t, err := time.Parse(time.RFC3339, evt.Time)
 				if err != nil {
 					log.Printf("error parsing time: %s\n", err)
+					continue
 				}
 
 				postBody := strings.ReplaceAll(pst.Text, "\n", "\n\t")
@@ -155,6 +175,13 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				// Track reply counts
 				if replyingTo != "" {
 					// Add to the social graph
+					// Lock the Social Graph and Reply Counters
+					bsky.ReplyCountersMux.Lock()
+					defer bsky.ReplyCountersMux.Unlock()
+
+					bsky.SocialGraphMux.Lock()
+					defer bsky.SocialGraphMux.Unlock()
+
 					bsky.SocialGraph.IncrementEdge(graph.NodeID(authorProfile.Handle), graph.NodeID(replyingTo), 1)
 					bsky.ReplyCounters[replyingTo]++
 				}

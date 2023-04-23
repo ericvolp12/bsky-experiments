@@ -108,6 +108,14 @@ func main() {
 func graphTracker(bsky *intEvents.BSky, binReaderWriter *graph.BinaryGraphReaderWriter, mentionFile, replyFile, graphFile string) {
 	fmt.Printf("\u001b[90m[%s]\u001b[32m writing mention counts to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
 
+	// Acquire locks on the data structures we're reading from
+	bsky.SocialGraphMux.Lock()
+	defer bsky.SocialGraphMux.Unlock()
+	bsky.MentionCountersMux.Lock()
+	defer bsky.MentionCountersMux.Unlock()
+	bsky.ReplyCountersMux.Lock()
+	defer bsky.ReplyCountersMux.Unlock()
+
 	writeCountsToFile(bsky.MentionCounters, mentionFile, "mention")
 
 	fmt.Printf("\u001b[90m[%s]\u001b[32m writing reply counts to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
