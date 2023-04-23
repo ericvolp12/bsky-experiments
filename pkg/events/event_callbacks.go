@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -26,8 +27,8 @@ type BSky struct {
 	SocialGraph     graph.Graph
 }
 
-func NewBSky() (*BSky, error) {
-	client, err := intXRPC.GetXRPCClient()
+func NewBSky(ctx context.Context) (*BSky, error) {
+	client, err := intXRPC.GetXRPCClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -38,6 +39,11 @@ func NewBSky() (*BSky, error) {
 		ReplyCounters:   make(map[string]int),
 		SocialGraph:     graph.NewGraph(),
 	}, nil
+}
+
+// RefreshAuthToken refreshes the auth token for the client
+func (bsky *BSky) RefreshAuthToken(ctx context.Context) error {
+	return intXRPC.RefreshAuth(ctx, bsky.Client)
 }
 
 // DecodeFacets decodes the facets of a richtext record into mentions and links
@@ -53,7 +59,7 @@ func (bsky *BSky) DecodeFacets(ctx context.Context, facets []*appbsky.RichtextFa
 					} else if feature.RichtextFacet_Mention != nil {
 						mentionedUser, err := appbsky.ActorGetProfile(ctx, bsky.Client, feature.RichtextFacet_Mention.Did)
 						if err != nil {
-							fmt.Printf("error getting profile for %s: %s", feature.RichtextFacet_Mention.Did, err)
+							log.Printf("error getting profile for %s: %s", feature.RichtextFacet_Mention.Did, err)
 							mentions = append(mentions, fmt.Sprintf("[failed-lookup]@%s", feature.RichtextFacet_Mention.Did))
 							continue
 						}
@@ -84,12 +90,14 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				rc, rec, err := rr.GetRecord(ctx, op.Path)
 				if err != nil {
 					e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
-					fmt.Printf("%e", e)
-					return nil
+					log.Printf("failed to get a record from the event: %e\n", e)
+					continue
 				}
 
 				if lexutil.LexLink(rc) != *op.Cid {
-					return fmt.Errorf("mismatch in record and op cid: %s != %s", rc, *op.Cid)
+					e := fmt.Errorf("mismatch in record and op cid: %s != %s", rc, *op.Cid)
+					log.Printf("failed to LexLink the record in the event: %e\n", e)
+					continue
 				}
 
 				postAsCAR := lexutil.LexiconTypeDecoder{
@@ -99,29 +107,31 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				var pst = appbsky.FeedPost{}
 				b, err := postAsCAR.MarshalJSON()
 				if err != nil {
-					fmt.Println(err)
+					fmt.Printf("failed to marshal post as CAR: %e\n", err)
+					continue
 				}
 
 				err = json.Unmarshal(b, &pst)
 				if err != nil {
-					fmt.Println(err)
+					fmt.Printf("failed to unmarshal post into a FeedPost: %e\n", err)
+					continue
 				}
 
 				authorProfile, err := appbsky.ActorGetProfile(ctx, bsky.Client, evt.Repo)
 				if err != nil {
-					fmt.Printf("error getting profile for %s: %s", evt.Repo, err)
+					log.Printf("error getting profile for %s: %s\n", evt.Repo, err)
 					continue
 				}
 
 				mentions, links, err := bsky.DecodeFacets(ctx, pst.Facets)
 				if err != nil {
-					fmt.Printf("error decoding post facets: %+e", err)
+					log.Printf("error decoding post facets: %+e\n", err)
 				}
 
 				// Parse time from the event time string
 				t, err := time.Parse(time.RFC3339, evt.Time)
 				if err != nil {
-					fmt.Printf("error parsing time: %s", err)
+					log.Printf("error parsing time: %s\n", err)
 				}
 
 				postBody := strings.ReplaceAll(pst.Text, "\n", "\n\t")
@@ -130,7 +140,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				if pst.Reply != nil && pst.Reply.Parent != nil {
 					thread, err := appbsky.FeedGetPostThread(ctx, bsky.Client, 2, pst.Reply.Parent.Uri)
 					if err != nil {
-						fmt.Printf("error getting thread for %s: %s", pst.Reply.Parent.Cid, err)
+						log.Printf("error getting thread for %s: %s\n", pst.Reply.Parent.Cid, err)
 					} else {
 						if thread != nil &&
 							thread.Thread != nil &&

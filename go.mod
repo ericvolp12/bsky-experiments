@@ -5,6 +5,7 @@ go 1.19
 require (
 	github.com/bluesky-social/indigo v0.0.0-20230421215042-8c8248dc2d27
 	github.com/gorilla/websocket v1.5.0
+	github.com/pkg/errors v0.9.1
 )
 
 require (

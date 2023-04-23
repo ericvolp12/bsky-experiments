@@ -27,9 +27,19 @@ func main() {
 	// Replace with the WebSocket URL you want to connect to.
 	u := url.URL{Scheme: "wss", Host: "bsky.social", Path: "/xrpc/com.atproto.sync.subscribeRepos"}
 
-	bsky, err := intEvents.NewBSky()
+	bsky, err := intEvents.NewBSky(ctx)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	mentionFile := os.Getenv("MENTIONS_FILE")
+	if mentionFile == "" {
+		mentionFile = "mention-counts.txt"
+	}
+
+	replyFile := os.Getenv("REPLY_FILE")
+	if replyFile == "" {
+		replyFile = "reply-counts.txt"
 	}
 
 	graphFile := os.Getenv("GRAPH_FILE")
@@ -39,7 +49,7 @@ func main() {
 
 	resumedGraph, err := graph.ReadGraph(graphFile)
 	if err != nil {
-		fmt.Printf("error reading social graph: %s\n", err)
+		log.Printf("error reading social graph: %s\n", err)
 	} else {
 		bsky.SocialGraph = resumedGraph
 	}
@@ -50,50 +60,39 @@ func main() {
 	}
 	defer c.Close()
 
-	ticker := time.NewTicker(30 * time.Second)
+	graphTicker := time.NewTicker(30 * time.Second)
 	quit := make(chan struct{})
 
-	// Run a routine that dumps mention counts to a file every 30 seconds
+	// Run a routine that dumps graph data to a file every 30 seconds
 	go func() {
 		binReaderWriter := graph.BinaryGraphReaderWriter{}
 		for {
 			select {
-			case <-ticker.C:
-				fmt.Printf("\u001b[90m[%s]\u001b[32m writing mention counts to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
-				mentionFile := os.Getenv("MENTIONS_FILE")
-				if mentionFile == "" {
-					mentionFile = "mention-counts.txt"
-				}
-				writeCountsToFile(bsky.MentionCounters, mentionFile, "mention")
+			case <-graphTicker.C:
+				graphTracker(bsky, &binReaderWriter, mentionFile, replyFile, graphFile)
+			case <-quit:
+				graphTicker.Stop()
+				return
+			}
+		}
+	}()
 
-				fmt.Printf("\u001b[90m[%s]\u001b[32m writing reply counts to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
-				replyFile := os.Getenv("REPLY_FILE")
-				if replyFile == "" {
-					replyFile = "reply-counts.txt"
-				}
-				writeCountsToFile(bsky.ReplyCounters, replyFile, "reply")
+	authTicker := time.NewTicker(10 * time.Minute)
 
-				fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to plaintext file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
-				graphFile := os.Getenv("GRAPH_FILE")
-				if graphFile == "" {
-					graphFile = "social-graph.txt"
-				}
-				err := bsky.SocialGraph.WriteGraph(graphFile)
+	// Run a routine that refreshes the auth token every 10 minutes
+	go func() {
+		for {
+			select {
+			case <-authTicker.C:
+				fmt.Printf("\u001b[90m[%s]\u001b[32m refreshing auth token...\u001b[0m", time.Now().Format("02.01.06 15:04:05"))
+				err := bsky.RefreshAuthToken(ctx)
 				if err != nil {
-					fmt.Printf("error writing social graph to plaintext file: %s", err)
-				}
-
-				fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to binary file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
-				binGraphFile := os.Getenv("BINARY_GRAPH_FILE")
-				if binGraphFile == "" {
-					binGraphFile = "social-graph.bin"
-				}
-				err = binReaderWriter.WriteGraph(bsky.SocialGraph, binGraphFile)
-				if err != nil {
-					fmt.Printf("error writing social graph to binary file: %s", err)
+					log.Printf("error refreshing auth token: %s", err)
+				} else {
+					fmt.Printf("\u001b[90m[%s]\u001b[32m auth token refreshed successfully\u001b[0m", time.Now().Format("02.01.06 15:04:05"))
 				}
 			case <-quit:
-				ticker.Stop()
+				authTicker.Stop()
 				return
 			}
 		}
@@ -104,6 +103,33 @@ func main() {
 		RepoInfo:   intEvents.HandleRepoInfo,
 		Error:      intEvents.HandleError,
 	})
+}
+
+func graphTracker(bsky *intEvents.BSky, binReaderWriter *graph.BinaryGraphReaderWriter, mentionFile, replyFile, graphFile string) {
+	fmt.Printf("\u001b[90m[%s]\u001b[32m writing mention counts to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+
+	writeCountsToFile(bsky.MentionCounters, mentionFile, "mention")
+
+	fmt.Printf("\u001b[90m[%s]\u001b[32m writing reply counts to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+
+	writeCountsToFile(bsky.ReplyCounters, replyFile, "reply")
+
+	fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to plaintext file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+
+	err := bsky.SocialGraph.WriteGraph(graphFile)
+	if err != nil {
+		log.Printf("error writing social graph to plaintext file: %s", err)
+	}
+
+	fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to binary file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+	binGraphFile := os.Getenv("BINARY_GRAPH_FILE")
+	if binGraphFile == "" {
+		binGraphFile = "social-graph.bin"
+	}
+	err = binReaderWriter.WriteGraph(bsky.SocialGraph, binGraphFile)
+	if err != nil {
+		log.Printf("error writing social graph to binary file: %s", err)
+	}
 }
 
 func writeCountsToFile(counters map[string]int, filename, label string) {
