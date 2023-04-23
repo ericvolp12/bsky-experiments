@@ -1,3 +1,5 @@
-mention-counts.txt
-reply-counts.txt
+data/mention-counts.txt
+data/reply-counts.txt
+data/social-graph.bin
+data/social-graph.txt
 .env
