@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-// BinaryGraphReaderWriter is an implementation of the hReaderWriter interface for Graphs
+// BinaryGraphReaderWriter is an implementation of the ReaderWriter interface for Graphs
 // that reads and writes graph data to and from binary files.
 type BinaryGraphReaderWriter struct{}
 
