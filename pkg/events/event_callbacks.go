@@ -107,7 +107,6 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 	if err != nil {
 		fmt.Println(err)
 	} else {
-
 		for _, op := range evt.Ops {
 			ek := repomgr.EventKind(op.Action)
 			switch ek {
@@ -115,14 +114,14 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				rc, rec, err := rr.GetRecord(ctx, op.Path)
 				if err != nil {
 					e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
-					log.Printf("failed to get a record from the event: %e\n", e)
-					continue
+					log.Printf("failed to get a record from the event: %w\n", e)
+					return nil
 				}
 
 				if lexutil.LexLink(rc) != *op.Cid {
 					e := fmt.Errorf("mismatch in record and op cid: %s != %s", rc, *op.Cid)
-					log.Printf("failed to LexLink the record in the event: %e\n", e)
-					continue
+					log.Printf("failed to LexLink the record in the event: %w\n", e)
+					return nil
 				}
 
 				postAsCAR := lexutil.LexiconTypeDecoder{
@@ -132,14 +131,14 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				var pst = appbsky.FeedPost{}
 				b, err := postAsCAR.MarshalJSON()
 				if err != nil {
-					log.Printf("failed to marshal post as CAR: %e\n", err)
-					continue
+					log.Printf("failed to marshal post as CAR: %w\n", err)
+					return nil
 				}
 
 				err = json.Unmarshal(b, &pst)
 				if err != nil {
-					log.Printf("failed to unmarshal post into a FeedPost: %e\n", err)
-					continue
+					log.Printf("failed to unmarshal post into a FeedPost: %w\n", err)
+					return nil
 				}
 
 				// Lock the client
@@ -149,7 +148,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				authorProfile, err := appbsky.ActorGetProfile(ctx, bsky.Client, evt.Repo)
 				if err != nil {
 					log.Printf("error getting profile for %s: %s\n", evt.Repo, err)
-					continue
+					return nil
 				}
 
 				mentions, links, err := bsky.DecodeFacets(ctx, pst.Facets)
@@ -161,7 +160,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				t, err := time.Parse(time.RFC3339, evt.Time)
 				if err != nil {
 					log.Printf("error parsing time: %s\n", err)
-					continue
+					return nil
 				}
 
 				postBody := strings.ReplaceAll(pst.Text, "\n", "\n\t")
