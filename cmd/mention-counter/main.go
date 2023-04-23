@@ -12,6 +12,7 @@ import (
 
 	"github.com/bluesky-social/indigo/events"
 	intEvents "github.com/ericvolp12/bsky-experiments/pkg/events"
+	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/gorilla/websocket"
 )
 
@@ -31,6 +32,18 @@ func main() {
 		log.Fatal(err)
 	}
 
+	graphFile := os.Getenv("GRAPH_FILE")
+	if graphFile == "" {
+		graphFile = "social-graph.txt"
+	}
+
+	resumedGraph, err := graph.ReadGraph(graphFile)
+	if err != nil {
+		fmt.Printf("error reading social graph: %s\n", err)
+	} else {
+		bsky.SocialGraph = resumedGraph
+	}
+
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		log.Fatal("dial:", err)
@@ -45,53 +58,28 @@ func main() {
 		for {
 			select {
 			case <-ticker.C:
-				fmt.Printf("\u001b[90m[%s]\u001b[32m writing mention and reply counts to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+				fmt.Printf("\u001b[90m[%s]\u001b[32m writing mention counts to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
 				mentionFile := os.Getenv("MENTIONS_FILE")
 				if mentionFile == "" {
 					mentionFile = "mention-counts.txt"
 				}
-				mentionFileContents := ""
-				// Sort mentions by count, descending
-				sortedCounts := []Count{}
-				for k, v := range bsky.MentionCounters {
-					sortedCounts = append(sortedCounts, Count{k, v})
-				}
+				writeCountsToFile(bsky.MentionCounters, mentionFile, "mention")
 
-				sort.Slice(sortedCounts, func(i, j int) bool {
-					return sortedCounts[i].Count > sortedCounts[j].Count
-				})
-
-				for _, count := range sortedCounts {
-					mentionFileContents += fmt.Sprintf("%s: %d\n", count.Handle, count.Count)
-				}
-
-				err := ioutil.WriteFile(mentionFile, []byte(mentionFileContents), 0644)
-				if err != nil {
-					fmt.Printf("error writing mention counts to file: %s", err)
-				}
-
+				fmt.Printf("\u001b[90m[%s]\u001b[32m writing reply counts to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
 				replyFile := os.Getenv("REPLY_FILE")
 				if replyFile == "" {
 					replyFile = "reply-counts.txt"
 				}
-				replyFileContents := ""
-				// Sort replies by count, descending
-				sortedReplyCounts := []Count{}
-				for k, v := range bsky.ReplyCounters {
-					sortedReplyCounts = append(sortedReplyCounts, Count{k, v})
+				writeCountsToFile(bsky.ReplyCounters, replyFile, "reply")
+
+				fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+				graphFile := os.Getenv("GRAPH_FILE")
+				if graphFile == "" {
+					graphFile = "social-graph.txt"
 				}
-
-				sort.Slice(sortedReplyCounts, func(i, j int) bool {
-					return sortedReplyCounts[i].Count > sortedReplyCounts[j].Count
-				})
-
-				for _, count := range sortedReplyCounts {
-					replyFileContents += fmt.Sprintf("%s: %d\n", count.Handle, count.Count)
-				}
-
-				err = ioutil.WriteFile(replyFile, []byte(replyFileContents), 0644)
+				err := bsky.SocialGraph.WriteGraph(graphFile)
 				if err != nil {
-					fmt.Printf("error writing reply counts to file: %s", err)
+					fmt.Printf("error writing social graph to file: %s", err)
 				}
 			case <-quit:
 				ticker.Stop()
@@ -105,4 +93,27 @@ func main() {
 		RepoInfo:   intEvents.HandleRepoInfo,
 		Error:      intEvents.HandleError,
 	})
+}
+
+func writeCountsToFile(counters map[string]int, filename, label string) {
+	contents := ""
+
+	// Sort counts by value, descending
+	sortedCounts := []Count{}
+	for k, v := range counters {
+		sortedCounts = append(sortedCounts, Count{k, v})
+	}
+
+	sort.Slice(sortedCounts, func(i, j int) bool {
+		return sortedCounts[i].Count > sortedCounts[j].Count
+	})
+
+	for _, count := range sortedCounts {
+		contents += fmt.Sprintf("%s: %d\n", count.Handle, count.Count)
+	}
+
+	err := ioutil.WriteFile(filename, []byte(contents), 0644)
+	if err != nil {
+		fmt.Printf("error writing %s counts to file: %s", label, err)
+	}
 }

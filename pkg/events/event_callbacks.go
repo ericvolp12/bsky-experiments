@@ -15,6 +15,7 @@ import (
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/repomgr"
 	"github.com/bluesky-social/indigo/xrpc"
+	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 )
 
@@ -22,6 +23,7 @@ type BSky struct {
 	Client          *xrpc.Client
 	MentionCounters map[string]int
 	ReplyCounters   map[string]int
+	SocialGraph     graph.Graph
 }
 
 func NewBSky() (*BSky, error) {
@@ -34,6 +36,7 @@ func NewBSky() (*BSky, error) {
 		Client:          client,
 		MentionCounters: make(map[string]int),
 		ReplyCounters:   make(map[string]int),
+		SocialGraph:     graph.NewGraph(),
 	}, nil
 }
 
@@ -141,6 +144,8 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 
 				// Track reply counts
 				if replyingTo != "" {
+					// Add to the social graph
+					bsky.SocialGraph.IncrementEdge(graph.NodeID(authorProfile.Handle), graph.NodeID(replyingTo), 1)
 					bsky.ReplyCounters[replyingTo]++
 				}
 

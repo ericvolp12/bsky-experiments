@@ -26,7 +26,10 @@ docker-build:
 # Run the Docker container
 docker-run: docker-build
 	@echo "Running Docker container..."
-	docker run --name $(DOCKER_CONTAINER_NAME) --rm --env-file $(ENV_FILE) -v $(shell pwd)/$(LOCAL_DATA_DIR):$(DOCKER_MOUNT_PATH) $(DOCKER_IMAGE_NAME)
+	docker stop $(DOCKER_CONTAINER_NAME) || true
+	docker rm $(DOCKER_CONTAINER_NAME) || true
+	docker run --name $(DOCKER_CONTAINER_NAME) -d --env-file $(ENV_FILE) -v $(shell pwd)/$(LOCAL_DATA_DIR):$(DOCKER_MOUNT_PATH) $(DOCKER_IMAGE_NAME)
+	docker logs -f $(DOCKER_CONTAINER_NAME)
 
 # Remove the Docker container
 docker-clean:
