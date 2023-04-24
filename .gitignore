@@ -3,3 +3,5 @@ data/reply-counts.txt
 data/social-graph.bin
 data/social-graph.txt
 .env
+
+node_modules/
