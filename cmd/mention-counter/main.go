@@ -64,22 +64,22 @@ func main() {
 	}
 	defer c.Close()
 
-	// graphTicker := time.NewTicker(30 * time.Second)
+	graphTicker := time.NewTicker(30 * time.Second)
 	quit := make(chan struct{})
 
-	// // Run a routine that dumps graph data to a file every 30 seconds
-	// go func() {
-	// 	binReaderWriter := graph.BinaryGraphReaderWriter{}
-	// 	for {
-	// 		select {
-	// 		case <-graphTicker.C:
-	// 			graphTracker(bsky, &binReaderWriter, mentionFile, replyFile, graphFile)
-	// 		case <-quit:
-	// 			graphTicker.Stop()
-	// 			return
-	// 		}
-	// 	}
-	// }()
+	// Run a routine that dumps graph data to a file every 30 seconds
+	go func() {
+		binReaderWriter := graph.BinaryGraphReaderWriter{}
+		for {
+			select {
+			case <-graphTicker.C:
+				graphTracker(bsky, &binReaderWriter, mentionFile, replyFile, graphFile)
+			case <-quit:
+				graphTicker.Stop()
+				return
+			}
+		}
+	}()
 
 	authTicker := time.NewTicker(10 * time.Minute)
 
