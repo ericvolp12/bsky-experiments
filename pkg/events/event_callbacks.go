@@ -139,14 +139,14 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 					return nil
 				}
 
-				postAsCAR := lexutil.LexiconTypeDecoder{
+				recordAsCAR := lexutil.LexiconTypeDecoder{
 					Val: rec,
 				}
 
 				var pst = appbsky.FeedPost{}
-				b, err := postAsCAR.MarshalJSON()
+				b, err := recordAsCAR.MarshalJSON()
 				if err != nil {
-					log.Printf("failed to marshal post as CAR: %+v\n", err)
+					log.Printf("failed to marshal record as CAR: %+v\n", err)
 					return nil
 				}
 
@@ -162,6 +162,35 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				authorProfile, err := appbsky.ActorGetProfile(ctx, bsky.Client, evt.Repo)
 				if err != nil {
 					log.Printf("error getting profile for %s: %+v\n", evt.Repo, err)
+					bsky.ClientMux.Unlock()
+					return nil
+				}
+
+				if pst.LexiconTypeID != "app.bsky.feed.post" {
+					// Try unmarshalling it as a like
+					var like = appbsky.FeedLike{}
+					err = json.Unmarshal(b, &like)
+					if err != nil {
+						bsky.ClientMux.Unlock()
+						return nil
+					}
+					if like.LexiconTypeID == "app.bsky.feed.like" {
+						likeSubject, err := appbsky.FeedGetPostThread(ctx, bsky.Client, 1, like.Subject.Uri)
+						if err != nil {
+							log.Printf("error getting like subject: %+v\n", err)
+							bsky.ClientMux.Unlock()
+							return nil
+						}
+						if likeSubject != nil &&
+							likeSubject.Thread != nil &&
+							likeSubject.Thread.FeedDefs_ThreadViewPost != nil &&
+							likeSubject.Thread.FeedDefs_ThreadViewPost.Post != nil &&
+							likeSubject.Thread.FeedDefs_ThreadViewPost.Post.Author != nil {
+							admired := likeSubject.Thread.FeedDefs_ThreadViewPost.Post.Author.Handle
+							admirer := authorProfile.Handle
+							log.Printf("%s liked a post by %s\n", admirer, admired)
+						}
+					}
 					bsky.ClientMux.Unlock()
 					return nil
 				}
