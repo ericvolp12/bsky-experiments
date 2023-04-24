@@ -22,6 +22,12 @@ import (
 // It is used to identify nodes when adding edges and performing other graph operations.
 type NodeID string
 
+// Node is a struct representing a node in the graph.
+type Node struct {
+	DID    NodeID
+	Handle string
+}
+
 // Edge is a struct representing a directed edge between two nodes.
 // It contains the source node (From), the destination node (To), and the associated weight.
 type Edge struct {
@@ -32,11 +38,11 @@ type Edge struct {
 
 // Graph is a struct representing a graph structure.
 // It contains nodes, directed edges with weights, and a next node identifier.
-// Nodes are stored in a map, with NodeID keys and boolean values.
+// Nodes are stored in a map, with NodeID keys and Node values.
 // Edges are stored in a nested map, with NodeID keys for the source node and a second
 // map with NodeID keys for the destination node and integer values for the weights.
 type Graph struct {
-	Nodes  map[NodeID]bool
+	Nodes  map[NodeID]Node
 	Edges  map[NodeID]map[NodeID]int
 	NextID NodeID
 }
@@ -53,27 +59,27 @@ type ReaderWriter interface {
 // It creates empty maps for storing nodes and edges.
 func NewGraph() Graph {
 	return Graph{
-		Nodes: make(map[NodeID]bool),
+		Nodes: make(map[NodeID]Node),
 		Edges: make(map[NodeID]map[NodeID]int),
 	}
 }
 
 // AddNode adds a new node with the given NodeID to the graph.
 // The method takes a NodeID as an argument and inserts it into the Nodes map.
-func (g *Graph) AddNode(id NodeID) {
-	g.Nodes[id] = true
+func (g *Graph) AddNode(node Node) {
+	g.Nodes[node.DID] = node
 }
 
 // AddEdge adds a directed edge between two nodes in the graph with the specified weight.
 // The method takes two NodeIDs (from and to) and an integer weight as arguments.
 // If the edge already exists, the weight is updated with the new value.
-func (g *Graph) AddEdge(from, to NodeID, weight int) {
-	if _, ok := g.Edges[from]; !ok {
-		g.Edges[from] = make(map[NodeID]int)
+func (g *Graph) AddEdge(from, to Node, weight int) {
+	if _, ok := g.Edges[from.DID]; !ok {
+		g.Edges[from.DID] = make(map[NodeID]int)
 	}
-	g.Edges[from][to] = weight
-	g.Nodes[from] = true
-	g.Nodes[to] = true
+	g.Edges[from.DID][to.DID] = weight
+	g.Nodes[from.DID] = from
+	g.Nodes[to.DID] = to
 }
 
 // GetNodeCount returns the number of nodes in the graph.
@@ -92,13 +98,13 @@ func (g *Graph) GetEdgeCount() int {
 
 // IncrementEdge increments the weight of an edge between two nodes by the specified value.
 // If the edge does not exist, it is created with the given weight.
-func (g *Graph) IncrementEdge(from, to NodeID, weight int) {
-	if _, ok := g.Edges[from]; !ok {
-		g.Edges[from] = make(map[NodeID]int)
+func (g *Graph) IncrementEdge(from, to Node, weight int) {
+	if _, ok := g.Edges[from.DID]; !ok {
+		g.Edges[from.DID] = make(map[NodeID]int)
 	}
-	g.Edges[from][to] += weight
-	g.Nodes[from] = true
-	g.Nodes[to] = true
+	g.Edges[from.DID][to.DID] += weight
+	g.Nodes[from.DID] = from
+	g.Nodes[to.DID] = to
 }
 
 // WriteGraph exports the graph structure to a file with the given filename.
@@ -113,8 +119,10 @@ func (g *Graph) WriteGraph(filename string) error {
 
 	writer := bufio.NewWriter(file)
 	for from, edges := range g.Edges {
+		fromNode := g.Nodes[from]
 		for to, weight := range edges {
-			fmt.Fprintf(writer, "%s %s %d\n", from, to, weight)
+			toNode := g.Nodes[to]
+			fmt.Fprintf(writer, "%s %s %s %s %d\n", fromNode.DID, fromNode.Handle, toNode.DID, toNode.Handle, weight)
 		}
 	}
 	return writer.Flush()
@@ -134,13 +142,15 @@ func ReadGraph(filename string) (Graph, error) {
 	g := NewGraph()
 
 	for scanner.Scan() {
-		var from, to string
+		var fromDID, fromHandle, toDID, toHandle string
 		var weight int
-		_, err := fmt.Sscanf(scanner.Text(), "%s %s %d", &from, &to, &weight)
+		_, err := fmt.Sscanf(scanner.Text(), "%s %s %s %s %d", &fromDID, &fromHandle, &toDID, &toHandle, &weight)
 		if err != nil {
 			return Graph{}, err
 		}
-		g.AddEdge(NodeID(from), NodeID(to), weight)
+		fromNode := Node{DID: NodeID(fromDID), Handle: fromHandle}
+		toNode := Node{DID: NodeID(toDID), Handle: toHandle}
+		g.AddEdge(fromNode, toNode, weight)
 	}
 
 	if err := scanner.Err(); err != nil {

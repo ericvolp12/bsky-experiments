@@ -68,12 +68,14 @@ func (bsky *BSky) RefreshAuthToken(ctx context.Context) error {
 }
 
 // DecodeFacets decodes the facets of a richtext record into mentions and links
-func (bsky *BSky) DecodeFacets(ctx context.Context, facets []*appbsky.RichtextFacet) ([]string, []string, error) {
+func (bsky *BSky) DecodeFacets(ctx context.Context, authorDID string, authorHandle string, facets []*appbsky.RichtextFacet) ([]string, []string, error) {
 	mentions := []string{}
 	links := []string{}
 	// Lock the mentions counter
 	bsky.MentionCountersMux.Lock()
 	defer bsky.MentionCountersMux.Unlock()
+	bsky.SocialGraphMux.Lock()
+	defer bsky.SocialGraphMux.Unlock()
 
 	for _, facet := range facets {
 		if facet.Features != nil {
@@ -89,6 +91,19 @@ func (bsky *BSky) DecodeFacets(ctx context.Context, facets []*appbsky.RichtextFa
 							continue
 						}
 						mentions = append(mentions, fmt.Sprintf("@%s", mentionedUser.Handle))
+
+						// Track mentions in the social graph
+						from := graph.Node{
+							DID:    graph.NodeID(authorDID),
+							Handle: authorHandle,
+						}
+
+						to := graph.Node{
+							DID:    graph.NodeID(mentionedUser.Did),
+							Handle: mentionedUser.Handle,
+						}
+
+						bsky.SocialGraph.IncrementEdge(from, to, 1)
 
 						// Track mention counts
 						bsky.MentionCounters[mentionedUser.Handle]++
@@ -151,7 +166,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 					return nil
 				}
 
-				mentions, links, err := bsky.DecodeFacets(ctx, pst.Facets)
+				mentions, links, err := bsky.DecodeFacets(ctx, authorProfile.Did, authorProfile.Handle, pst.Facets)
 				if err != nil {
 					log.Printf("error decoding post facets: %+v\n", err)
 				}
@@ -167,6 +182,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				postBody := strings.ReplaceAll(pst.Text, "\n", "\n\t")
 
 				replyingTo := ""
+				replyingToDID := ""
 				if pst.Reply != nil && pst.Reply.Parent != nil {
 					thread, err := appbsky.FeedGetPostThread(ctx, bsky.Client, 2, pst.Reply.Parent.Uri)
 					if err != nil {
@@ -178,6 +194,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 							thread.Thread.FeedDefs_ThreadViewPost.Post != nil &&
 							thread.Thread.FeedDefs_ThreadViewPost.Post.Author != nil {
 							replyingTo = thread.Thread.FeedDefs_ThreadViewPost.Post.Author.Handle
+							replyingToDID = thread.Thread.FeedDefs_ThreadViewPost.Post.Author.Did
 						}
 					}
 				}
@@ -185,13 +202,22 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				bsky.ClientMux.Unlock()
 
 				// Track reply counts
-				if replyingTo != "" {
+				if replyingTo != "" && replyingToDID != "" {
 					// Add to the social graph
 					// Lock the Social Graph and Reply Counters
 					bsky.ReplyCountersMux.Lock()
 					bsky.SocialGraphMux.Lock()
+					from := graph.Node{
+						DID:    graph.NodeID(authorProfile.Did),
+						Handle: authorProfile.Handle,
+					}
 
-					bsky.SocialGraph.IncrementEdge(graph.NodeID(authorProfile.Handle), graph.NodeID(replyingTo), 1)
+					to := graph.Node{
+						DID:    graph.NodeID(replyingToDID),
+						Handle: replyingTo,
+					}
+
+					bsky.SocialGraph.IncrementEdge(from, to, 1)
 					bsky.ReplyCounters[replyingTo]++
 
 					bsky.ReplyCountersMux.Unlock()

@@ -12,6 +12,7 @@ import (
 type BinaryGraphReaderWriter struct{}
 
 const maxNodeIDLength = 500
+const maxNodeHandleLength = 500
 
 // WriteGraph writes the graph data to a binary file with the given filename.
 func (rw BinaryGraphReaderWriter) WriteGraph(g Graph, filename string) error {
@@ -21,7 +22,6 @@ func (rw BinaryGraphReaderWriter) WriteGraph(g Graph, filename string) error {
 	}
 	defer file.Close()
 
-	// Write the number of nodes and edges.
 	nodeCount := int32(g.GetNodeCount())
 	edgeCount := int32(g.GetEdgeCount())
 	if err := binary.Write(file, binary.LittleEndian, nodeCount); err != nil {
@@ -31,27 +31,30 @@ func (rw BinaryGraphReaderWriter) WriteGraph(g Graph, filename string) error {
 		return err
 	}
 
-	// Write the nodes.
 	nodeIndex := make(map[NodeID]int32)
 	var index int32
-	for id := range g.Nodes {
-		nodeIndex[id] = index
+	for _, node := range g.Nodes {
+		nodeIndex[node.DID] = index
 		index++
 
-		// Write the length of the NodeID string and the string itself.
-		idLength := int8(utf8.RuneCountInString(string(id)))
+		idLength := int8(utf8.RuneCountInString(string(node.DID)))
+		handleLength := int8(utf8.RuneCountInString(node.Handle))
 		if err := binary.Write(file, binary.LittleEndian, idLength); err != nil {
 			return err
 		}
-		if _, err := file.WriteString(string(id)); err != nil {
+		if _, err := file.WriteString(string(node.DID)); err != nil {
+			return err
+		}
+		if err := binary.Write(file, binary.LittleEndian, handleLength); err != nil {
+			return err
+		}
+		if _, err := file.WriteString(node.Handle); err != nil {
 			return err
 		}
 	}
 
-	// Write the edges.
 	for from, edges := range g.Edges {
 		for to, weight := range edges {
-			// Write the source and destination NodeID indices and the weight.
 			if err := binary.Write(file, binary.LittleEndian, nodeIndex[from]); err != nil {
 				return err
 			}
@@ -84,11 +87,10 @@ func (rw BinaryGraphReaderWriter) ReadGraph(filename string) (Graph, error) {
 	}
 
 	g := NewGraph()
-	nodes := make([]NodeID, nodeCount)
+	nodes := make([]Node, nodeCount)
 
-	// Read the nodes.
 	for i := int32(0); i < nodeCount; i++ {
-		var idLength int8
+		var idLength, handleLength int8
 		if err := binary.Read(file, binary.LittleEndian, &idLength); err != nil {
 			return Graph{}, err
 		}
@@ -98,10 +100,22 @@ func (rw BinaryGraphReaderWriter) ReadGraph(filename string) (Graph, error) {
 			return Graph{}, err
 		}
 
-		nodes[i] = NodeID(string(buf))
+		if err := binary.Read(file, binary.LittleEndian, &handleLength); err != nil {
+			return Graph{}, err
+		}
+
+		handleBuf := make([]byte, handleLength)
+		if _, err := io.ReadFull(file, handleBuf); err != nil {
+			return Graph{}, err
+		}
+
+		nodes[i] = Node{
+			DID:    NodeID(string(buf)),
+			Handle: string(handleBuf),
+		}
 		g.AddNode(nodes[i])
 	}
-	// Read the edges.
+
 	for i := int32(0); i < edgeCount; i++ {
 		var fromIndex, toIndex, weight int32
 

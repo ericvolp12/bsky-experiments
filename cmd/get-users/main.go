@@ -3,36 +3,68 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"strings"
 	"sync"
 
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
-	"github.com/bluesky-social/indigo/api/bsky"
-	"github.com/bluesky-social/indigo/xrpc"
 
 	"github.com/cheggaaa/pb/v3"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	"golang.org/x/time/rate"
 )
 
-func getProfile(ctx context.Context, client *xrpc.Client, did string, limiter *rate.Limiter, progress *pb.ProgressBar) (string, error) {
+type didLookup struct {
+	Did                 string `json:"did"`
+	VerificationMethods struct {
+		Atproto string `json:"atproto"`
+	} `json:"verificationMethods"`
+	RotationKeys []string `json:"rotationKeys"`
+	AlsoKnownAs  []string `json:"alsoKnownAs"`
+	Services     struct {
+		AtprotoPds struct {
+			Type     string `json:"type"`
+			Endpoint string `json:"endpoint"`
+		} `json:"atproto_pds"`
+	} `json:"services"`
+}
+
+func getHandle(ctx context.Context, did string, limiter *rate.Limiter, progress *pb.ProgressBar) (string, error) {
 	// Use rate limiter before each request
 	err := limiter.Wait(ctx)
 	if err != nil {
 		return "", fmt.Errorf("error waiting for rate limiter: %w", err)
 	}
 
-	profile, err := bsky.ActorGetProfile(ctx, client, did)
+	handle := ""
+
+	// HTTP GET to https://plc.directory/{did}/data
+	resp, err := http.Get(fmt.Sprintf("https://plc.directory/%s/data", did))
 	if err != nil {
-		return "", fmt.Errorf("error getting profile for %s: %w", did, err)
+		return "", fmt.Errorf("error getting handle for %s: %w", did, err)
+	}
+
+	// Read the response body into a didLookup
+	didLookup := didLookup{}
+	err = json.NewDecoder(resp.Body).Decode(&didLookup)
+	if err != nil {
+		return "", fmt.Errorf("error decoding response body for %s: %w", did, err)
+	}
+
+	// If the didLookup has a handle, return it
+	if len(didLookup.AlsoKnownAs) > 0 {
+		// Handles from the DID service look like: "at://jaz.bsky.social", replace the at:// with an @
+		handle = strings.Replace(didLookup.AlsoKnownAs[0], "at://", "@", 1)
 	}
 
 	// Increment the progress bar
 	progress.Increment()
 
-	return profile.Handle, nil
+	return handle, nil
 }
 
 func main() {
@@ -43,7 +75,7 @@ func main() {
 	}
 
 	// Set up a rate limiter to limit requests to 50 per second
-	limiter := rate.NewLimiter(rate.Limit(50), 5)
+	limiter := rate.NewLimiter(rate.Limit(10), 1)
 
 	cursor := ""
 
@@ -92,7 +124,7 @@ func main() {
 
 		go func(did string) {
 			defer wg.Done()
-			handle, err := getProfile(ctx, client, did, limiter, progress)
+			handle, err := getHandle(ctx, did, limiter, progress)
 			if err != nil {
 				fmt.Println(err)
 				return
