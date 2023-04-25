@@ -11,6 +11,7 @@ import (
 	"time"
 
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
+	"github.com/bluesky-social/indigo/api/bsky"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/events"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
@@ -19,7 +20,50 @@ import (
 	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
+
+// Initialize Prometheus Metrics for cache hits and misses
+var cacheHits = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "bsky_profile_cache_hits_total",
+	Help: "The total number of profile cache hits",
+})
+
+var cacheMisses = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "bsky_profile_cache_misses_total",
+	Help: "The total number of profile cache misses",
+})
+
+// Initialize Prometheus Metrics for mentions and replies
+var mentionCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "bsky_mentions_total",
+	Help: "The total number of mentions",
+})
+
+var replyCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "bsky_replies_total",
+	Help: "The total number of replies",
+})
+
+// Initialize Prometheus Metrics for total number of posts processed
+var postsProcessedCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "bsky_posts_processed_total",
+	Help: "The total number of posts processed",
+})
+
+// Initialize Prometheus metrics for duration of processing posts
+var postProcessingDurationHistogram = promauto.NewHistogram(prometheus.HistogramOpts{
+	Name:    "bsky_post_processing_duration_seconds",
+	Help:    "The duration of processing posts",
+	Buckets: prometheus.ExponentialBuckets(0.01, 2, 10),
+})
+
+// ProfileCacheEntry is a struct that holds a profile and an expiration time
+type ProfileCacheEntry struct {
+	Profile *bsky.ActorDefs_ProfileViewDetailed
+	Expire  time.Time
+}
 
 // BSky is a struct that holds the state of the social graph and the
 // authenticated XRPC client
@@ -27,14 +71,18 @@ type BSky struct {
 	Client    *xrpc.Client
 	ClientMux sync.Mutex
 
-	MentionCounters    map[string]int
-	MentionCountersMux sync.Mutex
+	MentionCounterMap    map[string]int
+	MentionCounterMapMux sync.Mutex
 
-	ReplyCounters    map[string]int
-	ReplyCountersMux sync.Mutex
+	ReplyCounterMap    map[string]int
+	ReplyCounterMapMux sync.Mutex
 
 	SocialGraph    graph.Graph
 	SocialGraphMux sync.Mutex
+
+	// Generate a Profile Cache with a TTL
+	profileCache    map[string]ProfileCacheEntry
+	profileCacheTTL time.Duration
 }
 
 // NewBSky creates a new BSky struct with an authenticated XRPC client
@@ -49,14 +97,18 @@ func NewBSky(ctx context.Context) (*BSky, error) {
 		Client:    client,
 		ClientMux: sync.Mutex{},
 
-		MentionCounters:    make(map[string]int),
-		MentionCountersMux: sync.Mutex{},
+		MentionCounterMap:    make(map[string]int),
+		MentionCounterMapMux: sync.Mutex{},
 
-		ReplyCounters:    make(map[string]int),
-		ReplyCountersMux: sync.Mutex{},
+		ReplyCounterMap:    make(map[string]int),
+		ReplyCounterMapMux: sync.Mutex{},
 
 		SocialGraph:    graph.NewGraph(),
 		SocialGraphMux: sync.Mutex{},
+
+		profileCache: make(map[string]ProfileCacheEntry),
+		// 60 minute TTL
+		profileCacheTTL: time.Minute * 60,
 	}, nil
 }
 
@@ -67,13 +119,44 @@ func (bsky *BSky) RefreshAuthToken(ctx context.Context) error {
 	return intXRPC.RefreshAuth(ctx, bsky.Client)
 }
 
+// ResolveProfile resolves a profile from a DID using the cache or the API
+func (bsky *BSky) ResolveProfile(ctx context.Context, did string) (*bsky.ActorDefs_ProfileViewDetailed, error) {
+	// Check the cache first
+	if entry, ok := bsky.profileCache[did]; ok {
+		if entry.Expire.After(time.Now()) {
+			cacheHits.Inc()
+			return entry.Profile, nil
+		}
+	}
+
+	cacheMisses.Inc()
+
+	// Get the profile from the API
+	profile, err := appbsky.ActorGetProfile(ctx, bsky.Client, did)
+	if err != nil {
+		return nil, err
+	}
+
+	if profile == nil {
+		return nil, fmt.Errorf("profile not found for: %s", did)
+	}
+
+	// Cache the profile
+	bsky.profileCache[did] = ProfileCacheEntry{
+		Profile: profile,
+		Expire:  time.Now().Add(bsky.profileCacheTTL),
+	}
+
+	return profile, nil
+}
+
 // DecodeFacets decodes the facets of a richtext record into mentions and links
 func (bsky *BSky) DecodeFacets(ctx context.Context, authorDID string, authorHandle string, facets []*appbsky.RichtextFacet) ([]string, []string, error) {
 	mentions := []string{}
 	links := []string{}
 	// Lock the mentions counter
-	bsky.MentionCountersMux.Lock()
-	defer bsky.MentionCountersMux.Unlock()
+	bsky.MentionCounterMapMux.Lock()
+	defer bsky.MentionCounterMapMux.Unlock()
 	bsky.SocialGraphMux.Lock()
 	defer bsky.SocialGraphMux.Unlock()
 
@@ -84,7 +167,7 @@ func (bsky *BSky) DecodeFacets(ctx context.Context, authorDID string, authorHand
 					if feature.RichtextFacet_Link != nil {
 						links = append(links, feature.RichtextFacet_Link.Uri)
 					} else if feature.RichtextFacet_Mention != nil {
-						mentionedUser, err := appbsky.ActorGetProfile(ctx, bsky.Client, feature.RichtextFacet_Mention.Did)
+						mentionedUser, err := bsky.ResolveProfile(ctx, feature.RichtextFacet_Mention.Did)
 						if err != nil {
 							log.Printf("error getting profile for %s: %s", feature.RichtextFacet_Mention.Did, err)
 							mentions = append(mentions, fmt.Sprintf("[failed-lookup]@%s", feature.RichtextFacet_Mention.Did))
@@ -106,12 +189,15 @@ func (bsky *BSky) DecodeFacets(ctx context.Context, authorDID string, authorHand
 						bsky.SocialGraph.IncrementEdge(from, to, 1)
 
 						// Track mention counts
-						bsky.MentionCounters[mentionedUser.Handle]++
+						bsky.MentionCounterMap[mentionedUser.Handle]++
 					}
 				}
 			}
 		}
 	}
+
+	mentionCounter.Add(float64(len(mentions)))
+
 	return mentions, links, nil
 }
 
@@ -126,6 +212,8 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 			ek := repomgr.EventKind(op.Action)
 			switch ek {
 			case repomgr.EvtKindCreateRecord, repomgr.EvtKindUpdateRecord:
+				start := time.Now()
+
 				rc, rec, err := rr.GetRecord(ctx, op.Path)
 				if err != nil {
 					e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
@@ -163,7 +251,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				// Lock the client
 				bsky.ClientMux.Lock()
 
-				authorProfile, err := appbsky.ActorGetProfile(ctx, bsky.Client, evt.Repo)
+				authorProfile, err := bsky.ResolveProfile(ctx, evt.Repo)
 				if err != nil {
 					log.Printf("error getting profile for %s: %+v\n", evt.Repo, err)
 					bsky.ClientMux.Unlock()
@@ -209,7 +297,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				if replyingTo != "" && replyingToDID != "" {
 					// Add to the social graph
 					// Lock the Social Graph and Reply Counters
-					bsky.ReplyCountersMux.Lock()
+					bsky.ReplyCounterMapMux.Lock()
 					bsky.SocialGraphMux.Lock()
 					from := graph.Node{
 						DID:    graph.NodeID(authorProfile.Did),
@@ -222,10 +310,13 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 					}
 
 					bsky.SocialGraph.IncrementEdge(from, to, 1)
-					bsky.ReplyCounters[replyingTo]++
+					bsky.ReplyCounterMap[replyingTo]++
 
-					bsky.ReplyCountersMux.Unlock()
+					bsky.ReplyCounterMapMux.Unlock()
 					bsky.SocialGraphMux.Unlock()
+
+					// Increment the reply count
+					replyCounter.Inc()
 				}
 
 				// Grab Post ID from the Path
@@ -256,6 +347,10 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 						fmt.Printf("\tLinks: %s\n", links)
 					}
 				}
+
+				// Record the time to process and the count
+				postsProcessedCounter.Inc()
+				postProcessingDurationHistogram.Observe(time.Since(start).Seconds())
 
 			case repomgr.EvtKindDeleteRecord:
 				// if err := cb(ek, evt.Seq, op.Path, evt.Repo, nil, nil); err != nil {

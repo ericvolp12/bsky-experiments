@@ -17,6 +17,7 @@ import (
 	intEvents "github.com/ericvolp12/bsky-experiments/pkg/events"
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/gorilla/websocket"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Count is used for sorting and storing mention counts
@@ -102,8 +103,9 @@ func main() {
 		}
 	}()
 
-	// Server for pprof
+	// Server for pprof and prometheus via promhttp
 	go func() {
+		http.Handle("/metrics", promhttp.Handler())
 		fmt.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
@@ -120,16 +122,16 @@ func graphTracker(bsky *intEvents.BSky, binReaderWriter *graph.BinaryGraphReader
 	// Acquire locks on the data structures we're reading from
 	bsky.SocialGraphMux.Lock()
 	defer bsky.SocialGraphMux.Unlock()
-	bsky.MentionCountersMux.Lock()
-	defer bsky.MentionCountersMux.Unlock()
-	bsky.ReplyCountersMux.Lock()
-	defer bsky.ReplyCountersMux.Unlock()
+	bsky.MentionCounterMapMux.Lock()
+	defer bsky.MentionCounterMapMux.Unlock()
+	bsky.ReplyCounterMapMux.Lock()
+	defer bsky.ReplyCounterMapMux.Unlock()
 
-	writeCountsToFile(bsky.MentionCounters, mentionFile, "mention")
+	writeCountsToFile(bsky.MentionCounterMap, mentionFile, "mention")
 
 	fmt.Printf("\u001b[90m[%s]\u001b[32m writing reply counts to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
 
-	writeCountsToFile(bsky.ReplyCounters, replyFile, "reply")
+	writeCountsToFile(bsky.ReplyCounterMap, replyFile, "reply")
 
 	fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to plaintext file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
 

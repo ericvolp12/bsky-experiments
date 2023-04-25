@@ -6,7 +6,18 @@ require (
 	github.com/bluesky-social/indigo v0.0.0-20230421215042-8c8248dc2d27
 	github.com/gorilla/websocket v1.5.0
 	github.com/pkg/errors v0.9.1
+	github.com/prometheus/client_golang v1.14.0
 	golang.org/x/time v0.3.0
+)
+
+require (
+	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
+	github.com/prometheus/client_model v0.3.0 // indirect
+	github.com/prometheus/common v0.42.0 // indirect
+	github.com/prometheus/procfs v0.9.0 // indirect
 )
 
 require (
@@ -74,7 +85,6 @@ require (
 	golang.org/x/tools v0.6.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
-	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gorm.io/gorm v1.24.7-0.20230306060331-85eaf9eeda11 // indirect
 	lukechampine.com/blake3 v1.1.7 // indirect
 )
