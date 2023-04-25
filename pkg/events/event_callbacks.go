@@ -131,11 +131,17 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string) (*bsky.ActorDe
 
 	cacheMisses.Inc()
 
+	//Lock the client
+	bsky.ClientMux.Lock()
 	// Get the profile from the API
 	profile, err := appbsky.ActorGetProfile(ctx, bsky.Client, did)
+	// Unlock the client
+	bsky.ClientMux.Unlock()
 	if err != nil {
+
 		return nil, err
 	}
+	// Unlock the client
 
 	if profile == nil {
 		return nil, fmt.Errorf("profile not found for: %s", did)
@@ -248,13 +254,9 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 					return nil
 				}
 
-				// Lock the client
-				bsky.ClientMux.Lock()
-
 				authorProfile, err := bsky.ResolveProfile(ctx, evt.Repo)
 				if err != nil {
 					log.Printf("error getting profile for %s: %+v\n", evt.Repo, err)
-					bsky.ClientMux.Unlock()
 					return nil
 				}
 
@@ -267,7 +269,6 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				t, err := time.Parse(time.RFC3339, evt.Time)
 				if err != nil {
 					log.Printf("error parsing time: %+v\n", err)
-					bsky.ClientMux.Unlock()
 					return nil
 				}
 
@@ -276,7 +277,10 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				replyingTo := ""
 				replyingToDID := ""
 				if pst.Reply != nil && pst.Reply.Parent != nil {
+					// Lock the client
+					bsky.ClientMux.Lock()
 					thread, err := appbsky.FeedGetPostThread(ctx, bsky.Client, 2, pst.Reply.Parent.Uri)
+					bsky.ClientMux.Unlock()
 					if err != nil {
 						log.Printf("error getting thread for %s: %s\n", pst.Reply.Parent.Cid, err)
 					} else {
@@ -290,8 +294,6 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 						}
 					}
 				}
-
-				bsky.ClientMux.Unlock()
 
 				// Track reply counts
 				if replyingTo != "" && replyingToDID != "" {
