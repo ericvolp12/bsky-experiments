@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	_ "net/http/pprof"
@@ -32,7 +35,9 @@ func main() {
 	// Replace with the WebSocket URL you want to connect to.
 	u := url.URL{Scheme: "wss", Host: "bsky.social", Path: "/xrpc/com.atproto.sync.subscribeRepos"}
 
-	bsky, err := intEvents.NewBSky(ctx)
+	includeLinks := os.Getenv("INCLUDE_LINKS") == "true"
+
+	bsky, err := intEvents.NewBSky(ctx, includeLinks)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -105,6 +110,27 @@ func main() {
 
 	// Server for pprof and prometheus via promhttp
 	go func() {
+		// Create a handler to write out the plaintext graph
+		http.HandleFunc("/graph", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Printf("\u001b[90m[%s]\u001b[32m writing graph to HTTP Response...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+			bsky.SocialGraphMux.Lock()
+			defer bsky.SocialGraphMux.Unlock()
+
+			w.Header().Set("Content-Type", "text/plain")
+			w.Header().Set("Content-Disposition", "attachment; filename=social-graph.txt")
+			w.Header().Set("Content-Transfer-Encoding", "binary")
+			w.Header().Set("Expires", "0")
+			w.Header().Set("Cache-Control", "must-revalidate")
+			w.Header().Set("Pragma", "public")
+
+			err := bsky.SocialGraph.Write(w)
+			if err != nil {
+				log.Printf("error writing graph: %s", err)
+			} else {
+				fmt.Printf("\u001b[90m[%s]\u001b[32m graph written to HTTP Response successfully\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+			}
+		})
+
 		http.Handle("/metrics", promhttp.Handler())
 		fmt.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
@@ -116,7 +142,21 @@ func main() {
 	})
 }
 
-func graphTracker(bsky *intEvents.BSky, binReaderWriter *graph.BinaryGraphReaderWriter, mentionFile, replyFile, graphFile string) {
+func getHalfHourFileName(baseName string) string {
+	now := time.Now()
+	min := now.Minute()
+	halfHourSuffix := "00"
+	if min >= 30 {
+		halfHourSuffix = "30"
+	}
+
+	fileExt := filepath.Ext(baseName)
+	fileName := strings.TrimSuffix(baseName, fileExt)
+
+	return fmt.Sprintf("%s-%s_%s%s", fileName, now.Format("2006_01_02_15"), halfHourSuffix, fileExt)
+}
+
+func graphTracker(bsky *intEvents.BSky, binReaderWriter *graph.BinaryGraphReaderWriter, mentionFile, replyFile, graphFileFromEnv string) {
 	fmt.Printf("\u001b[90m[%s]\u001b[32m writing mention counts to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
 
 	// Acquire locks on the data structures we're reading from
@@ -135,20 +175,58 @@ func graphTracker(bsky *intEvents.BSky, binReaderWriter *graph.BinaryGraphReader
 
 	fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to plaintext file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
 
-	err := bsky.SocialGraph.WriteGraph(graphFile)
+	timestampedGraphFilePath := getHalfHourFileName(graphFileFromEnv)
+
+	err := bsky.SocialGraph.WriteGraph(timestampedGraphFilePath)
 	if err != nil {
 		log.Printf("error writing social graph to plaintext file: %s", err)
 	}
 
-	fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to binary file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
-	binGraphFile := os.Getenv("BINARY_GRAPH_FILE")
-	if binGraphFile == "" {
-		binGraphFile = "social-graph.bin"
+	err = copyFile(timestampedGraphFilePath, graphFileFromEnv)
+	if err != nil {
+		log.Printf("error copying binary file: %s", err)
 	}
-	err = binReaderWriter.WriteGraph(bsky.SocialGraph, binGraphFile)
+
+	fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to binary file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+	// Append a timestmap to the filename with 30-minute precision
+
+	binFileFromEnv := os.Getenv("BINARY_GRAPH_FILE")
+	if binFileFromEnv == "" {
+		binFileFromEnv = "social-graph.bin"
+	}
+
+	timestampedBinFilePath := getHalfHourFileName(binFileFromEnv)
+
+	err = binReaderWriter.WriteGraph(bsky.SocialGraph, timestampedBinFilePath)
 	if err != nil {
 		log.Printf("error writing social graph to binary file: %s", err)
 	}
+
+	err = copyFile(timestampedBinFilePath, binFileFromEnv)
+	if err != nil {
+		log.Printf("error copying binary file: %s", err)
+	}
+}
+
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destinationFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destinationFile.Close()
+
+	_, err = io.Copy(destinationFile, sourceFile)
+	if err != nil {
+		return err
+	}
+
+	return destinationFile.Sync()
 }
 
 func writeCountsToFile(counters map[string]int, filename, label string) {

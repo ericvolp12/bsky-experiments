@@ -71,6 +71,8 @@ type BSky struct {
 	Client    *xrpc.Client
 	ClientMux sync.Mutex
 
+	IncludeLinks bool
+
 	MentionCounterMap    map[string]int
 	MentionCounterMapMux sync.Mutex
 
@@ -87,7 +89,7 @@ type BSky struct {
 
 // NewBSky creates a new BSky struct with an authenticated XRPC client
 // and a social graph, initializing mutexes for cross-routine access
-func NewBSky(ctx context.Context) (*BSky, error) {
+func NewBSky(ctx context.Context, includeLinks bool) (*BSky, error) {
 	client, err := intXRPC.GetXRPCClient(ctx)
 	if err != nil {
 		return nil, err
@@ -96,6 +98,8 @@ func NewBSky(ctx context.Context) (*BSky, error) {
 	return &BSky{
 		Client:    client,
 		ClientMux: sync.Mutex{},
+
+		IncludeLinks: includeLinks,
 
 		MentionCounterMap:    make(map[string]int),
 		MentionCounterMapMux: sync.Mutex{},
@@ -327,33 +331,40 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 
 				postLink := fmt.Sprintf("https://staging.bsky.app/profile/%s/post/%s", authorProfile.Handle, postID)
 
+				logMsg := ""
+
 				// Print the content of the post and any mentions or links
 				if pst.LexiconTypeID == "app.bsky.feed.post" {
 					// Print a Timestamp
-					fmt.Printf("\u001b[90m[\x1b]8;;%s\x07%s\x1b]8;;\x07]\u001b[0m", postLink, t.Local().Format("02.01.06 15:04:05"))
+					if bsky.IncludeLinks {
+						logMsg += fmt.Sprintf("\u001b[90m[\x1b]8;;%s\x07%s\x1b]8;;\x07]\u001b[0m", postLink, t.Local().Format("02.01.06 15:04:05"))
+					} else {
+						logMsg += fmt.Sprintf("\u001b[90m%s\u001b[0m", t.Local().Format("02.01.06 15:04:05"))
+					}
 
 					// Print the user and who they are replying to if they are
-					fmt.Printf(" %s", authorProfile.Handle)
+					logMsg += fmt.Sprintf(" %s", authorProfile.Handle)
 					if replyingTo != "" {
-						fmt.Printf(" \u001b[90m->\u001b[0m %s", replyingTo)
+						logMsg += fmt.Sprintf(" \u001b[90m->\u001b[0m %s", replyingTo)
 					}
 
 					// Print the Post Body
-					fmt.Printf(": \n\t%s\n", postBody)
+					logMsg += fmt.Sprintf(": \n\t%s\n", postBody)
 
 					// Print any Mentions or Links
 					if len(mentions) > 0 {
-						fmt.Printf("\tMentions: %s\n", mentions)
+						logMsg += fmt.Sprintf("\tMentions: %s\n", mentions)
 					}
 					if len(links) > 0 {
-						fmt.Printf("\tLinks: %s\n", links)
+						logMsg += fmt.Sprintf("\tLinks: %s\n", links)
 					}
+
+					fmt.Printf("%s", logMsg)
+
+					// Record the time to process and the count
+					postsProcessedCounter.Inc()
+					postProcessingDurationHistogram.Observe(time.Since(start).Seconds())
 				}
-
-				// Record the time to process and the count
-				postsProcessedCounter.Inc()
-				postProcessingDurationHistogram.Observe(time.Since(start).Seconds())
-
 			case repomgr.EvtKindDeleteRecord:
 				// if err := cb(ek, evt.Seq, op.Path, evt.Repo, nil, nil); err != nil {
 				// 	return err

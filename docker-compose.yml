@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  bsky-graph-builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bsky-graph-builder
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://10.0.6.7:3100/loki/api/v1/push"
+    container_name: bsky-graph-builder
+    env_file:
+      - .env
+    ports:
+      - "6060:6060"
+    volumes:
+      - type: bind
+        source: ./data/
+        target: /app/data/
+      - type: bind
+        source: ./.env
+        target: /app/.env

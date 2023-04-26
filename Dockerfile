@@ -18,6 +18,6 @@ FROM debian:stable-slim
 
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /app/mention-counter .
+COPY --from=builder /app/graph-builder .
 
-CMD ["./mention-counter"]
+CMD ["./graph-builder"]

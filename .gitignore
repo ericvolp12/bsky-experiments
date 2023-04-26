@@ -1,7 +1,3 @@
-data/mention-counts.txt
-data/reply-counts.txt
-data/social-graph.bin
-data/social-graph.txt
+data/
 .env
-
 node_modules/

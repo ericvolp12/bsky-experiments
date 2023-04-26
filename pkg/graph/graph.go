@@ -15,6 +15,7 @@ package graph
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -107,6 +108,20 @@ func (g *Graph) IncrementEdge(from, to Node, weight int) {
 	g.Nodes[to.DID] = to
 }
 
+// Write exports the graph structure to a Golang Writer interface
+// The method takes a Writer interface as an argument and writes the graph data to the writer.
+// Each line of the writer contains the source node, destination node, and weight of an edge.
+func (g *Graph) Write(writer io.Writer) error {
+	for from, edges := range g.Edges {
+		fromNode := g.Nodes[from]
+		for to, weight := range edges {
+			toNode := g.Nodes[to]
+			fmt.Fprintf(writer, "%s %s %s %s %d\n", fromNode.DID, fromNode.Handle, toNode.DID, toNode.Handle, weight)
+		}
+	}
+	return nil
+}
+
 // WriteGraph exports the graph structure to a file with the given filename.
 // The method takes a string filename as an argument and writes the graph data to the file.
 // Each line of the file contains the source node, destination node, and weight of an edge.
@@ -118,14 +133,18 @@ func (g *Graph) WriteGraph(filename string) error {
 	defer file.Close()
 
 	writer := bufio.NewWriter(file)
-	for from, edges := range g.Edges {
-		fromNode := g.Nodes[from]
-		for to, weight := range edges {
-			toNode := g.Nodes[to]
-			fmt.Fprintf(writer, "%s %s %s %s %d\n", fromNode.DID, fromNode.Handle, toNode.DID, toNode.Handle, weight)
-		}
+
+	err = g.Write(writer)
+	if err != nil {
+		return fmt.Errorf("error writing graph: %w", err)
 	}
-	return writer.Flush()
+
+	err = writer.Flush()
+	if err != nil {
+		return fmt.Errorf("error flushing writer: %w", err)
+	}
+
+	return nil
 }
 
 // ReadGraph reads a graph structure from a file with the given filename.

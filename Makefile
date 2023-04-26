@@ -1,8 +1,8 @@
 # Makefile for Go project
 
 # Variables
-DOCKER_IMAGE_NAME = bsky-mention-counts
-DOCKER_CONTAINER_NAME = bsky-mention-counts
+DOCKER_IMAGE_NAME = bsky-graph-builder
+DOCKER_CONTAINER_NAME = bsky-graph-builder
 DOCKERFILE = Dockerfile
 LOCAL_DATA_DIR = data/
 DOCKER_MOUNT_PATH = /app/data/
@@ -12,7 +12,7 @@ GO_CMD = CGO_ENABLED=1 GOOS=linux go
 # Build the Go binary
 build:
 	@echo "Building Go binary..."
-	$(GO_CMD) build -race -o mention-counter cmd/mention-counter/*.go
+	$(GO_CMD) build -race -o graph-builder cmd/graph-builder/*.go
 
 clean:
 	@echo "Cleaning Go binary..."
