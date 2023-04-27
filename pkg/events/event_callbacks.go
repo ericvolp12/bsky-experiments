@@ -391,30 +391,16 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				// Record the time to process and the count
 				postsProcessedCounter.Inc()
 				postProcessingDurationHistogram.Observe(time.Since(start).Seconds())
-
-			case repomgr.EvtKindDeleteRecord:
-				// if err := cb(ek, evt.Seq, op.Path, evt.Repo, nil, nil); err != nil {
-				// 	return err
-				// }
 			}
 		}
-
 	}
-
 	return nil
 }
 
 func HandleRepoInfo(info *comatproto.SyncSubscribeRepos_Info) error {
-
-	b, err := json.Marshal(info)
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(b))
-
 	return nil
 }
 
 func HandleError(errf *events.ErrorFrame) error {
-	return fmt.Errorf("error frame: %s: %s", errf.Error, errf.Message)
+	return nil
 }

@@ -57,8 +57,20 @@ func (rw *SQLiteReaderWriter) WriteGraph(g Graph) error {
 	}
 	defer tx.Rollback()
 
+	nodeStmt, err := tx.Prepare("INSERT OR REPLACE INTO nodes (id, handle) VALUES (?, ?)")
+	if err != nil {
+		return err
+	}
+	defer nodeStmt.Close()
+
+	edgeStmt, err := tx.Prepare("INSERT OR REPLACE INTO edges (from_id, to_id, weight) VALUES (?, ?, ?)")
+	if err != nil {
+		return err
+	}
+	defer edgeStmt.Close()
+
 	for _, node := range g.Nodes {
-		_, err := tx.Exec("INSERT OR REPLACE INTO nodes (id, handle) VALUES (?, ?)", node.DID, node.Handle)
+		_, err := nodeStmt.Exec(node.DID, node.Handle)
 		if err != nil {
 			return err
 		}
@@ -66,7 +78,7 @@ func (rw *SQLiteReaderWriter) WriteGraph(g Graph) error {
 
 	for from, edges := range g.Edges {
 		for to, weight := range edges {
-			_, err := tx.Exec("INSERT OR REPLACE INTO edges (from_id, to_id, weight) VALUES (?, ?, ?)", from, to, weight)
+			_, err := edgeStmt.Exec(from, to, weight)
 			if err != nil {
 				return err
 			}

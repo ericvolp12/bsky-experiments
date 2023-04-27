@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -35,40 +36,12 @@ type Count struct {
 	Count  int
 }
 
+const (
+	maxBackoff       = 15 * time.Minute
+	maxBackoffFactor = 2
+)
+
 var tracer trace.Tracer
-
-func installExportPipeline(ctx context.Context) (func(context.Context) error, error) {
-	client := otlptracehttp.NewClient()
-	exporter, err := otlptrace.New(ctx, client)
-	if err != nil {
-		return nil, fmt.Errorf("creating OTLP trace exporter: %w", err)
-	}
-
-	tracerProvider := newTraceProvider(exporter)
-	otel.SetTracerProvider(tracerProvider)
-
-	return tracerProvider.Shutdown, nil
-}
-
-func newTraceProvider(exp sdktrace.SpanExporter) *sdktrace.TracerProvider {
-	// Ensure default SDK resources and the required service name are set.
-	r, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName("BSkyGraphBuilder"),
-		),
-	)
-
-	if err != nil {
-		panic(err)
-	}
-
-	return sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exp),
-		sdktrace.WithResource(r),
-	)
-}
 
 func main() {
 	ctx := context.Background()
@@ -196,11 +169,15 @@ func main() {
 
 	// Run a routine that handles the events from the WebSocket
 	log.Println("starting event handler routine...")
-	events.HandleRepoStream(ctx, c, &events.RepoStreamCallbacks{
+	err = handleRepoStreamWithRetry(ctx, c, &events.RepoStreamCallbacks{
 		RepoCommit: bsky.HandleRepoCommit,
 		RepoInfo:   intEvents.HandleRepoInfo,
 		Error:      intEvents.HandleError,
 	})
+
+	if err != nil {
+		log.Printf("Error: %v\n", err)
+	}
 
 	log.Println("waiting for routines to finish...")
 	close(quit)
@@ -267,4 +244,69 @@ func copyFile(src, dst string) error {
 	}
 
 	return destinationFile.Sync()
+}
+
+func installExportPipeline(ctx context.Context) (func(context.Context) error, error) {
+	client := otlptracehttp.NewClient()
+	exporter, err := otlptrace.New(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("creating OTLP trace exporter: %w", err)
+	}
+
+	tracerProvider := newTraceProvider(exporter)
+	otel.SetTracerProvider(tracerProvider)
+
+	return tracerProvider.Shutdown, nil
+}
+
+func newTraceProvider(exp sdktrace.SpanExporter) *sdktrace.TracerProvider {
+	// Ensure default SDK resources and the required service name are set.
+	r, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName("BSkyGraphBuilder"),
+		),
+	)
+
+	if err != nil {
+		panic(err)
+	}
+
+	return sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithResource(r),
+	)
+}
+
+func getNextBackoff(currentBackoff time.Duration) time.Duration {
+	if currentBackoff == 0 {
+		return time.Second
+	}
+
+	return time.Duration(rand.Int63n(int64(maxBackoffFactor * currentBackoff)))
+}
+
+func handleRepoStreamWithRetry(ctx context.Context, c *websocket.Conn, callbacks *events.RepoStreamCallbacks) error {
+	var backoff time.Duration
+
+	for {
+		err := events.HandleRepoStream(ctx, c, callbacks)
+		if err != nil {
+			log.Printf("Error in event handler routine: %v\n", err)
+			backoff = getNextBackoff(backoff)
+			if backoff > maxBackoff {
+				return fmt.Errorf("maximum backoff of %v reached, giving up", maxBackoff)
+			}
+
+			select {
+			case <-time.After(backoff):
+				log.Printf("Reconnecting after %v...\n", backoff)
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		} else {
+			return nil
+		}
+	}
 }
