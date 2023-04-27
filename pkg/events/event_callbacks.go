@@ -22,6 +22,8 @@ import (
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // Initialize Prometheus Metrics for cache hits and misses
@@ -106,28 +108,41 @@ func NewBSky(ctx context.Context, includeLinks bool) (*BSky, error) {
 
 // RefreshAuthToken refreshes the auth token for the client
 func (bsky *BSky) RefreshAuthToken(ctx context.Context) error {
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "RefreshAuthToken")
+	defer span.End()
+	span.AddEvent("RefreshAuthToken:AcquireClientLock")
 	bsky.ClientMux.Lock()
-	defer bsky.ClientMux.Unlock()
-	return intXRPC.RefreshAuth(ctx, bsky.Client)
+	err := intXRPC.RefreshAuth(ctx, bsky.Client)
+	span.AddEvent("RefreshAuthToken:ReleaseClientLock")
+	bsky.ClientMux.Unlock()
+	return err
 }
 
 // ResolveProfile resolves a profile from a DID using the cache or the API
 func (bsky *BSky) ResolveProfile(ctx context.Context, did string) (*bsky.ActorDefs_ProfileViewDetailed, error) {
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "ResolveProfile")
+	defer span.End()
 	// Check the cache first
 	if entry, ok := bsky.profileCache[did]; ok {
 		if entry.Expire.After(time.Now()) {
 			cacheHits.Inc()
+			span.SetAttributes(attribute.Bool("cache_hit", true))
 			return entry.Profile, nil
 		}
 	}
 
+	span.SetAttributes(attribute.Bool("cache_hit", false))
 	cacheMisses.Inc()
 
 	//Lock the client
+	span.AddEvent("ResolveProfile:AcquireClientLock")
 	bsky.ClientMux.Lock()
 	// Get the profile from the API
 	profile, err := appbsky.ActorGetProfile(ctx, bsky.Client, did)
 	// Unlock the client
+	span.AddEvent("ResolveProfile:ReleaseClientLock")
 	bsky.ClientMux.Unlock()
 	if err != nil {
 
@@ -136,8 +151,11 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string) (*bsky.ActorDe
 	// Unlock the client
 
 	if profile == nil {
+		span.SetAttributes(attribute.Bool("profile_found", false))
 		return nil, fmt.Errorf("profile not found for: %s", did)
 	}
+
+	span.SetAttributes(attribute.Bool("profile_found", true))
 
 	// Cache the profile
 	bsky.profileCache[did] = ProfileCacheEntry{
@@ -150,11 +168,18 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string) (*bsky.ActorDe
 
 // DecodeFacets decodes the facets of a richtext record into mentions and links
 func (bsky *BSky) DecodeFacets(ctx context.Context, authorDID string, authorHandle string, facets []*appbsky.RichtextFacet) ([]string, []string, error) {
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "DecodeFacets")
+	defer span.End()
+	span.SetAttributes(attribute.Int("num_facets", len(facets)))
+
 	mentions := []string{}
 	links := []string{}
 	// Lock the graph
+	span.AddEvent("DecodeFacets:AcquireGraphLock")
 	bsky.SocialGraphMux.Lock()
-	defer bsky.SocialGraphMux.Unlock()
+
+	failedLookups := 0
 
 	for _, facet := range facets {
 		if facet.Features != nil {
@@ -167,6 +192,7 @@ func (bsky *BSky) DecodeFacets(ctx context.Context, authorDID string, authorHand
 						if err != nil {
 							log.Printf("error getting profile for %s: %s", feature.RichtextFacet_Mention.Did, err)
 							mentions = append(mentions, fmt.Sprintf("[failed-lookup]@%s", feature.RichtextFacet_Mention.Did))
+							failedLookups++
 							continue
 						}
 						mentions = append(mentions, fmt.Sprintf("@%s", mentionedUser.Handle))
@@ -190,6 +216,14 @@ func (bsky *BSky) DecodeFacets(ctx context.Context, authorDID string, authorHand
 		}
 	}
 
+	span.AddEvent("DecodeFacets:ReleaseGraphLock")
+	bsky.SocialGraphMux.Unlock()
+
+	if failedLookups > 0 {
+		span.SetAttributes(attribute.Int("failed_lookups", failedLookups))
+	}
+	span.SetAttributes(attribute.Int("num_mentions", len(mentions)))
+	span.SetAttributes(attribute.Int("num_links", len(links)))
 	mentionCounter.Add(float64(len(mentions)))
 
 	return mentions, links, nil
@@ -198,6 +232,9 @@ func (bsky *BSky) DecodeFacets(ctx context.Context, authorDID string, authorHand
 // HandleRepoCommit is called when a repo commit is received and prints its contents
 func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) error {
 	ctx := context.Background()
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "HandleRepoCommit")
+	defer span.End()
 	rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
 	if err != nil {
 		fmt.Println(err)
@@ -207,7 +244,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 			switch ek {
 			case repomgr.EvtKindCreateRecord, repomgr.EvtKindUpdateRecord:
 				start := time.Now()
-
+				span.AddEvent("HandleRepoCommit:GetRecord")
 				rc, rec, err := rr.GetRecord(ctx, op.Path)
 				if err != nil {
 					e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
@@ -242,12 +279,17 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 					return nil
 				}
 
+				span.AddEvent("HandleRepoCommit:ResolveProfile")
 				authorProfile, err := bsky.ResolveProfile(ctx, evt.Repo)
 				if err != nil {
 					log.Printf("error getting profile for %s: %+v\n", evt.Repo, err)
 					return nil
 				}
 
+				span.SetAttributes(attribute.String("author_did", authorProfile.Did))
+				span.SetAttributes(attribute.String("author_handle", authorProfile.Handle))
+
+				span.AddEvent("HandleRepoCommit:DecodeFacets")
 				mentions, links, err := bsky.DecodeFacets(ctx, authorProfile.Did, authorProfile.Handle, pst.Facets)
 				if err != nil {
 					log.Printf("error decoding post facets: %+v\n", err)
@@ -266,8 +308,11 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				replyingToDID := ""
 				if pst.Reply != nil && pst.Reply.Parent != nil {
 					// Lock the client
+					span.AddEvent("HandleRepoCommit:AcquireClientLock")
 					bsky.ClientMux.Lock()
+					span.AddEvent("HandleRepoCommit:GetPostThread")
 					thread, err := appbsky.FeedGetPostThread(ctx, bsky.Client, 2, pst.Reply.Parent.Uri)
+					span.AddEvent("HandleRepoCommit:ReleaseClientLock")
 					bsky.ClientMux.Unlock()
 					if err != nil {
 						log.Printf("error getting thread for %s: %s\n", pst.Reply.Parent.Cid, err)
@@ -279,6 +324,8 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 							thread.Thread.FeedDefs_ThreadViewPost.Post.Author != nil {
 							replyingTo = thread.Thread.FeedDefs_ThreadViewPost.Post.Author.Handle
 							replyingToDID = thread.Thread.FeedDefs_ThreadViewPost.Post.Author.Did
+							span.SetAttributes(attribute.String("replying_to", replyingTo))
+							span.SetAttributes(attribute.String("replying_to_did", replyingToDID))
 						}
 					}
 				}
@@ -294,9 +341,10 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 						DID:    graph.NodeID(replyingToDID),
 						Handle: replyingTo,
 					}
-
+					span.AddEvent("HandleRepoCommit:AcquireGraphLock")
 					bsky.SocialGraphMux.Lock()
 					bsky.SocialGraph.IncrementEdge(from, to, 1)
+					span.AddEvent("HandleRepoCommit:ReleaseGraphLock")
 					bsky.SocialGraphMux.Unlock()
 
 					// Increment the reply count metric

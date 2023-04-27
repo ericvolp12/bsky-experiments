@@ -20,6 +20,13 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Count is used for sorting and storing mention counts
@@ -28,14 +35,62 @@ type Count struct {
 	Count  int
 }
 
+var tracer trace.Tracer
+
+func installExportPipeline(ctx context.Context) (func(context.Context) error, error) {
+	client := otlptracehttp.NewClient()
+	exporter, err := otlptrace.New(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("creating OTLP trace exporter: %w", err)
+	}
+
+	tracerProvider := newTraceProvider(exporter)
+	otel.SetTracerProvider(tracerProvider)
+
+	return tracerProvider.Shutdown, nil
+}
+
+func newTraceProvider(exp sdktrace.SpanExporter) *sdktrace.TracerProvider {
+	// Ensure default SDK resources and the required service name are set.
+	r, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName("BSkyGraphBuilder"),
+		),
+	)
+
+	if err != nil {
+		panic(err)
+	}
+
+	return sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithResource(r),
+	)
+}
+
 func main() {
 	ctx := context.Background()
+	log.Println("starting graph builder...")
+	// Registers a tracer Provider globally.
+	log.Println("initializing tracer...")
+	shutdown, err := installExportPipeline(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		if err := shutdown(ctx); err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	// Replace with the WebSocket URL you want to connect to.
 	u := url.URL{Scheme: "wss", Host: "bsky.social", Path: "/xrpc/com.atproto.sync.subscribeRepos"}
 
 	includeLinks := os.Getenv("INCLUDE_LINKS") == "true"
 
+	log.Println("initializing BSky Event Handler...")
 	bsky, err := intEvents.NewBSky(ctx, includeLinks)
 	if err != nil {
 		log.Fatal(err)
@@ -48,13 +103,17 @@ func main() {
 
 	binReaderWriter := graph.BinaryGraphReaderWriter{}
 
+	log.Println("reading social graph from binary file...")
 	resumedGraph, err := binReaderWriter.ReadGraph(graphFile)
 	if err != nil {
 		log.Printf("error reading social graph from binary: %s\n", err)
+		log.Println("creating a new graph for this session...")
 	} else {
+		log.Println("social graph resumed successfully")
 		bsky.SocialGraph = resumedGraph
 	}
 
+	log.Println("connecting to BSky WebSocket...")
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		log.Fatal("dial:", err)
@@ -69,10 +128,12 @@ func main() {
 	// Run a routine that dumps graph data to a file every 30 seconds
 	wg.Add(1)
 	go func() {
+		log.Println("starting graph dump routine...")
+		ctx := context.Background()
 		for {
 			select {
 			case <-graphTicker.C:
-				graphTracker(bsky, &binReaderWriter, graphFile)
+				saveGraph(ctx, bsky, &binReaderWriter, graphFile)
 			case <-quit:
 				graphTicker.Stop()
 				wg.Done()
@@ -86,6 +147,7 @@ func main() {
 	// Run a routine that refreshes the auth token every 10 minutes
 	wg.Add(1)
 	go func() {
+		log.Println("starting auth refresh routine...")
 		for {
 			select {
 			case <-authTicker.C:
@@ -106,6 +168,7 @@ func main() {
 
 	// Server for pprof and prometheus via promhttp
 	go func() {
+		log.Println("starting pprof and prometheus server...")
 		// Create a handler to write out the plaintext graph
 		http.HandleFunc("/graph", func(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("\u001b[90m[%s]\u001b[32m writing graph to HTTP Response...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
@@ -131,14 +194,18 @@ func main() {
 		fmt.Println(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
+	// Run a routine that handles the events from the WebSocket
+	log.Println("starting event handler routine...")
 	events.HandleRepoStream(ctx, c, &events.RepoStreamCallbacks{
 		RepoCommit: bsky.HandleRepoCommit,
 		RepoInfo:   intEvents.HandleRepoInfo,
 		Error:      intEvents.HandleError,
 	})
 
+	log.Println("waiting for routines to finish...")
 	close(quit)
 	wg.Wait()
+	log.Println("routines finished, exiting...")
 }
 
 func getHalfHourFileName(baseName string) string {
@@ -155,10 +222,13 @@ func getHalfHourFileName(baseName string) string {
 	return fmt.Sprintf("%s-%s_%s%s", fileName, now.Format("2006_01_02_15"), halfHourSuffix, fileExt)
 }
 
-func graphTracker(bsky *intEvents.BSky, binReaderWriter *graph.BinaryGraphReaderWriter, graphFileFromEnv string) {
+func saveGraph(ctx context.Context, bsky *intEvents.BSky, binReaderWriter *graph.BinaryGraphReaderWriter, graphFileFromEnv string) {
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "SaveGraph")
+	defer span.End()
 	// Acquire locks on the data structures we're reading from
+	span.AddEvent("saveGraph:AcquireGraphLock")
 	bsky.SocialGraphMux.Lock()
-	defer bsky.SocialGraphMux.Unlock()
 
 	timestampedGraphFilePath := getHalfHourFileName(graphFileFromEnv)
 
@@ -173,6 +243,9 @@ func graphTracker(bsky *intEvents.BSky, binReaderWriter *graph.BinaryGraphReader
 	if err != nil {
 		log.Printf("error copying binary file: %s", err)
 	}
+
+	span.AddEvent("saveGraph:ReleaseGraphLock")
+	bsky.SocialGraphMux.Unlock()
 }
 
 func copyFile(src, dst string) error {

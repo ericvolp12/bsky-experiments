@@ -5,6 +5,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     image: bsky-graph-builder
     logging:
       driver: loki
@@ -22,3 +24,4 @@ services:
       - type: bind
         source: ./.env
         target: /app/.env
+
