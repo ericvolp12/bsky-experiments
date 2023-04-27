@@ -3,8 +3,9 @@ module github.com/ericvolp12/bsky-experiments
 go 1.19
 
 require (
-	github.com/bluesky-social/indigo v0.0.0-20230421215042-8c8248dc2d27
+	github.com/bluesky-social/indigo v0.0.0-20230425215957-9d6296d50061
 	github.com/gorilla/websocket v1.5.0
+	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
 	golang.org/x/time v0.3.0

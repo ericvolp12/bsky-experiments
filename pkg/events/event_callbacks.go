@@ -73,12 +73,6 @@ type BSky struct {
 
 	IncludeLinks bool
 
-	MentionCounterMap    map[string]int
-	MentionCounterMapMux sync.Mutex
-
-	ReplyCounterMap    map[string]int
-	ReplyCounterMapMux sync.Mutex
-
 	SocialGraph    graph.Graph
 	SocialGraphMux sync.Mutex
 
@@ -100,12 +94,6 @@ func NewBSky(ctx context.Context, includeLinks bool) (*BSky, error) {
 		ClientMux: sync.Mutex{},
 
 		IncludeLinks: includeLinks,
-
-		MentionCounterMap:    make(map[string]int),
-		MentionCounterMapMux: sync.Mutex{},
-
-		ReplyCounterMap:    make(map[string]int),
-		ReplyCounterMapMux: sync.Mutex{},
 
 		SocialGraph:    graph.NewGraph(),
 		SocialGraphMux: sync.Mutex{},
@@ -164,9 +152,7 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string) (*bsky.ActorDe
 func (bsky *BSky) DecodeFacets(ctx context.Context, authorDID string, authorHandle string, facets []*appbsky.RichtextFacet) ([]string, []string, error) {
 	mentions := []string{}
 	links := []string{}
-	// Lock the mentions counter
-	bsky.MentionCounterMapMux.Lock()
-	defer bsky.MentionCounterMapMux.Unlock()
+	// Lock the graph
 	bsky.SocialGraphMux.Lock()
 	defer bsky.SocialGraphMux.Unlock()
 
@@ -196,10 +182,8 @@ func (bsky *BSky) DecodeFacets(ctx context.Context, authorDID string, authorHand
 							Handle: mentionedUser.Handle,
 						}
 
+						// Increment the edge in the graph
 						bsky.SocialGraph.IncrementEdge(from, to, 1)
-
-						// Track mention counts
-						bsky.MentionCounterMap[mentionedUser.Handle]++
 					}
 				}
 			}
@@ -299,12 +283,8 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 					}
 				}
 
-				// Track reply counts
+				// Track replies in the social graph
 				if replyingTo != "" && replyingToDID != "" {
-					// Add to the social graph
-					// Lock the Social Graph and Reply Counters
-					bsky.ReplyCounterMapMux.Lock()
-					bsky.SocialGraphMux.Lock()
 					from := graph.Node{
 						DID:    graph.NodeID(authorProfile.Did),
 						Handle: authorProfile.Handle,
@@ -315,13 +295,11 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 						Handle: replyingTo,
 					}
 
+					bsky.SocialGraphMux.Lock()
 					bsky.SocialGraph.IncrementEdge(from, to, 1)
-					bsky.ReplyCounterMap[replyingTo]++
-
-					bsky.ReplyCounterMapMux.Unlock()
 					bsky.SocialGraphMux.Unlock()
 
-					// Increment the reply count
+					// Increment the reply count metric
 					replyCounter.Inc()
 				}
 
@@ -334,37 +312,38 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				logMsg := ""
 
 				// Print the content of the post and any mentions or links
-				if pst.LexiconTypeID == "app.bsky.feed.post" {
-					// Print a Timestamp
-					if bsky.IncludeLinks {
-						logMsg += fmt.Sprintf("\u001b[90m[\x1b]8;;%s\x07%s\x1b]8;;\x07]\u001b[0m", postLink, t.Local().Format("02.01.06 15:04:05"))
-					} else {
-						logMsg += fmt.Sprintf("\u001b[90m%s\u001b[0m", t.Local().Format("02.01.06 15:04:05"))
-					}
 
-					// Print the user and who they are replying to if they are
-					logMsg += fmt.Sprintf(" %s", authorProfile.Handle)
-					if replyingTo != "" {
-						logMsg += fmt.Sprintf(" \u001b[90m->\u001b[0m %s", replyingTo)
-					}
-
-					// Print the Post Body
-					logMsg += fmt.Sprintf(": \n\t%s\n", postBody)
-
-					// Print any Mentions or Links
-					if len(mentions) > 0 {
-						logMsg += fmt.Sprintf("\tMentions: %s\n", mentions)
-					}
-					if len(links) > 0 {
-						logMsg += fmt.Sprintf("\tLinks: %s\n", links)
-					}
-
-					fmt.Printf("%s", logMsg)
-
-					// Record the time to process and the count
-					postsProcessedCounter.Inc()
-					postProcessingDurationHistogram.Observe(time.Since(start).Seconds())
+				// Add a Timestamp with a post link in it if we want one
+				if bsky.IncludeLinks {
+					logMsg += fmt.Sprintf("\u001b[90m[\x1b]8;;%s\x07%s\x1b]8;;\x07]\u001b[0m", postLink, t.Local().Format("02.01.06 15:04:05"))
+				} else {
+					logMsg += fmt.Sprintf("\u001b[90m%s\u001b[0m", t.Local().Format("02.01.06 15:04:05"))
 				}
+
+				// Add the user and who they are replying to if they are
+				logMsg += fmt.Sprintf(" %s", authorProfile.Handle)
+				if replyingTo != "" {
+					logMsg += fmt.Sprintf(" \u001b[90m->\u001b[0m %s", replyingTo)
+				}
+
+				// Add the Post Body
+				logMsg += fmt.Sprintf(": \n\t%s\n", postBody)
+
+				// Add any Mentions or Links
+				if len(mentions) > 0 {
+					logMsg += fmt.Sprintf("\tMentions: %s\n", mentions)
+				}
+				if len(links) > 0 {
+					logMsg += fmt.Sprintf("\tLinks: %s\n", links)
+				}
+
+				// Print the log message
+				fmt.Printf("%s", logMsg)
+
+				// Record the time to process and the count
+				postsProcessedCounter.Inc()
+				postProcessingDurationHistogram.Observe(time.Since(start).Seconds())
+
 			case repomgr.EvtKindDeleteRecord:
 				// if err := cb(ek, evt.Seq, op.Path, evt.Repo, nil, nil); err != nil {
 				// 	return err

@@ -4,14 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	_ "net/http/pprof"
@@ -42,24 +41,16 @@ func main() {
 		log.Fatal(err)
 	}
 
-	mentionFile := os.Getenv("MENTIONS_FILE")
-	if mentionFile == "" {
-		mentionFile = "mention-counts.txt"
-	}
-
-	replyFile := os.Getenv("REPLY_FILE")
-	if replyFile == "" {
-		replyFile = "reply-counts.txt"
-	}
-
-	graphFile := os.Getenv("GRAPH_FILE")
+	graphFile := os.Getenv("BINARY_GRAPH_FILE")
 	if graphFile == "" {
-		graphFile = "social-graph.txt"
+		graphFile = "social-graph.bin"
 	}
 
-	resumedGraph, err := graph.ReadGraph(graphFile)
+	binReaderWriter := graph.BinaryGraphReaderWriter{}
+
+	resumedGraph, err := binReaderWriter.ReadGraph(graphFile)
 	if err != nil {
-		log.Printf("error reading social graph: %s\n", err)
+		log.Printf("error reading social graph from binary: %s\n", err)
 	} else {
 		bsky.SocialGraph = resumedGraph
 	}
@@ -73,15 +64,18 @@ func main() {
 	graphTicker := time.NewTicker(30 * time.Second)
 	quit := make(chan struct{})
 
+	wg := &sync.WaitGroup{}
+
 	// Run a routine that dumps graph data to a file every 30 seconds
+	wg.Add(1)
 	go func() {
-		binReaderWriter := graph.BinaryGraphReaderWriter{}
 		for {
 			select {
 			case <-graphTicker.C:
-				graphTracker(bsky, &binReaderWriter, mentionFile, replyFile, graphFile)
+				graphTracker(bsky, &binReaderWriter, graphFile)
 			case <-quit:
 				graphTicker.Stop()
+				wg.Done()
 				return
 			}
 		}
@@ -90,6 +84,7 @@ func main() {
 	authTicker := time.NewTicker(10 * time.Minute)
 
 	// Run a routine that refreshes the auth token every 10 minutes
+	wg.Add(1)
 	go func() {
 		for {
 			select {
@@ -103,6 +98,7 @@ func main() {
 				}
 			case <-quit:
 				authTicker.Stop()
+				wg.Done()
 				return
 			}
 		}
@@ -140,6 +136,9 @@ func main() {
 		RepoInfo:   intEvents.HandleRepoInfo,
 		Error:      intEvents.HandleError,
 	})
+
+	close(quit)
+	wg.Wait()
 }
 
 func getHalfHourFileName(baseName string) string {
@@ -156,53 +155,21 @@ func getHalfHourFileName(baseName string) string {
 	return fmt.Sprintf("%s-%s_%s%s", fileName, now.Format("2006_01_02_15"), halfHourSuffix, fileExt)
 }
 
-func graphTracker(bsky *intEvents.BSky, binReaderWriter *graph.BinaryGraphReaderWriter, mentionFile, replyFile, graphFileFromEnv string) {
-	fmt.Printf("\u001b[90m[%s]\u001b[32m writing mention counts to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
-
+func graphTracker(bsky *intEvents.BSky, binReaderWriter *graph.BinaryGraphReaderWriter, graphFileFromEnv string) {
 	// Acquire locks on the data structures we're reading from
 	bsky.SocialGraphMux.Lock()
 	defer bsky.SocialGraphMux.Unlock()
-	bsky.MentionCounterMapMux.Lock()
-	defer bsky.MentionCounterMapMux.Unlock()
-	bsky.ReplyCounterMapMux.Lock()
-	defer bsky.ReplyCounterMapMux.Unlock()
-
-	writeCountsToFile(bsky.MentionCounterMap, mentionFile, "mention")
-
-	fmt.Printf("\u001b[90m[%s]\u001b[32m writing reply counts to file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
-
-	writeCountsToFile(bsky.ReplyCounterMap, replyFile, "reply")
-
-	fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to plaintext file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
 
 	timestampedGraphFilePath := getHalfHourFileName(graphFileFromEnv)
 
-	err := bsky.SocialGraph.WriteGraph(timestampedGraphFilePath)
-	if err != nil {
-		log.Printf("error writing social graph to plaintext file: %s", err)
-	}
-
-	err = copyFile(timestampedGraphFilePath, graphFileFromEnv)
-	if err != nil {
-		log.Printf("error copying binary file: %s", err)
-	}
-
 	fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to binary file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
-	// Append a timestmap to the filename with 30-minute precision
 
-	binFileFromEnv := os.Getenv("BINARY_GRAPH_FILE")
-	if binFileFromEnv == "" {
-		binFileFromEnv = "social-graph.bin"
-	}
-
-	timestampedBinFilePath := getHalfHourFileName(binFileFromEnv)
-
-	err = binReaderWriter.WriteGraph(bsky.SocialGraph, timestampedBinFilePath)
+	err := binReaderWriter.WriteGraph(bsky.SocialGraph, timestampedGraphFilePath)
 	if err != nil {
 		log.Printf("error writing social graph to binary file: %s", err)
 	}
 
-	err = copyFile(timestampedBinFilePath, binFileFromEnv)
+	err = copyFile(timestampedGraphFilePath, graphFileFromEnv)
 	if err != nil {
 		log.Printf("error copying binary file: %s", err)
 	}
@@ -227,27 +194,4 @@ func copyFile(src, dst string) error {
 	}
 
 	return destinationFile.Sync()
-}
-
-func writeCountsToFile(counters map[string]int, filename, label string) {
-	contents := ""
-
-	// Sort counts by value, descending
-	sortedCounts := []Count{}
-	for k, v := range counters {
-		sortedCounts = append(sortedCounts, Count{k, v})
-	}
-
-	sort.Slice(sortedCounts, func(i, j int) bool {
-		return sortedCounts[i].Count > sortedCounts[j].Count
-	})
-
-	for _, count := range sortedCounts {
-		contents += fmt.Sprintf("%s: %d\n", count.Handle, count.Count)
-	}
-
-	err := ioutil.WriteFile(filename, []byte(contents), 0644)
-	if err != nil {
-		fmt.Printf("error writing %s counts to file: %s", label, err)
-	}
 }
