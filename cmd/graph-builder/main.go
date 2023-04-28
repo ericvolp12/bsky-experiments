@@ -284,7 +284,7 @@ func getNextBackoff(currentBackoff time.Duration) time.Duration {
 		return time.Second
 	}
 
-	return time.Duration(rand.Int63n(int64(maxBackoffFactor * currentBackoff)))
+	return currentBackoff + time.Duration(rand.Int63n(int64(maxBackoffFactor*currentBackoff)))
 }
 
 func handleRepoStreamWithRetry(ctx context.Context, c *websocket.Conn, callbacks *events.RepoStreamCallbacks) error {
