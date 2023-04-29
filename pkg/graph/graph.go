@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 )
 
 // NodeID is a string type representing a unique identifier for a node in the graph.
@@ -43,9 +44,10 @@ type Edge struct {
 // Edges are stored in a nested map, with NodeID keys for the source node and a second
 // map with NodeID keys for the destination node and integer values for the weights.
 type Graph struct {
-	Nodes  map[NodeID]Node
-	Edges  map[NodeID]map[NodeID]int
-	NextID NodeID
+	Nodes      map[NodeID]Node
+	Edges      map[NodeID]map[NodeID]int
+	LastUpdate time.Time
+	NextID     NodeID
 }
 
 // ReaderWriter is an interface for reading and writing graph structures to and from files.
@@ -69,6 +71,7 @@ func NewGraph() Graph {
 // The method takes a NodeID as an argument and inserts it into the Nodes map.
 func (g *Graph) AddNode(node Node) {
 	g.Nodes[node.DID] = node
+	g.LastUpdate = time.Now()
 }
 
 // AddEdge adds a directed edge between two nodes in the graph with the specified weight.
@@ -81,6 +84,7 @@ func (g *Graph) AddEdge(from, to Node, weight int) {
 	g.Edges[from.DID][to.DID] = weight
 	g.Nodes[from.DID] = from
 	g.Nodes[to.DID] = to
+	g.LastUpdate = time.Now()
 }
 
 // GetNodeCount returns the number of nodes in the graph.
@@ -106,6 +110,7 @@ func (g *Graph) IncrementEdge(from, to Node, weight int) {
 	g.Edges[from.DID][to.DID] += weight
 	g.Nodes[from.DID] = from
 	g.Nodes[to.DID] = to
+	g.LastUpdate = time.Now()
 }
 
 // Write exports the graph structure to a Golang Writer interface
@@ -175,6 +180,8 @@ func ReadGraph(filename string) (Graph, error) {
 	if err := scanner.Err(); err != nil {
 		return Graph{}, err
 	}
+
+	g.LastUpdate = time.Now()
 
 	return g, nil
 }

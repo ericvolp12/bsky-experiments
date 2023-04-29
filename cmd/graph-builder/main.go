@@ -86,13 +86,6 @@ func main() {
 		bsky.SocialGraph = resumedGraph
 	}
 
-	log.Println("connecting to BSky WebSocket...")
-	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
-	if err != nil {
-		log.Fatal("dial:", err)
-	}
-	defer c.Close()
-
 	graphTicker := time.NewTicker(30 * time.Second)
 	quit := make(chan struct{})
 
@@ -169,7 +162,7 @@ func main() {
 
 	// Run a routine that handles the events from the WebSocket
 	log.Println("starting event handler routine...")
-	err = handleRepoStreamWithRetry(ctx, c, &events.RepoStreamCallbacks{
+	err = handleRepoStreamWithRetry(ctx, u, &events.RepoStreamCallbacks{
 		RepoCommit: bsky.HandleRepoCommit,
 		RepoInfo:   intEvents.HandleRepoInfo,
 		Error:      intEvents.HandleError,
@@ -209,7 +202,10 @@ func saveGraph(ctx context.Context, bsky *intEvents.BSky, binReaderWriter *graph
 
 	timestampedGraphFilePath := getHalfHourFileName(graphFileFromEnv)
 
-	fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to binary file...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+	fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to binary file, last updated: %s\u001b[0m\n",
+		time.Now().Format("02.01.06 15:04:05"),
+		bsky.SocialGraph.LastUpdate.Format("02.01.06 15:04:05"),
+	)
 
 	err := binReaderWriter.WriteGraph(bsky.SocialGraph, timestampedGraphFilePath)
 	if err != nil {
@@ -287,11 +283,18 @@ func getNextBackoff(currentBackoff time.Duration) time.Duration {
 	return currentBackoff + time.Duration(rand.Int63n(int64(maxBackoffFactor*currentBackoff)))
 }
 
-func handleRepoStreamWithRetry(ctx context.Context, c *websocket.Conn, callbacks *events.RepoStreamCallbacks) error {
+func handleRepoStreamWithRetry(ctx context.Context, u url.URL, callbacks *events.RepoStreamCallbacks) error {
 	var backoff time.Duration
 
 	for {
-		err := events.HandleRepoStream(ctx, c, callbacks)
+		log.Println("connecting to BSky WebSocket...")
+		c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+		if err != nil {
+			log.Printf("failed to connect to websocket: %v", err)
+		}
+		defer c.Close()
+
+		err = events.HandleRepoStream(ctx, c, callbacks)
 		if err != nil {
 			log.Printf("Error in event handler routine: %v\n", err)
 			backoff = getNextBackoff(backoff)

@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/api/bsky"
@@ -27,15 +29,20 @@ import (
 )
 
 // Initialize Prometheus Metrics for cache hits and misses
-var cacheHits = promauto.NewCounter(prometheus.CounterOpts{
-	Name: "bsky_profile_cache_hits_total",
-	Help: "The total number of profile cache hits",
-})
+var cacheHits = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "bsky_cache_hits_total",
+	Help: "The total number of cache hits",
+}, []string{"cache_type"})
 
-var cacheMisses = promauto.NewCounter(prometheus.CounterOpts{
-	Name: "bsky_profile_cache_misses_total",
-	Help: "The total number of profile cache misses",
-})
+var cacheMisses = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "bsky_cache_misses_total",
+	Help: "The total number of cache misses",
+}, []string{"cache_type"})
+
+var cacheSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "bsky_cache_size_bytes",
+	Help: "The size of the cache in bytes",
+}, []string{"cache_type"})
 
 // Initialize Prometheus Metrics for mentions and replies
 var mentionCounter = promauto.NewCounter(prometheus.CounterOpts{
@@ -58,13 +65,20 @@ var postsProcessedCounter = promauto.NewCounter(prometheus.CounterOpts{
 var postProcessingDurationHistogram = promauto.NewHistogram(prometheus.HistogramOpts{
 	Name:    "bsky_post_processing_duration_seconds",
 	Help:    "The duration of processing posts",
-	Buckets: prometheus.ExponentialBuckets(0.01, 2, 10),
+	Buckets: prometheus.ExponentialBuckets(0.01, 2, 15),
 })
 
 // ProfileCacheEntry is a struct that holds a profile and an expiration time
 type ProfileCacheEntry struct {
 	Profile *bsky.ActorDefs_ProfileViewDetailed
 	Expire  time.Time
+}
+
+// ThreadCacheEntry is a struct that holds a FeedPostThread and an expiration time
+type ThreadCacheEntry struct {
+	Thread       *bsky.FeedDefs_ThreadViewPost
+	TimeoutCount int
+	Expire       time.Time
 }
 
 // BSky is a struct that holds the state of the social graph and the
@@ -81,6 +95,10 @@ type BSky struct {
 	// Generate a Profile Cache with a TTL
 	profileCache    map[string]ProfileCacheEntry
 	profileCacheTTL time.Duration
+
+	// Generate a Thread Cache with a TTL
+	threadCache    map[string]ThreadCacheEntry
+	threadCacheTTL time.Duration
 }
 
 // NewBSky creates a new BSky struct with an authenticated XRPC client
@@ -101,8 +119,11 @@ func NewBSky(ctx context.Context, includeLinks bool) (*BSky, error) {
 		SocialGraphMux: sync.Mutex{},
 
 		profileCache: make(map[string]ProfileCacheEntry),
+		threadCache:  make(map[string]ThreadCacheEntry),
 		// 60 minute TTL
 		profileCacheTTL: time.Minute * 60,
+		// 60 minute TTL
+		threadCacheTTL: time.Minute * 60,
 	}, nil
 }
 
@@ -127,14 +148,14 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string) (*bsky.ActorDe
 	// Check the cache first
 	if entry, ok := bsky.profileCache[did]; ok {
 		if entry.Expire.After(time.Now()) {
-			cacheHits.Inc()
-			span.SetAttributes(attribute.Bool("cache_hit", true))
+			cacheHits.WithLabelValues("profile").Inc()
+			span.SetAttributes(attribute.Bool("profile_cache_hit", true))
 			return entry.Profile, nil
 		}
 	}
 
-	span.SetAttributes(attribute.Bool("cache_hit", false))
-	cacheMisses.Inc()
+	span.SetAttributes(attribute.Bool("profile_cache_hit", false))
+	cacheMisses.WithLabelValues("profile").Inc()
 
 	//Lock the client
 	span.AddEvent("ResolveProfile:AcquireClientLock")
@@ -145,10 +166,8 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string) (*bsky.ActorDe
 	span.AddEvent("ResolveProfile:ReleaseClientLock")
 	bsky.ClientMux.Unlock()
 	if err != nil {
-
 		return nil, err
 	}
-	// Unlock the client
 
 	if profile == nil {
 		span.SetAttributes(attribute.Bool("profile_found", false))
@@ -157,13 +176,98 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string) (*bsky.ActorDe
 
 	span.SetAttributes(attribute.Bool("profile_found", true))
 
-	// Cache the profile
-	bsky.profileCache[did] = ProfileCacheEntry{
+	newEntry := ProfileCacheEntry{
 		Profile: profile,
 		Expire:  time.Now().Add(bsky.profileCacheTTL),
 	}
 
+	// Cache the profile
+	bsky.profileCache[did] = newEntry
+
+	// Update the cache size metric
+	cacheSize.WithLabelValues("profile").Add(float64(unsafe.Sizeof(newEntry)))
+
 	return profile, nil
+}
+
+// ResolveThread resolves a thread from a URI using the cache or the API
+func (bsky *BSky) ResolveThread(ctx context.Context, uri string) (*bsky.FeedDefs_ThreadViewPost, error) {
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "ResolveThread")
+	defer span.End()
+	// Check the cache first
+	if entry, ok := bsky.threadCache[uri]; ok {
+		if entry.Expire.After(time.Now()) {
+			// If we've timed out 5 times in a row trying to get this thread, it's probably a hellthread
+			// Return the cached thread and don't try to get it again
+			if entry.TimeoutCount > 5 {
+				span.SetAttributes(attribute.Bool("thread_timeout_cached", true))
+				return nil, fmt.Errorf("returning cached thread timeout for: %s", uri)
+			} else if entry.Thread != nil {
+				cacheHits.WithLabelValues("thread").Inc()
+				span.SetAttributes(attribute.Bool("thread_cache_hit", true))
+				return entry.Thread, nil
+			}
+		}
+	}
+
+	span.SetAttributes(attribute.Bool("thread_cache_hit", false))
+	cacheMisses.WithLabelValues("thread").Inc()
+
+	//Lock the client
+	span.AddEvent("ResolveThread:AcquireClientLock")
+	bsky.ClientMux.Lock()
+	// Get the profile from the API
+	thread, err := FeedGetPostThreadWithTimeout(ctx, bsky.Client, 1, uri, time.Second*2)
+	// Unlock the client
+	span.AddEvent("ResolveThread:ReleaseClientLock")
+	bsky.ClientMux.Unlock()
+	if err != nil {
+		// Check if the error is a timeout
+		var timeoutErr *TimeoutError
+		if errors.As(err, &timeoutErr) {
+			span.SetAttributes(attribute.Bool("thread_timeout", true))
+			if entry, ok := bsky.threadCache[uri]; ok {
+				// If the thread is cached, increment the timeout count
+				entry.TimeoutCount++
+				entry.Expire = time.Now().Add(bsky.threadCacheTTL)
+				bsky.threadCache[uri] = entry
+			} else {
+				// If the thread isn't cached, cache it with a timeout count of 1
+				bsky.threadCache[uri] = ThreadCacheEntry{
+					Thread:       nil,
+					TimeoutCount: 1,
+					Expire:       time.Now().Add(bsky.threadCacheTTL),
+				}
+			}
+		}
+		return nil, err
+	}
+
+	if thread != nil &&
+		thread.Thread != nil &&
+		thread.Thread.FeedDefs_ThreadViewPost != nil &&
+		thread.Thread.FeedDefs_ThreadViewPost.Post != nil &&
+		thread.Thread.FeedDefs_ThreadViewPost.Post.Author != nil {
+
+		span.SetAttributes(attribute.Bool("profile_found", true))
+
+		newEntry := ThreadCacheEntry{
+			Thread: thread.Thread.FeedDefs_ThreadViewPost,
+			Expire: time.Now().Add(bsky.threadCacheTTL),
+		}
+
+		// Cache the profile
+		bsky.threadCache[uri] = newEntry
+
+		// Update the cache size metric
+		cacheSize.WithLabelValues("thread").Add(float64(unsafe.Sizeof(newEntry)))
+
+		return thread.Thread.FeedDefs_ThreadViewPost, nil
+	}
+
+	span.SetAttributes(attribute.Bool("thread_found", false))
+	return nil, fmt.Errorf("thread not found for: %s", uri)
 }
 
 // DecodeFacets decodes the facets of a richtext record into mentions and links
@@ -232,9 +336,6 @@ func (bsky *BSky) DecodeFacets(ctx context.Context, authorDID string, authorHand
 // HandleRepoCommit is called when a repo commit is received and prints its contents
 func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) error {
 	ctx := context.Background()
-	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "HandleRepoCommit")
-	defer span.End()
 	rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
 	if err != nil {
 		fmt.Println(err)
@@ -244,7 +345,6 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 			switch ek {
 			case repomgr.EvtKindCreateRecord, repomgr.EvtKindUpdateRecord:
 				start := time.Now()
-				span.AddEvent("HandleRepoCommit:GetRecord")
 				rc, rec, err := rr.GetRecord(ctx, op.Path)
 				if err != nil {
 					e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
@@ -279,6 +379,10 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 					return nil
 				}
 
+				tracer := otel.Tracer("graph-builder")
+				ctx, span := tracer.Start(ctx, "HandleRepoCommit")
+				defer span.End()
+
 				span.AddEvent("HandleRepoCommit:ResolveProfile")
 				authorProfile, err := bsky.ResolveProfile(ctx, evt.Repo)
 				if err != nil {
@@ -307,27 +411,19 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				replyingTo := ""
 				replyingToDID := ""
 				if pst.Reply != nil && pst.Reply.Parent != nil {
-					// Lock the client
-					span.AddEvent("HandleRepoCommit:AcquireClientLock")
-					bsky.ClientMux.Lock()
-					span.AddEvent("HandleRepoCommit:GetPostThread")
-					thread, err := appbsky.FeedGetPostThread(ctx, bsky.Client, 2, pst.Reply.Parent.Uri)
-					span.AddEvent("HandleRepoCommit:ReleaseClientLock")
-					bsky.ClientMux.Unlock()
+					thread, err := bsky.ResolveThread(ctx, pst.Reply.Parent.Uri)
 					if err != nil {
-						log.Printf("error getting thread for %s: %s\n", pst.Reply.Parent.Cid, err)
-					} else {
-						if thread != nil &&
-							thread.Thread != nil &&
-							thread.Thread.FeedDefs_ThreadViewPost != nil &&
-							thread.Thread.FeedDefs_ThreadViewPost.Post != nil &&
-							thread.Thread.FeedDefs_ThreadViewPost.Post.Author != nil {
-							replyingTo = thread.Thread.FeedDefs_ThreadViewPost.Post.Author.Handle
-							replyingToDID = thread.Thread.FeedDefs_ThreadViewPost.Post.Author.Did
-							span.SetAttributes(attribute.String("replying_to", replyingTo))
-							span.SetAttributes(attribute.String("replying_to_did", replyingToDID))
-						}
+						log.Printf("error resolving thread (%s): %+v\n", pst.Reply.Parent.Uri, err)
+						return nil
+					} else if thread == nil {
+						log.Printf("thread (%s) not found\n", pst.Reply.Parent.Uri)
+						return nil
 					}
+
+					replyingTo = thread.Post.Author.Handle
+					replyingToDID = thread.Post.Author.Did
+					span.SetAttributes(attribute.String("replying_to", replyingTo))
+					span.SetAttributes(attribute.String("replying_to_did", replyingToDID))
 				}
 
 				// Track replies in the social graph
