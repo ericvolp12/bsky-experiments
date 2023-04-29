@@ -63,8 +63,10 @@ func main() {
 
 	includeLinks := os.Getenv("INCLUDE_LINKS") == "true"
 
+	workerCount := 5
+
 	log.Println("initializing BSky Event Handler...")
-	bsky, err := intEvents.NewBSky(ctx, includeLinks)
+	bsky, err := intEvents.NewBSky(ctx, includeLinks, workerCount)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -102,30 +104,6 @@ func main() {
 				saveGraph(ctx, bsky, &binReaderWriter, graphFile)
 			case <-quit:
 				graphTicker.Stop()
-				wg.Done()
-				return
-			}
-		}
-	}()
-
-	authTicker := time.NewTicker(10 * time.Minute)
-
-	// Run a routine that refreshes the auth token every 10 minutes
-	wg.Add(1)
-	go func() {
-		log.Println("starting auth refresh routine...")
-		for {
-			select {
-			case <-authTicker.C:
-				fmt.Printf("\u001b[90m[%s]\u001b[32m refreshing auth token...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
-				err := bsky.RefreshAuthToken(ctx)
-				if err != nil {
-					log.Printf("error refreshing auth token: %s", err)
-				} else {
-					fmt.Printf("\u001b[90m[%s]\u001b[32m auth token refreshed successfully\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
-				}
-			case <-quit:
-				authTicker.Stop()
 				wg.Done()
 				return
 			}
@@ -198,7 +176,7 @@ func saveGraph(ctx context.Context, bsky *intEvents.BSky, binReaderWriter *graph
 	defer span.End()
 	// Acquire locks on the data structures we're reading from
 	span.AddEvent("saveGraph:AcquireGraphLock")
-	bsky.SocialGraphMux.Lock()
+	bsky.SocialGraphMux.RLock()
 
 	timestampedGraphFilePath := getHalfHourFileName(graphFileFromEnv)
 
@@ -218,7 +196,7 @@ func saveGraph(ctx context.Context, bsky *intEvents.BSky, binReaderWriter *graph
 	}
 
 	span.AddEvent("saveGraph:ReleaseGraphLock")
-	bsky.SocialGraphMux.Unlock()
+	bsky.SocialGraphMux.RUnlock()
 }
 
 func copyFile(src, dst string) error {
@@ -269,7 +247,11 @@ func newTraceProvider(exp sdktrace.SpanExporter) *sdktrace.TracerProvider {
 		panic(err)
 	}
 
+	// initialize the traceIDRatioBasedSampler
+	traceIDRatioBasedSampler := sdktrace.TraceIDRatioBased(0.10)
+
 	return sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(traceIDRatioBasedSampler),
 		sdktrace.WithBatcher(exp),
 		sdktrace.WithResource(r),
 	)
