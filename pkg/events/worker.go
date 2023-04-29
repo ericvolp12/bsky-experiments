@@ -2,17 +2,13 @@ package events
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
 	"sync"
 	"time"
 
-	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
-	lexutil "github.com/bluesky-social/indigo/lex/util"
-	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"go.opentelemetry.io/otel"
@@ -57,7 +53,14 @@ func (bsky *BSky) worker(workerID int) {
 	// Pull from the work queue and process records as they come in
 	for {
 		record := <-bsky.RepoRecordQueue
-		err := bsky.ProcessRepoRecord(record.ctx, record.rr, record.op, record.evt, workerID)
+		err := bsky.ProcessRepoRecord(
+			record.ctx,
+			record.pst,
+			record.opPath,
+			record.repoName,
+			record.eventTime,
+			workerID,
+		)
 		if err != nil {
 			log.Printf("failed to process record: %v\n", err)
 		}
@@ -66,43 +69,15 @@ func (bsky *BSky) worker(workerID int) {
 
 func (bsky *BSky) ProcessRepoRecord(
 	ctx context.Context,
-	rr *repo.Repo,
-	op *comatproto.SyncSubscribeRepos_RepoOp,
-	evt *comatproto.SyncSubscribeRepos_Commit,
+	pst appbsky.FeedPost,
+	opPath string,
+	repoName string,
+	eventTime string,
 	workerID int,
 ) error {
 	prefix := fmt.Sprintf("[w:%d]", workerID)
 	log.SetPrefix(prefix)
 	start := time.Now()
-	rc, rec, err := rr.GetRecord(ctx, op.Path)
-	if err != nil {
-		e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
-		log.Printf("failed to get a record from the event: %+v\n", e)
-		return nil
-	}
-
-	if lexutil.LexLink(rc) != *op.Cid {
-		e := fmt.Errorf("mismatch in record and op cid: %s != %s", rc, *op.Cid)
-		log.Printf("failed to LexLink the record in the event: %+v\n", e)
-		return nil
-	}
-
-	recordAsCAR := lexutil.LexiconTypeDecoder{
-		Val: rec,
-	}
-
-	var pst = appbsky.FeedPost{}
-	b, err := recordAsCAR.MarshalJSON()
-	if err != nil {
-		log.Printf("failed to marshal record as CAR: %+v\n", err)
-		return nil
-	}
-
-	err = json.Unmarshal(b, &pst)
-	if err != nil {
-		log.Printf("failed to unmarshal post into a FeedPost: %+v\n", err)
-		return nil
-	}
 
 	if pst.LexiconTypeID != "app.bsky.feed.post" {
 		return nil
@@ -113,9 +88,9 @@ func (bsky *BSky) ProcessRepoRecord(
 	defer span.End()
 
 	span.AddEvent("HandleRepoCommit:ResolveProfile")
-	authorProfile, err := bsky.ResolveProfile(ctx, evt.Repo, workerID)
+	authorProfile, err := bsky.ResolveProfile(ctx, repoName, workerID)
 	if err != nil {
-		log.Printf("error getting profile for %s: %+v\n", evt.Repo, err)
+		log.Printf("error getting profile for %s: %+v\n", repoName, err)
 		return nil
 	}
 
@@ -129,7 +104,7 @@ func (bsky *BSky) ProcessRepoRecord(
 	}
 
 	// Parse time from the event time string
-	t, err := time.Parse(time.RFC3339, evt.Time)
+	t, err := time.Parse(time.RFC3339, eventTime)
 	if err != nil {
 		log.Printf("error parsing time: %+v\n", err)
 		return nil
@@ -177,7 +152,7 @@ func (bsky *BSky) ProcessRepoRecord(
 	}
 
 	// Grab Post ID from the Path
-	pathParts := strings.Split(op.Path, "/")
+	pathParts := strings.Split(opPath, "/")
 	postID := pathParts[len(pathParts)-1]
 
 	postLink := fmt.Sprintf("https://staging.bsky.app/profile/%s/post/%s", authorProfile.Handle, postID)
