@@ -140,7 +140,7 @@ func main() {
 
 	// Run a routine that handles the events from the WebSocket
 	log.Println("starting event handler routine...")
-	err = handleRepoStreamWithRetry(ctx, u, &events.RepoStreamCallbacks{
+	err = handleRepoStreamWithRetry(ctx, bsky, u, &events.RepoStreamCallbacks{
 		RepoCommit: bsky.HandleRepoCommit,
 		RepoInfo:   intEvents.HandleRepoInfo,
 		Error:      intEvents.HandleError,
@@ -265,7 +265,12 @@ func getNextBackoff(currentBackoff time.Duration) time.Duration {
 	return currentBackoff + time.Duration(rand.Int63n(int64(maxBackoffFactor*currentBackoff)))
 }
 
-func handleRepoStreamWithRetry(ctx context.Context, u url.URL, callbacks *events.RepoStreamCallbacks) error {
+func handleRepoStreamWithRetry(
+	ctx context.Context,
+	bsky *intEvents.BSky,
+	u url.URL,
+	callbacks *events.RepoStreamCallbacks,
+) error {
 	var backoff time.Duration
 
 	for {
@@ -276,7 +281,37 @@ func handleRepoStreamWithRetry(ctx context.Context, u url.URL, callbacks *events
 		}
 		defer c.Close()
 
-		err = events.HandleRepoStream(ctx, c, callbacks)
+		// Create a new context with a cancel function
+		streamCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Start a timer to check for graph updates
+		updateCheckDuration := 30 * time.Second
+		updateCheckTimer := time.NewTicker(updateCheckDuration)
+		defer updateCheckTimer.Stop()
+
+		// Run a goroutine to handle the graph update check
+		go func() {
+			for {
+				select {
+				case <-updateCheckTimer.C:
+					bsky.SocialGraphMux.RLock()
+					if bsky.SocialGraph.LastUpdate.Add(updateCheckDuration).Before(time.Now()) {
+						log.Printf("The graph hasn't been updated in the past %v seconds, closing and reopening the WebSocket...", updateCheckDuration)
+						bsky.SocialGraphMux.RUnlock()
+						// Cancel the context and close the WebSocket connection
+						cancel()
+						c.Close()
+						return
+					}
+					bsky.SocialGraphMux.RUnlock()
+				case <-streamCtx.Done():
+					return
+				}
+			}
+		}()
+
+		err = events.HandleRepoStream(streamCtx, c, callbacks)
 		if err != nil {
 			log.Printf("Error in event handler routine: %v\n", err)
 			backoff = getNextBackoff(backoff)
