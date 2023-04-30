@@ -11,8 +11,8 @@ import (
 // that reads and writes graph data to and from binary files.
 type BinaryGraphReaderWriter struct{}
 
-const maxNodeIDLength = 500
-const maxNodeHandleLength = 500
+const maxNodeIDLength = 2147483647
+const maxNodeHandleLength = 2147483647
 
 // WriteGraph writes the graph data to a binary file with the given filename.
 func (rw BinaryGraphReaderWriter) WriteGraph(g Graph, filename string) error {
@@ -37,8 +37,8 @@ func (rw BinaryGraphReaderWriter) WriteGraph(g Graph, filename string) error {
 		nodeIndex[node.DID] = index
 		index++
 
-		idLength := int8(utf8.RuneCountInString(string(node.DID)))
-		handleLength := int8(utf8.RuneCountInString(node.Handle))
+		idLength := int32(utf8.RuneCountInString(string(node.DID)))
+		handleLength := int32(utf8.RuneCountInString(node.Handle))
 		if err := binary.Write(file, binary.LittleEndian, idLength); err != nil {
 			return err
 		}
@@ -90,7 +90,7 @@ func (rw BinaryGraphReaderWriter) ReadGraph(filename string) (Graph, error) {
 	nodes := make([]Node, nodeCount)
 
 	for i := int32(0); i < nodeCount; i++ {
-		var idLength, handleLength int8
+		var idLength, handleLength int32
 		if err := binary.Read(file, binary.LittleEndian, &idLength); err != nil {
 			return Graph{}, err
 		}

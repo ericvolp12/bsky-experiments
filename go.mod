@@ -104,4 +104,4 @@ require (
 	lukechampine.com/blake3 v1.1.7 // indirect
 )
 
-replace github.com/bluesky-social/indigo v0.0.0-20230428230924-93b159a0ea0d => github.com/ericvolp12/indigo v0.0.0-makeParamsFix
+replace github.com/bluesky-social/indigo v0.0.0-20230428230924-93b159a0ea0d => github.com/ericvolp12/indigo v0.0.0-makeParamsFix-3
