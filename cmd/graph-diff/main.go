@@ -39,7 +39,7 @@ func main() {
 	}
 
 	// Diff the graphs
-	diff := graph.Diff(&g1, &g2)
+	diff := graph.Diff(&g2, &g1)
 	g3.ApplyDiff(diff)
 
 	// Write the graph to the new Binary database
