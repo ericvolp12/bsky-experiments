@@ -13,6 +13,7 @@ import (
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // RefreshAuth refreshes the auth token for the client
@@ -39,16 +40,20 @@ func RefreshAuth(ctx context.Context, client *xrpc.Client) error {
 // GetXRPCClient returns an XRPC client for the ATProto server
 // with Authentication from the ATP_AUTH environment variable
 func GetXRPCClient(ctx context.Context) (*xrpc.Client, error) {
+	// Create an instrumented transport for OTEL Tracing of HTTP Requests
+	instrumentedTransport := otelhttp.NewTransport(&http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	})
+
+	// Create the XRPC Client
 	client := xrpc.Client{
 		Client: &http.Client{
-			Transport: &http.Transport{
-				Proxy:                 http.ProxyFromEnvironment,
-				ForceAttemptHTTP2:     true,
-				MaxIdleConns:          100,
-				IdleConnTimeout:       90 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-			},
+			Transport: instrumentedTransport,
 		},
 		Host: "https://bsky.social",
 	}

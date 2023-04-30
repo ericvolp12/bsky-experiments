@@ -2,6 +2,7 @@ package graph
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 	"unicode/utf8"
@@ -90,7 +91,7 @@ func (rw BinaryGraphReaderWriter) ReadGraph(filename string) (Graph, error) {
 	nodes := make([]Node, nodeCount)
 
 	for i := int32(0); i < nodeCount; i++ {
-		var idLength, handleLength int32
+		var idLength, handleLength int8
 		if err := binary.Read(file, binary.LittleEndian, &idLength); err != nil {
 			return Graph{}, err
 		}
@@ -104,9 +105,24 @@ func (rw BinaryGraphReaderWriter) ReadGraph(filename string) (Graph, error) {
 			return Graph{}, err
 		}
 
-		handleBuf := make([]byte, handleLength)
-		if _, err := io.ReadFull(file, handleBuf); err != nil {
-			return Graph{}, err
+		var overrideHandleLength int32
+		var handleBuf []byte
+
+		if handleLength < 0 {
+			fmt.Printf("dealing with long handle (%d) for DID: %s\n", handleLength, string(buf))
+			overrideHandleLength = int32(utf8.RuneCountInString("accordingtoallknownlawsofaviation.thereisnowayabeeshouldbeabletofly.itswingsaretoosmalltogetitsfatlittlebodyofftheground.thebeeofcoursefliesanyway.becausebeesdontcarewhathumansthinkisimpossible.tiredand.gay"))
+		}
+
+		if overrideHandleLength != 0 {
+			handleBuf := make([]byte, overrideHandleLength)
+			if _, err := io.ReadFull(file, handleBuf); err != nil {
+				return Graph{}, err
+			}
+		} else {
+			handleBuf := make([]byte, handleLength)
+			if _, err := io.ReadFull(file, handleBuf); err != nil {
+				return Graph{}, err
+			}
 		}
 
 		nodes[i] = Node{
@@ -114,6 +130,7 @@ func (rw BinaryGraphReaderWriter) ReadGraph(filename string) (Graph, error) {
 			Handle: string(handleBuf),
 		}
 		g.AddNode(nodes[i])
+
 	}
 
 	for i := int32(0); i < edgeCount; i++ {
