@@ -38,6 +38,13 @@ type Edge struct {
 	Weight int
 }
 
+// EdgeDiff is a struct representing a directed edge between two nodes and the weight difference.
+type EdgeDiff struct {
+	From   NodeID
+	To     NodeID
+	Weight int
+}
+
 // Graph is a struct representing a graph structure.
 // It contains nodes, directed edges with weights, and a next node identifier.
 // Nodes are stored in a map, with NodeID keys and Node values.
@@ -125,6 +132,36 @@ func (g *Graph) Write(writer io.Writer) error {
 		}
 	}
 	return nil
+}
+
+// Diff computes the difference between two graphs and returns a list of EdgeDiff.
+func Diff(g1, g2 *Graph) []EdgeDiff {
+	diff := []EdgeDiff{}
+
+	for from, edges := range g1.Edges {
+		for to, weight := range edges {
+			weight2, ok := g2.Edges[from][to]
+			if ok {
+				weightDiff := weight - weight2
+				if weightDiff != 0 {
+					diff = append(diff, EdgeDiff{From: from, To: to, Weight: weightDiff})
+				}
+			} else {
+				diff = append(diff, EdgeDiff{From: from, To: to, Weight: weight})
+			}
+		}
+	}
+
+	return diff
+}
+
+// ApplyDiff updates the graph by applying the given diff to its edges.
+func (g *Graph) ApplyDiff(diff []EdgeDiff) {
+	for _, edgeDiff := range diff {
+		fromNode := g.Nodes[edgeDiff.From]
+		toNode := g.Nodes[edgeDiff.To]
+		g.IncrementEdge(fromNode, toNode, edgeDiff.Weight)
+	}
 }
 
 // WriteGraph exports the graph structure to a file with the given filename.
