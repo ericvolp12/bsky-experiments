@@ -20,9 +20,9 @@ type ProfileCacheEntry struct {
 	Expire  time.Time
 }
 
-// ThreadCacheEntry is a struct that holds a FeedPostThread and an expiration time
-type ThreadCacheEntry struct {
-	Thread       *bsky.FeedDefs_ThreadViewPost
+// PostCacheEntry is a struct that holds a PostView and an expiration time
+type PostCacheEntry struct {
+	Post         *bsky.FeedDefs_PostView
 	TimeoutCount int
 	Expire       time.Time
 }
@@ -96,87 +96,86 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string, workerID int) 
 	return profile, nil
 }
 
-// ResolveThread resolves a thread from a URI using the cache or the API
-func (bsky *BSky) ResolveThread(ctx context.Context, uri string, workerID int) (*bsky.FeedDefs_ThreadViewPost, error) {
+// ResolvePost resolves a post from a URI using the cache or the API
+func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*bsky.FeedDefs_PostView, error) {
 	worker := bsky.Workers[workerID]
 	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "ResolveThread")
+	ctx, span := tracer.Start(ctx, "ResolvePost")
 	defer span.End()
 	// Check the cache first
-	entry, ok := bsky.threadCache.Get(uri)
+	entry, ok := bsky.postCache.Get(uri)
 	if ok {
-		cacheEntry := entry.(ThreadCacheEntry)
+		cacheEntry := entry.(PostCacheEntry)
 		if cacheEntry.Expire.After(time.Now()) {
-			// If we've timed out 5 times in a row trying to get this thread, it's probably a hellthread
-			// Return the cached thread and don't try to get it again
+			// If we've timed out 5 times in a row trying to get this post, it's probably a hellthread
+			// Return the cached post and don't try to get it again
 			if cacheEntry.TimeoutCount > 5 {
-				span.SetAttributes(attribute.Bool("thread_timeout_cached", true))
-				return nil, fmt.Errorf("hellthread detected - returning cached thread timeout for: %s", uri)
-			} else if cacheEntry.Thread != nil {
-				cacheHits.WithLabelValues("thread").Inc()
-				span.SetAttributes(attribute.Bool("thread_cache_hit", true))
-				return cacheEntry.Thread, nil
+				span.SetAttributes(attribute.Bool("post_timeout_cached", true))
+				return nil, fmt.Errorf("hellthread detected - returning cached post timeout for: %s", uri)
+			} else if cacheEntry.Post != nil {
+				cacheHits.WithLabelValues("post").Inc()
+				span.SetAttributes(attribute.Bool("post_cache_hit", true))
+				return cacheEntry.Post, nil
 			}
 		}
 	}
 
-	span.SetAttributes(attribute.Bool("thread_cache_hit", false))
-	cacheMisses.WithLabelValues("thread").Inc()
+	span.SetAttributes(attribute.Bool("post_cache_hit", false))
+	cacheMisses.WithLabelValues("post").Inc()
 
 	//Lock the client
-	span.AddEvent("ResolveThread:AcquireClientRLock")
+	span.AddEvent("ResolvePost:AcquireClientRLock")
 	worker.ClientMux.RLock()
-	// Get the profile from the API
-	thread, err := FeedGetPostThreadWithTimeout(ctx, worker.Client, 1, uri, time.Second*2)
+	// Get the post from the API
+	posts, err := FeedGetPostsWithTimeout(ctx, worker.Client, []string{uri}, time.Second*2)
 	// Unlock the client
-	span.AddEvent("ResolveThread:ReleaseClientRLock")
+	span.AddEvent("ResolvePost:ReleaseClientRLock")
 	worker.ClientMux.RUnlock()
 	if err != nil {
 		// Check if the error is a timeout
 		var timeoutErr *TimeoutError
 		if errors.As(err, &timeoutErr) {
-			span.SetAttributes(attribute.Bool("thread_timeout", true))
-			entry, ok := bsky.threadCache.Get(uri)
+			span.SetAttributes(attribute.Bool("post_timeout", true))
+			entry, ok := bsky.postCache.Get(uri)
 			if ok {
-				cacheEntry := entry.(ThreadCacheEntry)
-				// If the thread is cached, increment the timeout count
+				cacheEntry := entry.(PostCacheEntry)
+				// If the post is cached, increment the timeout count
 				cacheEntry.TimeoutCount++
-				cacheEntry.Expire = time.Now().Add(bsky.threadCacheTTL)
-				bsky.threadCache.Add(uri, cacheEntry)
+				cacheEntry.Expire = time.Now().Add(bsky.postCacheTTL)
+				bsky.postCache.Add(uri, cacheEntry)
 			} else {
-				// If the thread isn't cached, cache it with a timeout count of 1
-				bsky.threadCache.Add(uri, ThreadCacheEntry{
-					Thread:       nil,
+				// If the post isn't cached, cache it with a timeout count of 1
+				bsky.postCache.Add(uri, PostCacheEntry{
+					Post:         nil,
 					TimeoutCount: 1,
-					Expire:       time.Now().Add(bsky.threadCacheTTL),
+					Expire:       time.Now().Add(bsky.postCacheTTL),
 				})
 			}
 		}
 		return nil, err
 	}
 
-	if thread != nil &&
-		thread.Thread != nil &&
-		thread.Thread.FeedDefs_ThreadViewPost != nil &&
-		thread.Thread.FeedDefs_ThreadViewPost.Post != nil &&
-		thread.Thread.FeedDefs_ThreadViewPost.Post.Author != nil {
+	if posts != nil &&
+		posts.Posts != nil &&
+		len(posts.Posts) > 0 &&
+		posts.Posts[0].Author != nil {
 
 		span.SetAttributes(attribute.Bool("profile_found", true))
 
-		newEntry := ThreadCacheEntry{
-			Thread: thread.Thread.FeedDefs_ThreadViewPost,
-			Expire: time.Now().Add(bsky.threadCacheTTL),
+		newEntry := PostCacheEntry{
+			Post:   posts.Posts[0],
+			Expire: time.Now().Add(bsky.postCacheTTL),
 		}
 
 		// Cache the profile
-		bsky.threadCache.Add(uri, newEntry)
+		bsky.postCache.Add(uri, newEntry)
 
 		// Update the cache size metric
-		cacheSize.WithLabelValues("thread").Add(float64(unsafe.Sizeof(newEntry)))
+		cacheSize.WithLabelValues("post").Add(float64(unsafe.Sizeof(newEntry)))
 
-		return thread.Thread.FeedDefs_ThreadViewPost, nil
+		return posts.Posts[0], nil
 	}
 
-	span.SetAttributes(attribute.Bool("thread_found", false))
-	return nil, fmt.Errorf("thread not found for: %s", uri)
+	span.SetAttributes(attribute.Bool("post_found", false))
+	return nil, fmt.Errorf("post not found for: %s", uri)
 }

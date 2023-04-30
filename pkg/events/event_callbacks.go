@@ -42,9 +42,9 @@ type BSky struct {
 	profileCache    *lru.ARCCache
 	profileCacheTTL time.Duration
 
-	// Generate a Thread Cache with a TTL
-	threadCache    *lru.ARCCache
-	threadCacheTTL time.Duration
+	// Generate a Post Cache with a TTL
+	postCache    *lru.ARCCache
+	postCacheTTL time.Duration
 
 	RepoRecordQueue chan RepoRecord
 
@@ -55,7 +55,7 @@ type BSky struct {
 // NewBSky creates a new BSky struct with an authenticated XRPC client
 // and a social graph, initializing mutexes for cross-routine access
 func NewBSky(ctx context.Context, includeLinks bool, workerCount int) (*BSky, error) {
-	threadCache, err := lru.NewARC(5000)
+	postCache, err := lru.NewARC(5000)
 	if err != nil {
 		return nil, err
 	}
@@ -72,11 +72,11 @@ func NewBSky(ctx context.Context, includeLinks bool, workerCount int) (*BSky, er
 		SocialGraphMux: sync.RWMutex{},
 
 		profileCache: profileCache,
-		threadCache:  threadCache,
+		postCache:    postCache,
 
 		// 60 minute Cache TTLs
 		profileCacheTTL: time.Minute * 60,
-		threadCacheTTL:  time.Minute * 60,
+		postCacheTTL:    time.Minute * 60,
 
 		RepoRecordQueue: make(chan RepoRecord, 100),
 		WorkerCount:     workerCount,

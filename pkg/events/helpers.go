@@ -17,30 +17,29 @@ type TimeoutError struct {
 	error
 }
 
-func FeedGetPostThreadWithTimeout(
+func FeedGetPostsWithTimeout(
 	ctx context.Context,
 	client *xrpc.Client,
-	depth int64,
-	uri string,
+	uris []string,
 	timeout time.Duration,
-) (*appbsky.FeedGetPostThread_Output, error) {
+) (*appbsky.FeedGetPosts_Output, error) {
 	type result struct {
-		thread *appbsky.FeedGetPostThread_Output
-		err    error
+		posts *appbsky.FeedGetPosts_Output
+		err   error
 	}
 
 	resultChan := make(chan result, 1)
 
 	go func() {
-		thread, err := appbsky.FeedGetPostThread(ctx, client, depth, uri)
-		resultChan <- result{thread: thread, err: err}
+		posts, err := appbsky.FeedGetPosts(ctx, client, uris)
+		resultChan <- result{posts: posts, err: err}
 	}()
 
 	select {
 	case res := <-resultChan:
-		return res.thread, res.err
+		return res.posts, res.err
 	case <-time.After(timeout):
-		return nil, &TimeoutError{fmt.Errorf("FeedGetPostThread timed out after %v", timeout)}
+		return nil, &TimeoutError{fmt.Errorf("FeedGetPosts timed out after %v", timeout)}
 	}
 }
 

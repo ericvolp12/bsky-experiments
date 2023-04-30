@@ -103,3 +103,5 @@ require (
 	gorm.io/gorm v1.24.7-0.20230306060331-85eaf9eeda11 // indirect
 	lukechampine.com/blake3 v1.1.7 // indirect
 )
+
+replace github.com/bluesky-social/indigo v0.0.0-20230428230924-93b159a0ea0d => github.com/ericvolp12/indigo v0.0.0-makeParamsFix

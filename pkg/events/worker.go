@@ -115,17 +115,17 @@ func (bsky *BSky) ProcessRepoRecord(
 	replyingTo := ""
 	replyingToDID := ""
 	if pst.Reply != nil && pst.Reply.Parent != nil {
-		thread, err := bsky.ResolveThread(ctx, pst.Reply.Parent.Uri, workerID)
+		post, err := bsky.ResolvePost(ctx, pst.Reply.Parent.Uri, workerID)
 		if err != nil {
-			log.Printf("error resolving thread (%s): %+v\n", pst.Reply.Parent.Uri, err)
+			log.Printf("error resolving post (%s): %+v\n", pst.Reply.Parent.Uri, err)
 			return nil
-		} else if thread == nil {
-			log.Printf("thread (%s) not found\n", pst.Reply.Parent.Uri)
+		} else if post == nil {
+			log.Printf("post (%s) not found\n", pst.Reply.Parent.Uri)
 			return nil
 		}
 
-		replyingTo = thread.Post.Author.Handle
-		replyingToDID = thread.Post.Author.Did
+		replyingTo = post.Author.Handle
+		replyingToDID = post.Author.Did
 		span.SetAttributes(attribute.String("replying_to", replyingTo))
 		span.SetAttributes(attribute.String("replying_to_did", replyingToDID))
 	}
