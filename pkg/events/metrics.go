@@ -32,6 +32,11 @@ var replyCounter = promauto.NewCounter(prometheus.CounterOpts{
 	Help: "The total number of replies",
 })
 
+var quoteCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "bsky_quptes_total",
+	Help: "The total number of quotes",
+})
+
 // Initialize Prometheus Metrics for total number of posts processed
 var postsProcessedCounter = promauto.NewCounter(prometheus.CounterOpts{
 	Name: "bsky_posts_processed_total",
