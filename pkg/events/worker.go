@@ -68,58 +68,6 @@ func (bsky *BSky) worker(workerID int) {
 	}
 }
 
-// ProcessRelation handles a quote or reply relation
-// It returns the parent author DID and handle after resolving the parent post
-// It also updates the graph with the relation by incrementing the edge weight
-func (bsky *BSky) ProcessRelation(
-	ctx context.Context,
-	authorProfile *appbsky.ActorDefs_ProfileViewDetailed,
-	parentPostURI string,
-	workerID int,
-) (string, string, error) {
-	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "ProcessRelation")
-	defer span.End()
-	parentAuthorDID := ""
-	parentAuthorHandle := ""
-
-	post, err := bsky.ResolvePost(ctx, parentPostURI, workerID)
-	if err != nil {
-		errmsg := fmt.Sprintf("error resolving replying-to post (%s): %+v\n", parentPostURI, err)
-		log.Printf("%s\n", errmsg)
-		return "", "", errors.Wrap(err, errmsg)
-	} else if post == nil {
-		errmsg := fmt.Sprintf("replying-to post (%s) not found", parentPostURI)
-		log.Printf("%s\n", errmsg)
-		return "", "", fmt.Errorf(errmsg)
-	}
-
-	parentAuthorDID = post.Author.Did
-	parentAuthorHandle = post.Author.Handle
-
-	span.SetAttributes(attribute.String("parent_post_uri", parentPostURI))
-	span.SetAttributes(attribute.String("parent_post_author_handle", parentAuthorHandle))
-	span.SetAttributes(attribute.String("parent_post_author_did", parentAuthorDID))
-
-	// Update the graph
-	from := graph.Node{
-		DID:    graph.NodeID(authorProfile.Did),
-		Handle: authorProfile.Handle,
-	}
-
-	to := graph.Node{
-		DID:    graph.NodeID(parentAuthorDID),
-		Handle: parentAuthorHandle,
-	}
-	span.AddEvent("ProcessRelation:AcquireGraphLock")
-	bsky.SocialGraphMux.Lock()
-	bsky.SocialGraph.IncrementEdge(from, to, 1)
-	span.AddEvent("ProcessRelation:ReleaseGraphLock")
-	bsky.SocialGraphMux.Unlock()
-
-	return parentAuthorDID, parentAuthorHandle, nil
-}
-
 func (bsky *BSky) ProcessRepoRecord(
 	ctx context.Context,
 	pst appbsky.FeedPost,
@@ -200,9 +148,93 @@ func (bsky *BSky) ProcessRepoRecord(
 
 	postLink := fmt.Sprintf("https://staging.bsky.app/profile/%s/post/%s", authorProfile.Handle, postID)
 
-	logMsg := fmt.Sprintf("%s", prefix)
+	// Build the log message
+	logMsg := bsky.buildLogMessage(
+		prefix,
+		postLink,
+		t,
+		authorProfile,
+		quotingHandle,
+		replyingToHandle,
+		postBody,
+		mentions,
+		links,
+	)
 
 	// Print the content of the post and any mentions or links
+	fmt.Printf("%s", logMsg)
+
+	// Record the time to process and the count
+	postsProcessedCounter.Inc()
+	postProcessingDurationHistogram.Observe(time.Since(start).Seconds())
+
+	return nil
+}
+
+// ProcessRelation handles a quote or reply relation
+// It returns the parent author DID and handle after resolving the parent post
+// It also updates the graph with the relation by incrementing the edge weight
+func (bsky *BSky) ProcessRelation(
+	ctx context.Context,
+	authorProfile *appbsky.ActorDefs_ProfileViewDetailed,
+	parentPostURI string,
+	workerID int,
+) (string, string, error) {
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "ProcessRelation")
+	defer span.End()
+	parentAuthorDID := ""
+	parentAuthorHandle := ""
+
+	post, err := bsky.ResolvePost(ctx, parentPostURI, workerID)
+	if err != nil {
+		errmsg := fmt.Sprintf("error resolving replying-to post (%s): %+v\n", parentPostURI, err)
+		log.Printf("%s\n", errmsg)
+		return "", "", errors.Wrap(err, errmsg)
+	} else if post == nil {
+		errmsg := fmt.Sprintf("replying-to post (%s) not found", parentPostURI)
+		log.Printf("%s\n", errmsg)
+		return "", "", fmt.Errorf(errmsg)
+	}
+
+	parentAuthorDID = post.Author.Did
+	parentAuthorHandle = post.Author.Handle
+
+	span.SetAttributes(attribute.String("parent_post_uri", parentPostURI))
+	span.SetAttributes(attribute.String("parent_post_author_handle", parentAuthorHandle))
+	span.SetAttributes(attribute.String("parent_post_author_did", parentAuthorDID))
+
+	// Update the graph
+	from := graph.Node{
+		DID:    graph.NodeID(authorProfile.Did),
+		Handle: authorProfile.Handle,
+	}
+
+	to := graph.Node{
+		DID:    graph.NodeID(parentAuthorDID),
+		Handle: parentAuthorHandle,
+	}
+	span.AddEvent("ProcessRelation:AcquireGraphLock")
+	bsky.SocialGraphMux.Lock()
+	bsky.SocialGraph.IncrementEdge(from, to, 1)
+	span.AddEvent("ProcessRelation:ReleaseGraphLock")
+	bsky.SocialGraphMux.Unlock()
+
+	return parentAuthorDID, parentAuthorHandle, nil
+}
+
+func (bsky *BSky) buildLogMessage(
+	prefix string,
+	postLink string,
+	t time.Time,
+	authorProfile *appbsky.ActorDefs_ProfileViewDetailed,
+	quotingHandle string,
+	replyingToHandle string,
+	postBody string,
+	mentions []string,
+	links []string,
+) string {
+	logMsg := fmt.Sprintf("%s", prefix)
 
 	// Add a Timestamp with a post link in it if we want one
 	if bsky.IncludeLinks {
@@ -231,12 +263,5 @@ func (bsky *BSky) ProcessRepoRecord(
 		logMsg += fmt.Sprintf("\tLinks: %s\n", links)
 	}
 
-	// Print the log message
-	fmt.Printf("%s", logMsg)
-
-	// Record the time to process and the count
-	postsProcessedCounter.Inc()
-	postProcessingDurationHistogram.Observe(time.Since(start).Seconds())
-
-	return nil
+	return logMsg
 }
