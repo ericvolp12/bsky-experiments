@@ -33,7 +33,7 @@ var replyCounter = promauto.NewCounter(prometheus.CounterOpts{
 })
 
 var quoteCounter = promauto.NewCounter(prometheus.CounterOpts{
-	Name: "bsky_quptes_total",
+	Name: "bsky_quotes_total",
 	Help: "The total number of quotes",
 })
 
