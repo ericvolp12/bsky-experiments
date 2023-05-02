@@ -46,17 +46,20 @@ var tracer trace.Tracer
 func main() {
 	ctx := context.Background()
 	log.Println("starting graph builder...")
-	// Registers a tracer Provider globally.
-	log.Println("initializing tracer...")
-	shutdown, err := installExportPipeline(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer func() {
-		if err := shutdown(ctx); err != nil {
+
+	// Registers a tracer Provider globally if the exporter endpoint is set
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+		log.Println("initializing tracer...")
+		shutdown, err := installExportPipeline(ctx)
+		if err != nil {
 			log.Fatal(err)
 		}
-	}()
+		defer func() {
+			if err := shutdown(ctx); err != nil {
+				log.Fatal(err)
+			}
+		}()
+	}
 
 	// Replace with the WebSocket URL you want to connect to.
 	u := url.URL{Scheme: "wss", Host: "bsky.social", Path: "/xrpc/com.atproto.sync.subscribeRepos"}

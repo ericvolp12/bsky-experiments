@@ -22,10 +22,10 @@ Graph data is written to `data/social-graph.bin` for the latest version and `dat
 
 3. For OTLP Tracing, configure the `OTEL_EXPORTER_OTLP_ENDPOINT=` to point at a valid OTLPHTTP trace collector.
 
-   - I haven't put in a setting to disable this yet so it will complain when it tries to export traces if it can't talk to anything (I _think_), but the app still runs.
+   - If you don't want this functionality, delete the variable from the `.env` file and it will disable the feature.
 
 4. If you'd like to collect the text and references in EVERY post on BSky, update `REGISTRY_DB_CONNECTION_STRING=` in `.env` to be a valid Postgres connection string to an accessible database.
-   1. If you don't want this functionality, delete the variable from the `.env` file and it will disable the feature.
+   - If you don't want this functionality, delete the variable from the `.env` file and it will disable the feature.
 
 To build containers and start up the Graph Builder, run:
 
