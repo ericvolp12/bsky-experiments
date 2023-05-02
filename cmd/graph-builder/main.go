@@ -65,15 +65,21 @@ func main() {
 
 	workerCount := 5
 
-	log.Println("initializing BSky Event Handler...")
-	bsky, err := intEvents.NewBSky(ctx, includeLinks, workerCount)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	graphFile := os.Getenv("BINARY_GRAPH_FILE")
 	if graphFile == "" {
 		graphFile = "social-graph.bin"
+	}
+
+	postRegistryEnabled := false
+	dbConnectionString := os.Getenv("REGISTRY_DB_CONNECTION_STRING")
+	if dbConnectionString != "" {
+		postRegistryEnabled = true
+	}
+
+	log.Println("initializing BSky Event Handler...")
+	bsky, err := intEvents.NewBSky(ctx, includeLinks, postRegistryEnabled, dbConnectionString, workerCount)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	binReaderWriter := graph.BinaryGraphReaderWriter{}
@@ -139,7 +145,7 @@ func main() {
 	}()
 
 	// Run a routine that handles the events from the WebSocket
-	log.Println("starting event handler routine...")
+	log.Println("starting repo sync routine...")
 	err = handleRepoStreamWithRetry(ctx, bsky, u, &events.RepoStreamCallbacks{
 		RepoCommit: bsky.HandleRepoCommit,
 		RepoInfo:   intEvents.HandleRepoInfo,

@@ -5,6 +5,7 @@ go 1.20
 require (
 	github.com/bluesky-social/indigo v0.0.0-20230428230924-93b159a0ea0d
 	github.com/gorilla/websocket v1.5.0
+	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.15.0

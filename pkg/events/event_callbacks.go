@@ -16,6 +16,7 @@ import (
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/repomgr"
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
+	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	lru "github.com/hashicorp/golang-lru"
 )
@@ -50,11 +51,19 @@ type BSky struct {
 
 	WorkerCount int
 	Workers     []*Worker
+
+	PostRegistryEnabled bool
+	PostRegistry        *search.PostRegistry
 }
 
 // NewBSky creates a new BSky struct with an authenticated XRPC client
 // and a social graph, initializing mutexes for cross-routine access
-func NewBSky(ctx context.Context, includeLinks bool, workerCount int) (*BSky, error) {
+func NewBSky(
+	ctx context.Context,
+	includeLinks, postRegistryEnabled bool,
+	dbConnectionString string,
+	workerCount int,
+) (*BSky, error) {
 	postCache, err := lru.NewARC(5000)
 	if err != nil {
 		return nil, err
@@ -63,6 +72,15 @@ func NewBSky(ctx context.Context, includeLinks bool, workerCount int) (*BSky, er
 	profileCache, err := lru.NewARC(15000)
 	if err != nil {
 		return nil, err
+	}
+
+	var postRegistry *search.PostRegistry
+
+	if postRegistryEnabled {
+		postRegistry, err = search.NewPostRegistry(dbConnectionString)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	bsky := &BSky{
@@ -81,6 +99,9 @@ func NewBSky(ctx context.Context, includeLinks bool, workerCount int) (*BSky, er
 		RepoRecordQueue: make(chan RepoRecord, 100),
 		WorkerCount:     workerCount,
 		Workers:         make([]*Worker, workerCount),
+
+		PostRegistryEnabled: postRegistryEnabled,
+		PostRegistry:        postRegistry,
 	}
 
 	// Initialize the workers, each with their own BSky Client and Mutex

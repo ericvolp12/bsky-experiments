@@ -11,6 +11,7 @@ import (
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
+	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -113,6 +114,13 @@ func (bsky *BSky) ProcessRepoRecord(
 
 	postBody := strings.ReplaceAll(pst.Text, "\n", "\n\t")
 
+	// Grab Post, Parent, and Root ID from the Path
+	pathParts := strings.Split(opPath, "/")
+	postID := pathParts[len(pathParts)-1]
+
+	var parentID string
+	var rootID string
+	parentRelationsip := ""
 	quotingHandle := ""
 	replyingToHandle := ""
 
@@ -127,6 +135,15 @@ func (bsky *BSky) ProcessRepoRecord(
 		replyingToHandle = parentAuthorHandle
 		// Increment the reply count metric
 		replyCounter.Inc()
+		// Set the parent relationship to reply and the parent ID to the reply's ID
+		parentRelationsip = search.ReplyRelationship
+		parentParts := strings.Split(replyingToURI, "/")
+		parentID = parentParts[len(parentParts)-1]
+		if pst.Reply.Root != nil {
+			// Set the root ID to the root post ID
+			rootParts := strings.Split(pst.Reply.Root.Uri, "/")
+			rootID = rootParts[len(rootParts)-1]
+		}
 	}
 
 	// Handle quote reposts
@@ -140,13 +157,52 @@ func (bsky *BSky) ProcessRepoRecord(
 		quotingHandle = parentAuthorHandle
 		// Increment the quote count metric
 		quoteCounter.Inc()
+		// Set the parent relationship to quote and the parent ID to the quote post ID
+		parentRelationsip = search.QuoteRelationship
+		parentParts := strings.Split(quotingURI, "/")
+		parentID = parentParts[len(parentParts)-1]
 	}
 
-	// Grab Post ID from the Path
-	pathParts := strings.Split(opPath, "/")
-	postID := pathParts[len(pathParts)-1]
-
 	postLink := fmt.Sprintf("https://staging.bsky.app/profile/%s/post/%s", authorProfile.Handle, postID)
+
+	// Write the post to the Post Registry if enabled
+	if bsky.PostRegistryEnabled {
+		author := search.Author{
+			DID:    authorProfile.Did,
+			Handle: authorProfile.Handle,
+		}
+
+		post := search.Post{
+			ID:        postID,
+			Text:      pst.Text,
+			AuthorDID: authorProfile.Did,
+			CreatedAt: t,
+		}
+
+		if parentID != "" {
+			post.ParentPostID = &parentID
+		}
+		if rootID != "" {
+			post.RootPostID = &rootID
+		}
+
+		if pst.Embed != nil && pst.Embed.EmbedImages != nil {
+			post.HasEmbeddedMedia = true
+		}
+		if parentRelationsip != "" {
+			post.ParentRelationship = &parentRelationsip
+		}
+
+		err = bsky.PostRegistry.AddAuthor(ctx, &author)
+		if err != nil {
+			log.Printf("error writing author to registry: %+v\n", err)
+		}
+
+		err = bsky.PostRegistry.AddPost(ctx, &post)
+		if err != nil {
+			log.Printf("error writing post to registry: %+v\n", err)
+		}
+	}
 
 	// Build the log message
 	logMsg := bsky.buildLogMessage(
