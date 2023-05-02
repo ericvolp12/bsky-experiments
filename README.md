@@ -16,13 +16,16 @@ Graph data is written to `data/social-graph.bin` for the latest version and `dat
 
 ### Running the Graph Builder
 
-Copy the contents of `.env.example` to `.env` in the root project directory.
+1. Copy the contents of `.env.example` to `.env` in the root project directory.
 
-Add your [BSky App Password](https://staging.bsky.app/settings/app-passwords) credentials (using your normal BSky email address as the username), replacing the placeholder in `ATP_AUTH=your_username:your_app_password`.
+2. Add your [BSky App Password](https://staging.bsky.app/settings/app-passwords) credentials (using your normal BSky email address as the username), replacing the placeholder in `ATP_AUTH=`.
 
-For OTLP Tracing, configure the `OTEL_EXPORTER_OTLP_ENDPOINT=` to point at a valid OTLPHTTP trace collector, I haven't put in a setting to disable this yet so it will complain when it tries to export traces if it can't talk to anything (I _think_), but the app still runs.
+3. For OTLP Tracing, configure the `OTEL_EXPORTER_OTLP_ENDPOINT=` to point at a valid OTLPHTTP trace collector.
 
-If you'd like to collect the text and references in EVERY post on BSky, update `REGISTRY_DB_CONNECTION_STRING=postgres://postgres:postgres@localhost:5432/registry` to be a valid Postgres connection string to an accessible database. If you don't want this functionality, delete the variable from the `.env` file and it will disable the feature.
+   - I haven't put in a setting to disable this yet so it will complain when it tries to export traces if it can't talk to anything (I _think_), but the app still runs.
+
+4. If you'd like to collect the text and references in EVERY post on BSky, update `REGISTRY_DB_CONNECTION_STRING=` in `.env` to be a valid Postgres connection string to an accessible database.
+   1. If you don't want this functionality, delete the variable from the `.env` file and it will disable the feature.
 
 To build containers and start up the Graph Builder, run:
 
@@ -30,4 +33,8 @@ To build containers and start up the Graph Builder, run:
 $ docker-compose up --build -d
 ```
 
-The only dependencies required for this is Docker.
+The only dependency required for this is Docker.
+
+### Metrics
+
+Metrics and debug routes exist at `{host}:6060/metrics` and `{host}:6060/debug/pprof/{profile}` for Prometheus metrics on data consumed and `pprof`-based memory and CPU profiling of the graph-builder.
