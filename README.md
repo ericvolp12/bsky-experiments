@@ -4,46 +4,30 @@ This repo has contains some fun Go experiments interacting with BlueSky via the 
 
 The Makefile contains some useful targets for building and running the experiments.
 
-## Experiments
+## Graph Builder (for the [BSky Atlas](https://bsky.jazco.dev))
 
-### Mention Counter
+The GraphBuilder is the main project in this repo, it constructs a graph of interactions between users on the platform based on all commits/posts that come in from the firehose.
 
-The mention counter is a simple experiment that connects to the BlueSky Firehose and counts the number of mentions of users to see who is being harangued the most by the BlueSky community.
+The Graph is stored in a shared memory datastructure that's dumped to disk in a binary format every 30 seconds, overwriting its past checkpoint.
 
+Every 30 minutes, it starts writing to a new file with an appropriate timestamp so you can track change in the graph over time.
 
-To run this experiment, copy the `.env.example` file to `.env` and add your `bsky` email and an app password.
+Graph data is written to `data/social-graph.bin` for the latest version and `data/social-graph-{YYYY}_{MM}_{DD}_{HH}_{MM}.bin` for the checkpoints using the date and time according to current time UTC.
+
+### Running the Graph Builder
+
+Copy the contents of `.env.example` to `.env` in the root project directory.
+
+Add your [BSky App Password](https://staging.bsky.app/settings/app-passwords) credentials (using your normal BSky email address as the username), replacing the placeholder in `ATP_AUTH=your_username:your_app_password`.
+
+For OTLP Tracing, configure the `OTEL_EXPORTER_OTLP_ENDPOINT=` to point at a valid OTLPHTTP trace collector, I haven't put in a setting to disable this yet so it will complain when it tries to export traces if it can't talk to anything (I _think_), but the app still runs.
+
+If you'd like to collect the text and references in EVERY post on BSky, update `REGISTRY_DB_CONNECTION_STRING=postgres://postgres:postgres@localhost:5432/registry` to be a valid Postgres connection string to an accessible database. If you don't want this functionality, delete the variable from the `.env` file and it will disable the feature.
+
+To build containers and start up the Graph Builder, run:
 
 ```shell
-$ cp .env.example .env
+$ docker-compose up --build -d
 ```
 
-Then build and the docker image with the following make target:
-
-```shell
-$ make docker-run
-```
-
-#### Example Output
-
-```shell
-$ make docker-run
-Building Docker image...
-<...>
-Running Docker container...
-docker run --name bsky-mention-counts --rm --env-file .env -v /home/user/documents/ericvolp12/bsky-experiments/data/:/app/data/ bsky-mention-counts
-[22.04.23 17:35:24] col.bsky.social: 
-        @prer.at you have reached maximum free likes - any further likes cost a follow back
-        Mentions: [@prer.at]
-[22.04.23 17:35:24] thesecretsauce.bsky.social: 
-        I made it on to @bsky.app thanks to @aliafonzy.bsky.social! Let’s see what’s going on in here… 👀 
-
-        Hey ya’ll.
-        Mentions: [@bsky.app @aliafonzy.bsky.social]
-[22.04.23 17:35:54] writing mention counts to file...
-^Cmake: *** [Makefile:29: docker-run] Error 2
-$ # Read the output file
-$ cat data/mention-counts.txt
-prer.at: 1
-bsky.app: 1
-aliafonzy.bsky.social: 1
-```
+The only dependencies required for this is Docker.
