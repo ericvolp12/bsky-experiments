@@ -38,3 +38,17 @@ The only dependency required for this is Docker.
 ### Metrics
 
 Metrics and debug routes exist at `{host}:6060/metrics` and `{host}:6060/debug/pprof/{profile}` for Prometheus metrics on data consumed and `pprof`-based memory and CPU profiling of the graph-builder.
+
+### Troubleshooting
+
+If you receive the following error when running the above `docker-compose` command:
+
+```
+Error response from daemon: error looking up logging plugin loki: plugin "loki" not found
+```
+
+then run the following command:
+
+```
+$ docker plugin install grafana/loki-docker-driver:latest --alias loki --grant-all-permissions
+```
