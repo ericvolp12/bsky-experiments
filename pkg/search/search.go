@@ -10,6 +10,10 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
+type NotFoundError struct {
+	error
+}
+
 // Post relationships
 const (
 	ReplyRelationship = "r"
@@ -17,19 +21,25 @@ const (
 )
 
 type Post struct {
-	ID                 string
-	Text               string
-	ParentPostID       *string
-	RootPostID         *string
-	AuthorDID          string
-	CreatedAt          time.Time
-	HasEmbeddedMedia   bool
-	ParentRelationship *string // null, "r", "q"
+	ID                 string    `json:"id"`
+	Text               string    `json:"text"`
+	ParentPostID       *string   `json:"parent_post_id"`
+	RootPostID         *string   `json:"root_post_id"`
+	AuthorDID          string    `json:"author_did"`
+	CreatedAt          time.Time `json:"created_at"`
+	HasEmbeddedMedia   bool      `json:"has_embedded_media"`
+	ParentRelationship *string   `json:"parent_relationship"` // null, "r", "q"
+}
+
+type PostView struct {
+	Post         `json:"post"`
+	AuthorHandle string `json:"author_handle"`
+	Depth        int    `json:"depth"`
 }
 
 type Author struct {
-	DID    string
-	Handle string
+	DID    string `json:"did"`
+	Handle string `json:"handle"`
 }
 
 type PostRegistry struct {
@@ -151,6 +161,109 @@ func (pr *PostRegistry) GetAuthor(ctx context.Context, did string) (*Author, err
 	}
 
 	return author, nil
+}
+
+func (pr *PostRegistry) GetAuthorsByHandle(ctx context.Context, handle string) ([]*Author, error) {
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetAuthorsByHandle")
+	defer span.End()
+	selectQuery := `SELECT did, handle FROM authors WHERE handle = $1`
+	rows, err := pr.db.Query(selectQuery, handle)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var authors []*Author
+	for rows.Next() {
+		author := &Author{}
+		err := rows.Scan(&author.DID, &author.Handle)
+		if err != nil {
+			return nil, err
+		}
+		authors = append(authors, author)
+	}
+
+	return authors, nil
+}
+
+func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID string) ([]PostView, error) {
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetThreadView")
+	defer span.End()
+
+	query := `
+WITH RECURSIVE post_tree AS (
+    -- Base case: select root post
+    SELECT id,
+           text,
+           parent_post_id,
+           root_post_id,
+           author_did,
+           a2.handle,
+           created_at,
+           has_embedded_media,
+           0 AS depth
+    FROM posts
+             LEFT JOIN authors a2 on a2.did = posts.author_did
+    WHERE id = $1
+      AND author_did = $2
+
+    UNION ALL
+
+    -- Recursive case: select child posts
+    SELECT p.id,
+           p.text,
+           p.parent_post_id,
+           p.root_post_id,
+           p.author_did,
+           a.handle,
+           p.created_at,
+           p.has_embedded_media,
+           pt.depth + 1 AS depth
+    FROM posts p
+             JOIN
+         post_tree pt ON p.parent_post_id = pt.id AND p.parent_relationship = 'r'
+             LEFT JOIN authors a on p.author_did = a.did)
+
+SELECT id,
+       text,
+       parent_post_id,
+       root_post_id,
+       author_did,
+       handle,
+       created_at,
+       has_embedded_media,
+       depth
+FROM post_tree
+ORDER BY depth;`
+
+	rows, err := pr.db.QueryContext(ctx, query, postID, authorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var postViews []PostView
+	for rows.Next() {
+		var pv PostView
+		err := rows.Scan(&pv.ID, &pv.Text, &pv.ParentPostID, &pv.RootPostID, &pv.AuthorDID, &pv.AuthorHandle, &pv.CreatedAt, &pv.HasEmbeddedMedia, &pv.Depth)
+		if err != nil {
+			return nil, err
+		}
+		postViews = append(postViews, pv)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(postViews) == 0 {
+		return nil, NotFoundError{fmt.Errorf("post not found")}
+	}
+
+	return postViews, nil
 }
 
 func (pr *PostRegistry) Close() error {
