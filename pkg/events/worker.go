@@ -272,6 +272,7 @@ func (bsky *BSky) ProcessRelation(
 	}
 	span.AddEvent("ProcessRelation:AcquireGraphLock")
 	bsky.SocialGraphMux.Lock()
+	span.AddEvent("ProcessRelation:GraphLockAcquired")
 	bsky.SocialGraph.IncrementEdge(from, to, 1)
 	span.AddEvent("ProcessRelation:ReleaseGraphLock")
 	bsky.SocialGraphMux.Unlock()

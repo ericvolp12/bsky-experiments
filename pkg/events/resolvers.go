@@ -35,6 +35,7 @@ func (bsky *BSky) RefreshAuthToken(ctx context.Context, workerID int) error {
 	defer span.End()
 	span.AddEvent("RefreshAuthToken:AcquireClientLock")
 	worker.ClientMux.Lock()
+	span.AddEvent("RefreshAuthToken:ClientLockAcquired")
 	err := intXRPC.RefreshAuth(ctx, worker.Client)
 	span.AddEvent("RefreshAuthToken:ReleaseClientLock")
 	worker.ClientMux.Unlock()
@@ -66,6 +67,7 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string, workerID int) 
 	//Lock the client
 	span.AddEvent("ResolveProfile:AcquireClientRLock")
 	worker.ClientMux.RLock()
+	span.AddEvent("ResolveProfile:ClientRLockAcquired")
 	// Get the profile from the API
 	profile, err := appbsky.ActorGetProfile(ctx, worker.Client, did)
 	// Unlock the client
@@ -126,6 +128,7 @@ func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*b
 	//Lock the client
 	span.AddEvent("ResolvePost:AcquireClientRLock")
 	worker.ClientMux.RLock()
+	span.AddEvent("ResolvePost:ClientRLockAcquired")
 	// Get the post from the API
 	posts, err := FeedGetPostsWithTimeout(ctx, worker.Client, []string{uri}, time.Second*2)
 	// Unlock the client

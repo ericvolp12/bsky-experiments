@@ -186,7 +186,7 @@ func saveGraph(ctx context.Context, bsky *intEvents.BSky, binReaderWriter *graph
 	// Acquire locks on the data structures we're reading from
 	span.AddEvent("saveGraph:AcquireGraphLock")
 	bsky.SocialGraphMux.RLock()
-
+	span.AddEvent("saveGraph:GraphLockAcquired")
 	timestampedGraphFilePath := getHalfHourFileName(graphFileFromEnv)
 
 	fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to binary file, last updated: %s\u001b[0m\n",
@@ -257,7 +257,7 @@ func newTraceProvider(exp sdktrace.SpanExporter) *sdktrace.TracerProvider {
 	}
 
 	// initialize the traceIDRatioBasedSampler
-	traceIDRatioBasedSampler := sdktrace.TraceIDRatioBased(0.10)
+	traceIDRatioBasedSampler := sdktrace.TraceIDRatioBased(1)
 
 	return sdktrace.NewTracerProvider(
 		sdktrace.WithSampler(traceIDRatioBasedSampler),

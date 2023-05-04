@@ -61,6 +61,7 @@ func (bsky *BSky) DecodeFacets(
 	// Lock the graph
 	span.AddEvent("DecodeFacets:AcquireGraphLock")
 	bsky.SocialGraphMux.Lock()
+	span.AddEvent("DecodeFacets:GraphLockAcquired")
 
 	failedLookups := 0
 
