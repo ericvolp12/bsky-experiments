@@ -1,45 +1,45 @@
 # Makefile for Go project
 
 # Variables
-DOCKER_IMAGE_NAME = bsky-graph-builder
-DOCKER_CONTAINER_NAME = bsky-graph-builder
-DOCKERFILE = Dockerfile
+GRAPH_IMAGE_NAME = bsky-graph-builder
+SEARCH_IMAGE_NAME = bsky-search-api
 LOCAL_DATA_DIR = data/
 DOCKER_MOUNT_PATH = /app/data/
 ENV_FILE = .env
-GO_CMD = CGO_ENABLED=1 GOOS=linux go
+GO_CMD_W_CGO = CGO_ENABLED=1 GOOS=linux go
+GO_CMD = CGO_ENABLED=0 GOOS=linux go
 
-# Build the Go binary
-build:
-	@echo "Building Go binary..."
-	$(GO_CMD) build -race -o graph-builder cmd/graph-builder/*.go
+# Build the Graph Builder Go binary
+build-graph-builder:
+	@echo "Building Graph Builder Go binary..."
+	$(GO_CMD_W_CGO) build -race -o graph-builder cmd/graph-builder/*.go
 
-clean:
-	@echo "Cleaning Go binary..."
-	rm -f bsky-experiments
+# Build the Graph Builder Docker image
+docker-build-graph-builder:
+	@echo "Building Graph Builder Docker image..."
+	docker build -t $(GRAPH_IMAGE_NAME) -f build/graph-builder/Dockerfile .
 
-# Build the Docker image
-docker-build:
-	@echo "Building Docker image..."
-	docker build -t $(DOCKER_IMAGE_NAME) -f $(DOCKERFILE) .
+graph-builder-up:
+	@echo "Starting Graph Builder..."
+	docker-compose -f build/graph-builder/docker-compose.yml --build up -d
 
-# Run the Docker container
-docker-run: docker-build
-	@echo "Running Docker container..."
-	docker stop $(DOCKER_CONTAINER_NAME) || true
-	docker rm $(DOCKER_CONTAINER_NAME) || true
-	docker run --name $(DOCKER_CONTAINER_NAME) -d --env-file $(ENV_FILE) -p 6060:6060 -v $(shell pwd)/$(LOCAL_DATA_DIR):$(DOCKER_MOUNT_PATH) $(DOCKER_IMAGE_NAME)
-	docker logs -f $(DOCKER_CONTAINER_NAME)
+# Build the Search API Go binary
+build-search:
+	@echo "Building Search Go binary..."
+	$(GO_CMD) build -o search cmd/search/*.go
 
-# Remove the Docker container
-docker-clean:
-	@echo "Removing Docker container..."
-	docker rm $(DOCKER_CONTAINER_NAME)
+# Build the Search API Docker image
+docker-build-search:
+	@echo "Building Search Builder Docker image..."
+	docker build -t $(SEARCH_IMAGE_NAME) -f build/search/Dockerfile .
 
+search-up:
+	@echo "Starting Search API..."
+	docker-compose -f build/search/docker-compose.yml --build up -d
 
 # Generate SQLC Code
 sqlc:
 	@echo "Generating SQLC code..."
 	sqlc generate -f pkg/search/sqlc.yaml
 
-.PHONY: build clean docker-build docker-run docker-clean
+.PHONY: build-graph-builder docker-build-graph-builder build-search docker-build-search sqlc

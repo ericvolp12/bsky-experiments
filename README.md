@@ -24,13 +24,22 @@ Graph data is written to `data/social-graph.bin` for the latest version and `dat
 
    - If you don't want this functionality, delete the variable from the `.env` file and it will disable the feature.
 
-4. If you'd like to collect the text and references in EVERY post on BSky, update `REGISTRY_DB_CONNECTION_STRING=` in `.env` to be a valid Postgres connection string to an accessible database.
+4. Logging is by default handled by a Loki agent running in my local network, **you should delete the following block** in the `build/graph-builder/docker-compose.yml` file:
+
+   ```yml
+   logging:
+     driver: loki
+     options:
+     loki-url: "http://10.0.6.7:3100/loki/api/v1/push"
+   ```
+
+5. If you'd like to collect the text and references in EVERY post on BSky, update `REGISTRY_DB_CONNECTION_STRING=` in `.env` to be a valid Postgres connection string to an accessible database.
    - If you don't want this functionality, delete the variable from the `.env` file and it will disable the feature.
 
 To build containers and start up the Graph Builder, run:
 
 ```shell
-$ docker-compose up --build -d
+$ make graph-builder-up
 ```
 
 The only dependency required for this is Docker.

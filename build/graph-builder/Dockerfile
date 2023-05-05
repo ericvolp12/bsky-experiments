@@ -8,7 +8,7 @@ RUN go mod download
 
 COPY . .
 
-RUN make build
+RUN make build-graph-builder
 
 FROM alpine:latest as certs
 
