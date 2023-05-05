@@ -21,7 +21,11 @@ docker-build-graph-builder:
 
 graph-builder-up:
 	@echo "Starting Graph Builder..."
-	docker-compose -f build/graph-builder/docker-compose.yml --build up -d
+	docker-compose -f build/graph-builder/docker-compose.yml up --build -d
+
+graph-builder-restart:
+	@echo "Restarting Graph Builder..."
+	docker-compose -f build/graph-builder/docker-compose.yml restart -t 5
 
 # Build the Search API Go binary
 build-search:
@@ -35,11 +39,15 @@ docker-build-search:
 
 search-up:
 	@echo "Starting Search API..."
-	docker-compose -f build/search/docker-compose.yml --build up -d
+	docker-compose -f build/search/docker-compose.yml up --build -d
+
+search-restart:
+	@echo "Restarting Graph Builder..."
+	docker-compose -f build/search/docker-compose.yml restart -t 5
 
 # Generate SQLC Code
 sqlc:
 	@echo "Generating SQLC code..."
 	sqlc generate -f pkg/search/sqlc.yaml
 
-.PHONY: build-graph-builder docker-build-graph-builder build-search docker-build-search sqlc
+.PHONY: build-graph-builder docker-build-graph-builder build-search docker-build-search sqlc graph-builder-up search-up graph-builder-restart search-restart
