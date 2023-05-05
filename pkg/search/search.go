@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ericvolp12/bsky-experiments/pkg/search/search_queries"
 	_ "github.com/lib/pq" // postgres driver
 	"go.opentelemetry.io/otel"
 )
@@ -43,7 +44,8 @@ type Author struct {
 }
 
 type PostRegistry struct {
-	db *sql.DB
+	db      *sql.DB
+	queries *search_queries.Queries
 }
 
 func NewPostRegistry(connectionString string) (*PostRegistry, error) {
@@ -69,8 +71,11 @@ func NewPostRegistry(connectionString string) (*PostRegistry, error) {
 		return nil, err
 	}
 
+	queries := search_queries.New(db)
+
 	registry := &PostRegistry{
-		db: db,
+		db:      db,
+		queries: queries,
 	}
 
 	err = registry.initializeDB()
@@ -129,143 +134,164 @@ func (pr *PostRegistry) GetPost(ctx context.Context, postID string) (*Post, erro
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetPost")
 	defer span.End()
-	selectQuery := `SELECT id, text, parent_post_id, root_post_id, author_did, created_at, has_embedded_media, parent_relationship FROM posts WHERE id = $1`
-	row := pr.db.QueryRow(selectQuery, postID)
-
-	post := &Post{}
-	err := row.Scan(&post.ID, &post.Text, &post.ParentPostID, &post.RootPostID, &post.AuthorDID, &post.CreatedAt, &post.HasEmbeddedMedia, &post.ParentRelationship)
+	post, err := pr.queries.GetPost(ctx, postID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("post not found")
+			return nil, NotFoundError{fmt.Errorf("post not found")}
 		}
 		return nil, err
 	}
 
-	return post, nil
+	return postFromQueryPost(post), nil
 }
 
 func (pr *PostRegistry) GetAuthor(ctx context.Context, did string) (*Author, error) {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetAuthor")
 	defer span.End()
-	selectQuery := `SELECT did, handle FROM authors WHERE did = $1`
-	row := pr.db.QueryRow(selectQuery, did)
-
-	author := &Author{}
-	err := row.Scan(&author.DID, &author.Handle)
+	author, err := pr.queries.GetAuthor(ctx, did)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("author not found")
+			return nil, NotFoundError{fmt.Errorf("author not found")}
 		}
 		return nil, err
 	}
-
-	return author, nil
+	return &Author{DID: author.Did, Handle: author.Handle}, nil
 }
 
 func (pr *PostRegistry) GetAuthorsByHandle(ctx context.Context, handle string) ([]*Author, error) {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetAuthorsByHandle")
 	defer span.End()
-	selectQuery := `SELECT did, handle FROM authors WHERE handle = $1`
-	rows, err := pr.db.Query(selectQuery, handle)
 
+	authors, err := pr.queries.GetAuthorsByHandle(ctx, handle)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, NotFoundError{fmt.Errorf("authors not found")}
+		}
 		return nil, err
 	}
-	defer rows.Close()
 
-	var authors []*Author
-	for rows.Next() {
-		author := &Author{}
-		err := rows.Scan(&author.DID, &author.Handle)
-		if err != nil {
-			return nil, err
-		}
-		authors = append(authors, author)
+	retAuthors := make([]*Author, len(authors))
+	for i, author := range authors {
+		retAuthors[i] = &Author{DID: author.Did, Handle: author.Handle}
 	}
 
-	return authors, nil
+	return retAuthors, nil
 }
 
 func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID string) ([]PostView, error) {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetThreadView")
 	defer span.End()
-
-	query := `
-WITH RECURSIVE post_tree AS (
-    -- Base case: select root post
-    SELECT id,
-           text,
-           parent_post_id,
-           root_post_id,
-           author_did,
-           a2.handle,
-           created_at,
-           has_embedded_media,
-           0 AS depth
-    FROM posts
-             LEFT JOIN authors a2 on a2.did = posts.author_did
-    WHERE id = $1
-      AND author_did = $2
-
-    UNION ALL
-
-    -- Recursive case: select child posts
-    SELECT p.id,
-           p.text,
-           p.parent_post_id,
-           p.root_post_id,
-           p.author_did,
-           a.handle,
-           p.created_at,
-           p.has_embedded_media,
-           pt.depth + 1 AS depth
-    FROM posts p
-             JOIN
-         post_tree pt ON p.parent_post_id = pt.id AND p.parent_relationship = 'r'
-             LEFT JOIN authors a on p.author_did = a.did)
-
-SELECT id,
-       text,
-       parent_post_id,
-       root_post_id,
-       author_did,
-       handle,
-       created_at,
-       has_embedded_media,
-       depth
-FROM post_tree
-ORDER BY depth;`
-
-	rows, err := pr.db.QueryContext(ctx, query, postID, authorID)
+	threadViews, err := pr.queries.GetThreadView(ctx, search_queries.GetThreadViewParams{ID: postID, AuthorDid: authorID})
 	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var postViews []PostView
-	for rows.Next() {
-		var pv PostView
-		err := rows.Scan(&pv.ID, &pv.Text, &pv.ParentPostID, &pv.RootPostID, &pv.AuthorDID, &pv.AuthorHandle, &pv.CreatedAt, &pv.HasEmbeddedMedia, &pv.Depth)
-		if err != nil {
-			return nil, err
+		if err == sql.ErrNoRows {
+			return nil, NotFoundError{fmt.Errorf("thread not found")}
 		}
-		postViews = append(postViews, pv)
-	}
-
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	if len(postViews) == 0 {
-		return nil, NotFoundError{fmt.Errorf("post not found")}
+	retThreadViews := make([]PostView, len(threadViews))
+	for i, threadView := range threadViews {
+		var parentPostIDPtr *string
+		if threadView.ParentPostID.Valid {
+			parentPostID := fmt.Sprintf("%s", threadView.ParentPostID.String)
+			parentPostIDPtr = &parentPostID
+		}
+
+		var rootPostIDPtr *string
+		if threadView.RootPostID.Valid {
+			rootPostID := fmt.Sprintf("%s", threadView.RootPostID.String)
+			rootPostIDPtr = &rootPostID
+		}
+
+		retThreadViews[i] = PostView{
+			Post: Post{
+				ID:               threadView.ID,
+				Text:             threadView.Text,
+				ParentPostID:     parentPostIDPtr,
+				RootPostID:       rootPostIDPtr,
+				AuthorDID:        threadView.AuthorDid,
+				CreatedAt:        threadView.CreatedAt,
+				HasEmbeddedMedia: threadView.HasEmbeddedMedia,
+			},
+			AuthorHandle: threadView.Handle.String,
+			Depth:        int(threadView.Depth.(int64)),
+		}
 	}
 
-	return postViews, nil
+	return retThreadViews, nil
+}
+
+func (pr *PostRegistry) GetOldestPresentParent(ctx context.Context, postID string) (*Post, error) {
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetOldestPresentParent")
+	defer span.End()
+	postView, err := pr.queries.GetOldestPresentParent(ctx, postID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, NotFoundError{fmt.Errorf("post not found")}
+		}
+		return nil, err
+	}
+
+	var parentPostIDPtr *string
+	if postView.ParentPostID.Valid {
+		parentPostIDPtr = &postView.ParentPostID.String
+	}
+
+	var rootPostIDPtr *string
+	if postView.RootPostID.Valid {
+		rootPostIDPtr = &postView.RootPostID.String
+	}
+
+	var parentRelationshipPtr *string
+	if postView.ParentRelationship.Valid {
+		parentRelationshipPtr = &postView.ParentRelationship.String
+	}
+
+	return &Post{
+		ID:                 postView.ID,
+		Text:               postView.Text,
+		ParentPostID:       parentPostIDPtr,
+		RootPostID:         rootPostIDPtr,
+		AuthorDID:          postView.AuthorDid,
+		CreatedAt:          postView.CreatedAt,
+		HasEmbeddedMedia:   postView.HasEmbeddedMedia,
+		ParentRelationship: parentRelationshipPtr,
+	}, nil
 }
 
 func (pr *PostRegistry) Close() error {
 	return pr.db.Close()
+}
+
+// postFromQueryPost turns a queries.Post into a search.Post
+func postFromQueryPost(p search_queries.Post) *Post {
+	var parentPostIDPtr *string
+	if p.ParentPostID.Valid {
+		parentPostIDPtr = &p.ParentPostID.String
+	}
+
+	var rootPostIDPtr *string
+	if p.RootPostID.Valid {
+		rootPostIDPtr = &p.RootPostID.String
+	}
+
+	var parentRelationshipPtr *string
+	if p.ParentRelationship.Valid {
+		parentRelationshipPtr = &p.ParentRelationship.String
+	}
+
+	return &Post{
+		ID:                 p.ID,
+		Text:               p.Text,
+		ParentPostID:       parentPostIDPtr,
+		RootPostID:         rootPostIDPtr,
+		AuthorDID:          p.AuthorDid,
+		CreatedAt:          p.CreatedAt,
+		HasEmbeddedMedia:   p.HasEmbeddedMedia,
+		ParentRelationship: parentRelationshipPtr,
+	}
 }

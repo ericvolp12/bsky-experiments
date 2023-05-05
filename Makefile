@@ -36,4 +36,10 @@ docker-clean:
 	@echo "Removing Docker container..."
 	docker rm $(DOCKER_CONTAINER_NAME)
 
+
+# Generate SQLC Code
+sqlc:
+	@echo "Generating SQLC code..."
+	sqlc generate -f pkg/search/sqlc.yaml
+
 .PHONY: build clean docker-build docker-run docker-clean

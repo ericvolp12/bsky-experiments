@@ -67,22 +67,57 @@ func processThreadRequest(c *gin.Context, postRegistry *search.PostRegistry, aut
 	if authorID == "" {
 		authors, err := postRegistry.GetAuthorsByHandle(context.Background(), authorHandle)
 		if err != nil {
+			log.Printf("Error getting authors: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		if len(authors) == 0 {
+			log.Printf("Author with handle '%s' not found", authorHandle)
 			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Author with handle '%s' not found", authorHandle)})
 			return
 		}
 		authorID = authors[0].DID
 	}
 
+	// Get post from registry to look for root post
+	post, err := postRegistry.GetPost(ctx, postID)
+	if err != nil {
+		// Use errors.As to check for specific error types
+		if errors.As(err, &search.NotFoundError{}) {
+			log.Printf("Post with authorID '%s' and postID '%s' not found", authorID, postID)
+			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Post with authorID '%s' and postID '%s' not found", authorID, postID)})
+		} else {
+			log.Printf("Error getting post: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	if post.RootPostID != nil {
+		postID = *post.RootPostID
+
+		// Check if we have the root post stored, otherwise we'll just build the thread from the post we have
+		_, err = postRegistry.GetPost(ctx, postID)
+		if err != nil {
+			// Use errors.As to check for specific error types
+			if errors.As(err, &search.NotFoundError{}) {
+				postID = post.ID
+			} else {
+				log.Printf("Error getting root post: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+	}
+
 	threadView, err := postRegistry.GetThreadView(ctx, postID, authorID)
 	if err != nil {
 		// Use errors.As to check for specific error types
 		if errors.As(err, &search.NotFoundError{}) {
+			log.Printf("Thread with authorID '%s' and postID '%s' not found", authorID, postID)
 			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Thread with authorID '%s' and postID '%s' not found", authorID, postID)})
 		} else {
+			log.Printf("Error getting thread: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return
