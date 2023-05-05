@@ -79,40 +79,11 @@ func processThreadRequest(c *gin.Context, postRegistry *search.PostRegistry, aut
 		authorID = authors[0].DID
 	}
 
-	// Get post from registry to look for root post
-	post, err := postRegistry.GetPost(ctx, postID)
+	// Get highest level post in thread
+	rootPost, err := getRootOrOldestParent(ctx, postRegistry, postID)
+
+	threadView, err := postRegistry.GetThreadView(ctx, rootPost.ID, rootPost.AuthorDID)
 	if err != nil {
-		// Use errors.As to check for specific error types
-		if errors.As(err, &search.NotFoundError{}) {
-			log.Printf("Post with authorID '%s' and postID '%s' not found", authorID, postID)
-			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Post with authorID '%s' and postID '%s' not found", authorID, postID)})
-		} else {
-			log.Printf("Error getting post: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
-		return
-	}
-
-	if post.RootPostID != nil {
-		postID = *post.RootPostID
-
-		// Check if we have the root post stored, otherwise we'll just build the thread from the post we have
-		_, err = postRegistry.GetPost(ctx, postID)
-		if err != nil {
-			// Use errors.As to check for specific error types
-			if errors.As(err, &search.NotFoundError{}) {
-				postID = post.ID
-			} else {
-				log.Printf("Error getting root post: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-		}
-	}
-
-	threadView, err := postRegistry.GetThreadView(ctx, postID, authorID)
-	if err != nil {
-		// Use errors.As to check for specific error types
 		if errors.As(err, &search.NotFoundError{}) {
 			log.Printf("Thread with authorID '%s' and postID '%s' not found", authorID, postID)
 			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Thread with authorID '%s' and postID '%s' not found", authorID, postID)})
@@ -124,4 +95,45 @@ func processThreadRequest(c *gin.Context, postRegistry *search.PostRegistry, aut
 	}
 
 	c.JSON(http.StatusOK, threadView)
+}
+
+func getRootOrOldestParent(ctx context.Context, postRegistry *search.PostRegistry, postID string) (*search.Post, error) {
+	// Get post from registry to look for root post
+	post, err := postRegistry.GetPost(ctx, postID)
+	if err != nil {
+		if errors.As(err, &search.NotFoundError{}) {
+			return nil, fmt.Errorf("post with postID '%s' not found: %w", postID, err)
+		}
+		return nil, err
+	}
+
+	// If post has a root post and we've stored it, return it
+	if post.RootPostID != nil {
+		rootPost, err := postRegistry.GetPost(ctx, *post.RootPostID)
+		if err != nil {
+			// If we don't have the root post, continue to just return the oldest parent
+			if !errors.As(err, &search.NotFoundError{}) {
+				return nil, err
+			}
+		}
+
+		if rootPost != nil {
+			return rootPost, nil
+		}
+	}
+
+	// Otherwise, get the oldest parent from the registry
+	oldestParent, err := postRegistry.GetOldestPresentParent(ctx, postID)
+	if err != nil {
+		if errors.As(err, &search.NotFoundError{}) {
+			return post, nil
+		}
+		return nil, err
+	}
+
+	if oldestParent != nil {
+		return oldestParent, nil
+	}
+
+	return post, nil
 }
