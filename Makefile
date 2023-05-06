@@ -45,6 +45,11 @@ search-restart:
 	@echo "Restarting Graph Builder..."
 	docker-compose -f build/search/docker-compose.yml restart -t 5
 
+# Build the Layout FastAPI Service
+layout-up:
+	@echo "Starting Layout API..."
+	docker-compose -f build/layout/docker-compose.yml up --build -d
+
 # Generate SQLC Code
 sqlc:
 	@echo "Generating SQLC code..."

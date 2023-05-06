@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  bsky-layout:
+    build:
+      context: ../../
+      dockerfile: build/layout/Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    image: bsky-layout
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://10.0.6.7:3100/loki/api/v1/push"
+    container_name: bsky-layout
+    env_file:
+      - ../../.env
+    ports:
+      - "8086:8086"
+

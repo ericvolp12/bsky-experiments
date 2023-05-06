@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/ericvolp12/bsky-experiments/pkg/layout"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	ginprometheus "github.com/ericvolp12/go-gin-prometheus"
 	"github.com/gin-contrib/cors"
@@ -40,15 +41,31 @@ var cacheMisses = promauto.NewCounterVec(prometheus.CounterOpts{
 	Help: "The total number of cache misses",
 }, []string{"cache_type"})
 
+type ThreadViewLayout struct {
+	Post         search.Post `json:"post"`
+	AuthorHandle string      `json:"author_handle"`
+	Depth        int         `json:"depth"`
+	X            float32     `json:"x"`
+	Y            float32     `json:"y"`
+}
+
 type ThreadViewCacheEntry struct {
 	ThreadView []search.PostView
 	Expiration time.Time
 }
 
+type LayoutCacheEntry struct {
+	Layout     []ThreadViewLayout
+	Expiration time.Time
+}
+
 type API struct {
 	PostRegistry       *search.PostRegistry
+	LayoutServiceHost  string
 	ThreadViewCacheTTL time.Duration
 	ThreadViewCache    *lru.ARCCache
+	LayoutCacheTTL     time.Duration
+	LayoutCache        *lru.ARCCache
 }
 
 func main() {
@@ -79,6 +96,11 @@ func main() {
 		log.Fatal("REGISTRY_DB_CONNECTION_STRING environment variable is required")
 	}
 
+	layoutServiceHost := os.Getenv("LAYOUT_SERVICE_HOST")
+	if layoutServiceHost == "" {
+		layoutServiceHost = "http://localhost:8086"
+	}
+
 	// Registers a tracer Provider globally if the exporter endpoint is set
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
 		log.Println("initializing tracer...")
@@ -105,10 +127,18 @@ func main() {
 		log.Fatalf("Failed to create threadViewCache: %v", err)
 	}
 
+	layoutCache, err := lru.NewARC(250)
+	if err != nil {
+		log.Fatalf("Failed to create layoutCache: %v", err)
+	}
+
 	api := &API{
 		PostRegistry:       postRegistry,
+		LayoutServiceHost:  layoutServiceHost,
 		ThreadViewCache:    threadViewCache,
 		ThreadViewCacheTTL: 5 * time.Minute,
+		LayoutCache:        layoutCache,
+		LayoutCacheTTL:     5 * time.Minute,
 	}
 
 	router := gin.New()
@@ -189,6 +219,57 @@ func main() {
 	router.Run(fmt.Sprintf(":%s", port))
 }
 
+func (api *API) layoutThread(ctx context.Context, rootPostID string, threadView []search.PostView) ([]ThreadViewLayout, error) {
+	tracer := otel.Tracer("search-api")
+	ctx, span := tracer.Start(ctx, "layoutThread")
+	defer span.End()
+
+	// Check for the layout in the ARC Cache
+	entry, ok := api.LayoutCache.Get(rootPostID)
+	if ok {
+		cacheEntry := entry.(LayoutCacheEntry)
+		if cacheEntry.Expiration.After(time.Now()) {
+			cacheHits.WithLabelValues("layout").Inc()
+			span.SetAttributes(attribute.Bool("layout_cache_hit", true))
+			return cacheEntry.Layout, nil
+		}
+		// If the layout is expired, remove it from the cache
+		api.LayoutCache.Remove(rootPostID)
+	}
+
+	cacheMisses.WithLabelValues("layout").Inc()
+
+	edges := createEdges(threadView)
+	points, err := layout.SendEdgeListRequest(ctx, api.LayoutServiceHost, edges)
+	if err != nil {
+		return nil, fmt.Errorf("error sending edge list request: %w", err)
+	}
+
+	// Build a ThreadViewLayout list from the threadView and points
+	var threadViewLayout []ThreadViewLayout
+	for i, post := range threadView {
+		// Truncate X and Y to 2 decimal places
+		points[i][0] = float32(int(points[i][0]*100)) / 100
+		points[i][1] = float32(int(points[i][1]*100)) / 100
+
+		threadViewLayout = append(threadViewLayout, ThreadViewLayout{
+			Post:         post.Post,
+			AuthorHandle: post.AuthorHandle,
+			Depth:        post.Depth,
+			X:            points[i][0],
+			Y:            points[i][1],
+		})
+	}
+
+	// Update the ARC Cache
+	api.LayoutCache.Add(rootPostID, LayoutCacheEntry{
+		Layout:     threadViewLayout,
+		Expiration: time.Now().Add(api.LayoutCacheTTL),
+	})
+
+	return threadViewLayout, nil
+}
+
 func (api *API) processThreadRequest(c *gin.Context, authorID, authorHandle, postID string) {
 	ctx := c.Request.Context()
 	tracer := otel.Tracer("search-api")
@@ -249,6 +330,38 @@ func (api *API) processThreadRequest(c *gin.Context, authorID, authorHandle, pos
 	c.Set("rootPostID", rootPost.ID)
 	c.Set("rootPostAuthorDID", rootPost.AuthorDID)
 
+	// Get thread view
+	threadView, err := api.getThreadView(ctx, rootPost.ID, rootPost.AuthorDID)
+	if err != nil {
+		if errors.As(err, &search.NotFoundError{}) {
+			log.Printf("Thread with authorID '%s' and postID '%s' not found", authorID, postID)
+			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Thread with authorID '%s' and postID '%s' not found", authorID, postID)})
+		} else {
+			log.Printf("Error getting thread view: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	if c.Query("layout") == "true" {
+		threadViewLayout, err := api.layoutThread(ctx, rootPost.ID, threadView)
+		if err != nil {
+			log.Printf("Error laying out thread: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, threadViewLayout)
+		return
+	}
+
+	c.JSON(http.StatusOK, threadView)
+}
+
+func (api *API) getThreadView(ctx context.Context, postID, authorID string) ([]search.PostView, error) {
+	tracer := otel.Tracer("search-api")
+	ctx, span := tracer.Start(ctx, "getThreadView")
+	defer span.End()
+
 	// Check for the thread in the ARC Cache
 	entry, ok := api.ThreadViewCache.Get(postID)
 	if ok {
@@ -256,8 +369,7 @@ func (api *API) processThreadRequest(c *gin.Context, authorID, authorHandle, pos
 		if cacheEntry.Expiration.After(time.Now()) {
 			cacheHits.WithLabelValues("thread").Inc()
 			span.SetAttributes(attribute.Bool("thread_cache_hit", true))
-			c.JSON(http.StatusOK, cacheEntry.ThreadView)
-			return
+			return cacheEntry.ThreadView, nil
 		}
 		// If the thread is expired, remove it from the cache
 		api.ThreadViewCache.Remove(postID)
@@ -265,19 +377,13 @@ func (api *API) processThreadRequest(c *gin.Context, authorID, authorHandle, pos
 
 	cacheMisses.WithLabelValues("thread").Inc()
 
-	threadView, err := api.PostRegistry.GetThreadView(ctx, rootPost.ID, rootPost.AuthorDID)
+	threadView, err := api.PostRegistry.GetThreadView(ctx, postID, authorID)
 	if err != nil {
 		if errors.As(err, &search.NotFoundError{}) {
-			log.Printf("Thread with authorID '%s' and postID '%s' not found", authorID, postID)
-			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Thread with authorID '%s' and postID '%s' not found", authorID, postID)})
-		} else {
-			log.Printf("Error getting thread: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return nil, fmt.Errorf("thread with authorID '%s' and postID '%s' not found: %w", authorID, postID, err)
 		}
-		return
+		return nil, err
 	}
-
-	span.SetAttributes(attribute.Bool("thread_cache_hit", false))
 
 	// Update the ARC Cache
 	api.ThreadViewCache.Add(postID, ThreadViewCacheEntry{
@@ -285,7 +391,7 @@ func (api *API) processThreadRequest(c *gin.Context, authorID, authorHandle, pos
 		Expiration: time.Now().Add(api.ThreadViewCacheTTL),
 	})
 
-	c.JSON(http.StatusOK, threadView)
+	return threadView, nil
 }
 
 func (api *API) getRootOrOldestParent(ctx context.Context, postID string) (*search.Post, error) {
@@ -361,7 +467,7 @@ func newTraceProvider(exp sdktrace.SpanExporter) *sdktrace.TracerProvider {
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceName("BSkySearchAPI"),
+			semconv.ServiceName("BSkySearchAPI-Staging"),
 		),
 	)
 
@@ -377,4 +483,27 @@ func newTraceProvider(exp sdktrace.SpanExporter) *sdktrace.TracerProvider {
 		sdktrace.WithBatcher(exp),
 		sdktrace.WithResource(r),
 	)
+}
+
+func createEdges(authors []search.PostView) []layout.Edge {
+	var edges []layout.Edge
+	nodes := make(map[string]int)
+	counter := 0
+
+	for _, author := range authors {
+		post := author.Post
+		if post.ParentPostID != nil {
+			if _, ok := nodes[post.ID]; !ok {
+				nodes[post.ID] = counter
+				counter++
+			}
+			if _, ok := nodes[*post.ParentPostID]; !ok {
+				nodes[*post.ParentPostID] = counter
+				counter++
+			}
+			edges = append(edges, layout.Edge{nodes[*post.ParentPostID], nodes[post.ID]})
+		}
+	}
+
+	return edges
 }

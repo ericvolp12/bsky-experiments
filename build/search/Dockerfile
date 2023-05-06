@@ -6,7 +6,11 @@ COPY go.mod go.sum ./
 
 RUN go mod download
 
-COPY . .
+COPY pkg/ pkg/
+
+COPY cmd/ cmd/
+
+COPY Makefile Makefile
 
 RUN make build-search
 
