@@ -13,6 +13,8 @@ services:
       options:
         loki-url: "http://10.0.6.7:3100/loki/api/v1/push"
     container_name: bsky-search
+    environment:
+      - GIN_MODE=release
     env_file:
       - ../../.env
     ports:

@@ -11,12 +11,13 @@ import (
 	"time"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
+	ginprometheus "github.com/ericvolp12/go-gin-prometheus"
 	"github.com/gin-contrib/cors"
+	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	ginprometheus "github.com/zsais/go-gin-prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -25,6 +26,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
+	"go.uber.org/zap"
 )
 
 // Initialize Prometheus Metrics for cache hits and misses
@@ -51,6 +53,27 @@ type API struct {
 
 func main() {
 	ctx := context.Background()
+	var logger *zap.Logger
+
+	if os.Getenv("DEBUG") == "true" {
+		logger, _ = zap.NewDevelopment()
+		logger.Info("Starting logger in DEBUG mode...")
+	} else {
+		logger, _ = zap.NewProduction()
+		logger.Info("Starting logger in PRODUCTION mode...")
+	}
+
+	defer func() {
+		err := logger.Sync()
+		if err != nil {
+			fmt.Printf("failed to sync logger on teardown: %+v", err.Error())
+		}
+	}()
+
+	sugar := logger.Sugar()
+
+	sugar.Info("Reading config from environment...")
+
 	dbConnectionString := os.Getenv("REGISTRY_DB_CONNECTION_STRING")
 	if dbConnectionString == "" {
 		log.Fatal("REGISTRY_DB_CONNECTION_STRING environment variable is required")
@@ -88,7 +111,44 @@ func main() {
 		ThreadViewCacheTTL: 5 * time.Minute,
 	}
 
-	router := gin.Default()
+	router := gin.New()
+
+	router.Use(gin.Recovery())
+
+	router.Use(func() gin.HandlerFunc {
+		return func(c *gin.Context) {
+			start := time.Now()
+			// These can get consumed during request processing
+			path := c.Request.URL.Path
+			query := c.Request.URL.RawQuery
+			c.Next()
+
+			end := time.Now().UTC()
+			latency := end.Sub(start)
+
+			if len(c.Errors) > 0 {
+				// Append error field if this is an erroneous request.
+				for _, e := range c.Errors.Errors() {
+					logger.Error(e)
+				}
+			} else if path != "/metrics" {
+				logger.Info(path,
+					zap.Int("status", c.Writer.Status()),
+					zap.String("method", c.Request.Method),
+					zap.String("path", path),
+					zap.String("query", query),
+					zap.String("ip", c.ClientIP()),
+					zap.String("user-agent", c.Request.UserAgent()),
+					zap.String("time", end.Format(time.RFC3339)),
+					zap.String("rootPostID", c.GetString("rootPostID")),
+					zap.String("rootPostAuthorDID", c.GetString("rootPostAuthorDID")),
+					zap.Duration("latency", latency),
+				)
+			}
+		}
+	}())
+
+	router.Use(ginzap.RecoveryWithZap(logger, true))
 
 	router.Use(otelgin.Middleware("BSkySearchAPI"))
 
@@ -110,7 +170,7 @@ func main() {
 	))
 
 	// Prometheus middleware
-	p := ginprometheus.NewPrometheus("gin")
+	p := ginprometheus.NewPrometheus("gin", nil)
 	p.Use(router)
 
 	router.GET("/thread", func(c *gin.Context) {
@@ -178,6 +238,16 @@ func (api *API) processThreadRequest(c *gin.Context, authorID, authorHandle, pos
 		}
 		return
 	}
+
+	if rootPost == nil {
+		log.Printf("Post with postID '%s' not found", postID)
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Post with postID '%s' not found", postID)})
+		return
+	}
+
+	// Set the rootPostID in the context for the RequestLogger middleware
+	c.Set("rootPostID", rootPost.ID)
+	c.Set("rootPostAuthorDID", rootPost.AuthorDID)
 
 	// Check for the thread in the ARC Cache
 	entry, ok := api.ThreadViewCache.Get(postID)
