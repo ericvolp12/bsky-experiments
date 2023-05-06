@@ -69,7 +69,10 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string, workerID int) 
 	worker.ClientMux.RLock()
 	span.AddEvent("ResolveProfile:ClientRLockAcquired")
 	// Get the profile from the API
+	start := time.Now()
 	profile, err := appbsky.ActorGetProfile(ctx, worker.Client, did)
+	elapsed := time.Since(start)
+	apiCallDurationHistogram.WithLabelValues("ActorGetProfile").Observe(elapsed.Seconds())
 	// Unlock the client
 	span.AddEvent("ResolveProfile:ReleaseClientRLock")
 	worker.ClientMux.RUnlock()

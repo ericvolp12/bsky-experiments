@@ -49,3 +49,9 @@ var postProcessingDurationHistogram = promauto.NewHistogram(prometheus.Histogram
 	Help:    "The duration of processing posts",
 	Buckets: prometheus.ExponentialBuckets(0.01, 2, 15),
 })
+
+var apiCallDurationHistogram = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name:    "bsky_api_call_duration_seconds",
+	Help:    "The duration of API calls",
+	Buckets: prometheus.DefBuckets,
+}, []string{"api_call"})

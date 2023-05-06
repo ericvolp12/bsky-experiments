@@ -31,7 +31,10 @@ func FeedGetPostsWithTimeout(
 	resultChan := make(chan result, 1)
 
 	go func() {
+		start := time.Now()
 		posts, err := appbsky.FeedGetPosts(ctx, client, uris)
+		elapsed := time.Since(start)
+		apiCallDurationHistogram.WithLabelValues("FeedGetPosts").Observe(elapsed.Seconds())
 		resultChan <- result{posts: posts, err: err}
 	}()
 

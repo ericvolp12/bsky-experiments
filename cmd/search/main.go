@@ -95,7 +95,7 @@ func main() {
 	// CORS middleware
 	router.Use(cors.New(
 		cors.Config{
-			AllowOrigins: []string{"https://bsky.jazco.dev"},
+			AllowOrigins: []string{"https://bsky.jazco.dev", "https://hellthread-explorer.bsky-graph.pages.dev"},
 			AllowMethods: []string{"GET", "OPTIONS"},
 			AllowHeaders: []string{"Origin", "Content-Length", "Content-Type"},
 			AllowOriginFunc: func(origin string) bool {
@@ -192,6 +192,8 @@ func (api *API) processThreadRequest(c *gin.Context, authorID, authorHandle, pos
 		// If the thread is expired, remove it from the cache
 		api.ThreadViewCache.Remove(postID)
 	}
+
+	cacheMisses.WithLabelValues("thread").Inc()
 
 	threadView, err := api.PostRegistry.GetThreadView(ctx, rootPost.ID, rootPost.AuthorDID)
 	if err != nil {
