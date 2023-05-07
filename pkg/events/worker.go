@@ -77,6 +77,9 @@ func (bsky *BSky) ProcessRepoRecord(
 	eventTime string,
 	workerID int,
 ) error {
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "ProcessRepoRecord")
+	defer span.End()
 	prefix := fmt.Sprintf("[w:%d]", workerID)
 	log.SetPrefix(prefix)
 	start := time.Now()
@@ -85,9 +88,8 @@ func (bsky *BSky) ProcessRepoRecord(
 		return nil
 	}
 
-	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "HandleRepoCommit")
-	defer span.End()
+	span.SetAttributes(attribute.String("repo.name", repoName))
+	span.SetAttributes(attribute.String("record.type.id", pst.LexiconTypeID))
 
 	span.AddEvent("HandleRepoCommit:ResolveProfile")
 	authorProfile, err := bsky.ResolveProfile(ctx, repoName, workerID)
@@ -96,8 +98,8 @@ func (bsky *BSky) ProcessRepoRecord(
 		return nil
 	}
 
-	span.SetAttributes(attribute.String("author_did", authorProfile.Did))
-	span.SetAttributes(attribute.String("author_handle", authorProfile.Handle))
+	span.SetAttributes(attribute.String("author.did", authorProfile.Did))
+	span.SetAttributes(attribute.String("author.handle", authorProfile.Handle))
 
 	span.AddEvent("HandleRepoCommit:DecodeFacets")
 	mentions, links, err := bsky.DecodeFacets(ctx, authorProfile.Did, authorProfile.Handle, pst.Facets, workerID)
@@ -256,9 +258,9 @@ func (bsky *BSky) ProcessRelation(
 	parentAuthorDID = post.Author.Did
 	parentAuthorHandle = post.Author.Handle
 
-	span.SetAttributes(attribute.String("parent_post_uri", parentPostURI))
-	span.SetAttributes(attribute.String("parent_post_author_handle", parentAuthorHandle))
-	span.SetAttributes(attribute.String("parent_post_author_did", parentAuthorDID))
+	span.SetAttributes(attribute.String("parent.uri", parentPostURI))
+	span.SetAttributes(attribute.String("parent.author_handle", parentAuthorHandle))
+	span.SetAttributes(attribute.String("parent.author_did", parentAuthorDID))
 
 	// Update the graph
 	from := graph.Node{

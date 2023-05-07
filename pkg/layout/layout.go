@@ -45,8 +45,8 @@ func SendEdgeListRequest(ctx context.Context, serviceURL string, edges []Edge) (
 		ChunkSize:  16,
 	}
 
-	span.SetAttributes(attribute.Int("num_edges", len(edges)))
-	span.SetAttributes(attribute.Int("num_iterations", request.Iterations))
+	span.SetAttributes(attribute.Int("edges.count", len(edges)))
+	span.SetAttributes(attribute.Int("iterations.count", request.Iterations))
 
 	requestJSON, err := json.Marshal(request)
 	if err != nil {

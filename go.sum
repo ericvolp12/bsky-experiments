@@ -38,6 +38,8 @@ github.com/Kubuxu/go-os-helper v0.0.1/go.mod h1:N8B+I7vPCT80IcP58r50u4+gEEcsZETF
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
 github.com/VividCortex/ewma v1.2.0 h1:f58SaIzcDXrSy3kWaHNvuJgJ3Nmz59Zji6XoJR/q1ow=
 github.com/VividCortex/ewma v1.2.0/go.mod h1:nz4BbCtbLyFDeC9SUHbtcT5644juEuWfUAUnGx7j5l4=
+github.com/XSAM/otelsql v0.22.0 h1:ximAhitmcxmG8IIFSpDTpYqSBC/I6e5ojVOLkVGcdXU=
+github.com/XSAM/otelsql v0.22.0/go.mod h1:tjkdeLCwuYQtANlkBQxdtFmJQzuYRFKEl4osiqNx2+M=
 github.com/aead/siphash v1.0.1/go.mod h1:Nywa3cDsYNNK3gaciGTWPwHt0wlpNV15vwmswBAUSII=
 github.com/alexbrainman/goissue34681 v0.0.0-20191006012335-3fc7a47baff5 h1:iW0a5ljuFxkLGPNem5Ui+KBjFJzKg4Fv2fnxe4dvzpM=
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
@@ -626,10 +628,11 @@ go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.15.0 h1:rk5I7PaOk5NGQHfHR2R
 go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.15.0/go.mod h1:pvkFJxNUXyJ5i8u6m8NIcqkoOf/65VM2mSyBbBJfeVQ=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.15.0 h1:MOeyNzoSvrn4/08FtGint7wwodzSXdXefoi6bPsBhVM=
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.15.0/go.mod h1:3YofWWr7LMDyBtpDC0RYvRmjcUwk99YOZl3TmwFsp8w=
-go.opentelemetry.io/otel/metric v0.38.0 h1:vv/Nv/44S3GzMMmeUhaesBKsAenE6xLkTVWL+zuv30w=
-go.opentelemetry.io/otel/metric v0.38.0/go.mod h1:uAtxN5hl8aXh5irD8afBtSwQU5Zjg64WWSz6KheZxBg=
+go.opentelemetry.io/otel/metric v0.38.1 h1:2MM7m6wPw9B8Qv8iHygoAgkbejed59uUR6ezR5T3X2s=
+go.opentelemetry.io/otel/metric v0.38.1/go.mod h1:FwqNHD3I/5iX9pfrRGZIlYICrJv0rHEUl2Ln5vdIVnQ=
 go.opentelemetry.io/otel/sdk v1.15.0 h1:jZTCkRRd08nxD6w7rIaZeDNGZGGQstH3SfLQ3ZsKICk=
 go.opentelemetry.io/otel/sdk v1.15.0/go.mod h1:XDEMrYWzJ4YlC17i6Luih2lwDw2j6G0PkUfr1ZqE+rQ=
+go.opentelemetry.io/otel/sdk/metric v0.38.0 h1:c/6/VZihe+5ink8ERufY1/o1QtnoON+k1YonZF2jYR4=
 go.opentelemetry.io/otel/trace v1.10.0/go.mod h1:Sij3YYczqAdz+EhmGhE6TpTxUO5/F/AzrK+kxfGqySM=
 go.opentelemetry.io/otel/trace v1.15.1 h1:uXLo6iHJEzDfrNC0L0mNjItIp06SyaBQxu5t3xMlngY=
 go.opentelemetry.io/otel/trace v1.15.1/go.mod h1:IWdQG/5N1x7f6YUlmdLeJvH9yxtuJAfc4VW5Agv9r/8=

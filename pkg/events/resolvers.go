@@ -55,13 +55,13 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string, workerID int) 
 		if cacheEntry.Expire.After(time.Now()) {
 			if cacheEntry.Expire.After(time.Now()) {
 				cacheHits.WithLabelValues("profile").Inc()
-				span.SetAttributes(attribute.Bool("profile_cache_hit", true))
+				span.SetAttributes(attribute.Bool("caches.profiles.hit", true))
 				return cacheEntry.Profile, nil
 			}
 		}
 	}
 
-	span.SetAttributes(attribute.Bool("profile_cache_hit", false))
+	span.SetAttributes(attribute.Bool("caches.profiles.hit", false))
 	cacheMisses.WithLabelValues("profile").Inc()
 
 	//Lock the client
@@ -81,11 +81,11 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string, workerID int) 
 	}
 
 	if profile == nil {
-		span.SetAttributes(attribute.Bool("profile_found", false))
+		span.SetAttributes(attribute.Bool("profile.found", false))
 		return nil, fmt.Errorf("profile not found for: %s", did)
 	}
 
-	span.SetAttributes(attribute.Bool("profile_found", true))
+	span.SetAttributes(attribute.Bool("profile.found", true))
 
 	newEntry := ProfileCacheEntry{
 		Profile: profile,
@@ -115,17 +115,17 @@ func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*b
 			// If we've timed out 5 times in a row trying to get this post, it's probably a hellthread
 			// Return the cached post and don't try to get it again
 			if cacheEntry.TimeoutCount > 5 {
-				span.SetAttributes(attribute.Bool("post_timeout_cached", true))
+				span.SetAttributes(attribute.Bool("caches.posts.timeout_present", true))
 				return nil, fmt.Errorf("hellthread detected - returning cached post timeout for: %s", uri)
 			} else if cacheEntry.Post != nil {
 				cacheHits.WithLabelValues("post").Inc()
-				span.SetAttributes(attribute.Bool("post_cache_hit", true))
+				span.SetAttributes(attribute.Bool("caches.post.hit", true))
 				return cacheEntry.Post, nil
 			}
 		}
 	}
 
-	span.SetAttributes(attribute.Bool("post_cache_hit", false))
+	span.SetAttributes(attribute.Bool("caches.post.hit", false))
 	cacheMisses.WithLabelValues("post").Inc()
 
 	//Lock the client
@@ -141,7 +141,7 @@ func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*b
 		// Check if the error is a timeout
 		var timeoutErr *TimeoutError
 		if errors.As(err, &timeoutErr) {
-			span.SetAttributes(attribute.Bool("post_timeout", true))
+			span.SetAttributes(attribute.Bool("post.resolve.timeout", true))
 			entry, ok := bsky.postCache.Get(uri)
 			if ok {
 				cacheEntry := entry.(PostCacheEntry)
@@ -166,7 +166,7 @@ func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*b
 		len(posts.Posts) > 0 &&
 		posts.Posts[0].Author != nil {
 
-		span.SetAttributes(attribute.Bool("profile_found", true))
+		span.SetAttributes(attribute.Bool("profile.found", true))
 
 		newEntry := PostCacheEntry{
 			Post:   posts.Posts[0],
@@ -182,6 +182,6 @@ func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*b
 		return posts.Posts[0], nil
 	}
 
-	span.SetAttributes(attribute.Bool("post_found", false))
+	span.SetAttributes(attribute.Bool("post.found", false))
 	return nil, fmt.Errorf("post not found for: %s", uri)
 }

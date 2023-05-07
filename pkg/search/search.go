@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/XSAM/otelsql"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/search_queries"
 	_ "github.com/lib/pq" // postgres driver
 	"go.opentelemetry.io/otel"
+	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
 )
 
 type NotFoundError struct {
@@ -53,7 +55,18 @@ func NewPostRegistry(connectionString string) (*PostRegistry, error) {
 	var err error
 
 	for i := 0; i < 5; i++ {
-		db, err = sql.Open("postgres", connectionString)
+		db, err = otelsql.Open(
+			"postgres",
+			connectionString,
+			otelsql.WithAttributes(semconv.DBSystemPostgreSQL),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		err = otelsql.RegisterDBStatsMetrics(db, otelsql.WithAttributes(
+			semconv.DBSystemPostgreSQL,
+		))
 		if err != nil {
 			return nil, err
 		}
@@ -115,9 +128,44 @@ func (pr *PostRegistry) AddPost(ctx context.Context, post *Post) error {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AddPost")
 	defer span.End()
-	insertQuery := `INSERT INTO posts (id, text, parent_post_id, root_post_id, author_did, created_at, has_embedded_media, parent_relationship)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
-	_, err := pr.db.Exec(insertQuery, post.ID, post.Text, post.ParentPostID, post.RootPostID, post.AuthorDID, post.CreatedAt, post.HasEmbeddedMedia, post.ParentRelationship)
+
+	parentPostID := sql.NullString{
+		String: "",
+		Valid:  false,
+	}
+	if post.ParentPostID != nil {
+		parentPostID.String = *post.ParentPostID
+		parentPostID.Valid = true
+	}
+
+	rootPostID := sql.NullString{
+		String: "",
+		Valid:  false,
+	}
+	if post.RootPostID != nil {
+		rootPostID.String = *post.RootPostID
+		rootPostID.Valid = true
+	}
+
+	parentRelationship := sql.NullString{
+		String: "",
+		Valid:  false,
+	}
+	if post.ParentRelationship != nil {
+		parentRelationship.String = *post.ParentRelationship
+		parentRelationship.Valid = true
+	}
+
+	err := pr.queries.AddPost(ctx, search_queries.AddPostParams{
+		ID:                 post.ID,
+		Text:               post.Text,
+		ParentPostID:       parentPostID,
+		RootPostID:         rootPostID,
+		AuthorDid:          post.AuthorDID,
+		CreatedAt:          post.CreatedAt,
+		HasEmbeddedMedia:   post.HasEmbeddedMedia,
+		ParentRelationship: parentRelationship,
+	})
 	return err
 }
 
@@ -125,8 +173,11 @@ func (pr *PostRegistry) AddAuthor(ctx context.Context, author *Author) error {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AddAuthor")
 	defer span.End()
-	insertQuery := `INSERT INTO authors (did, handle) VALUES ($1, $2) ON CONFLICT (did) DO UPDATE SET handle = $2`
-	_, err := pr.db.Exec(insertQuery, author.DID, author.Handle)
+
+	err := pr.queries.AddAuthor(ctx, search_queries.AddAuthorParams{
+		Did:    author.DID,
+		Handle: author.Handle,
+	})
 	return err
 }
 

@@ -256,7 +256,7 @@ func (api *API) layoutThread(ctx context.Context, rootPostID string, threadView 
 		cacheEntry := entry.(LayoutCacheEntry)
 		if cacheEntry.Expiration.After(time.Now()) {
 			cacheHits.WithLabelValues("layout").Inc()
-			span.SetAttributes(attribute.Bool("layout_cache_hit", true))
+			span.SetAttributes(attribute.Bool("caches.layouts.hit", true))
 			return cacheEntry.Layout, nil
 		}
 		// If the layout is expired, remove it from the cache
@@ -289,9 +289,9 @@ func (api *API) processThreadRequest(c *gin.Context, authorID, authorHandle, pos
 	ctx, span := tracer.Start(ctx, "processThreadRequest")
 	defer span.End()
 	span.SetAttributes(
-		attribute.String("author_id", authorID),
-		attribute.String("author_handle", authorHandle),
-		attribute.String("post_id", postID),
+		attribute.String("author.id", authorID),
+		attribute.String("author.handle", authorHandle),
+		attribute.String("post.id", postID),
 	)
 
 	if authorID == "" && authorHandle == "" {
@@ -317,7 +317,7 @@ func (api *API) processThreadRequest(c *gin.Context, authorID, authorHandle, pos
 			return
 		}
 		authorID = authors[0].DID
-		span.SetAttributes(attribute.String("resolved_author_id", authorID))
+		span.SetAttributes(attribute.String("author.resolved_id", authorID))
 	}
 
 	// Get highest level post in thread
@@ -381,7 +381,7 @@ func (api *API) getThreadView(ctx context.Context, postID, authorID string) ([]s
 		cacheEntry := entry.(ThreadViewCacheEntry)
 		if cacheEntry.Expiration.After(time.Now()) {
 			cacheHits.WithLabelValues("thread").Inc()
-			span.SetAttributes(attribute.Bool("thread_cache_hit", true))
+			span.SetAttributes(attribute.Bool("caches.threads.hit", true))
 			return cacheEntry.ThreadView, nil
 		}
 		// If the thread is expired, remove it from the cache
@@ -416,13 +416,13 @@ func (api *API) getRootOrOldestParent(ctx context.Context, postID string) (*sear
 	post, err := api.PostRegistry.GetPost(ctx, postID)
 	if err != nil {
 		if errors.As(err, &search.NotFoundError{}) {
-			span.SetAttributes(attribute.Bool("primary_post_found", false))
+			span.SetAttributes(attribute.Bool("post.primary.found", false))
 			return nil, fmt.Errorf("post with postID '%s' not found: %w", postID, err)
 		}
 		return nil, err
 	}
 
-	span.SetAttributes(attribute.Bool("primary_post_found", true))
+	span.SetAttributes(attribute.Bool("post.primary.found", true))
 
 	// If post has a root post and we've stored it, return it
 	if post.RootPostID != nil {
@@ -433,11 +433,11 @@ func (api *API) getRootOrOldestParent(ctx context.Context, postID string) (*sear
 			if !errors.As(err, &search.NotFoundError{}) {
 				return nil, err
 			}
-			span.SetAttributes(attribute.Bool("root_found", false))
+			span.SetAttributes(attribute.Bool("post.root.found", false))
 		}
 
 		if rootPost != nil {
-			span.SetAttributes(attribute.Bool("root_found", true))
+			span.SetAttributes(attribute.Bool("post.root.found", true))
 			return rootPost, nil
 		}
 	}
@@ -447,14 +447,14 @@ func (api *API) getRootOrOldestParent(ctx context.Context, postID string) (*sear
 	oldestParent, err := api.PostRegistry.GetOldestPresentParent(ctx, postID)
 	if err != nil {
 		if errors.As(err, &search.NotFoundError{}) {
-			span.SetAttributes(attribute.Bool("oldest_parent_found", false))
+			span.SetAttributes(attribute.Bool("post.oldest_parent.found", false))
 			return post, nil
 		}
 		return nil, err
 	}
 
 	if oldestParent != nil {
-		span.SetAttributes(attribute.Bool("oldest_parent_found", true))
+		span.SetAttributes(attribute.Bool("post.oldest_parent.found", true))
 		return oldestParent, nil
 	}
 

@@ -3,6 +3,7 @@ module github.com/ericvolp12/bsky-experiments
 go 1.20
 
 require (
+	github.com/XSAM/otelsql v0.22.0
 	github.com/bluesky-social/indigo v0.0.0-20230428230924-93b159a0ea0d
 	github.com/ericvolp12/go-gin-prometheus v0.0.0-20221219081010-fc0e0436c283
 	github.com/gin-contrib/cors v1.4.0
@@ -51,7 +52,7 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.9 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.15.0 // indirect
-	go.opentelemetry.io/otel/metric v0.38.0 // indirect
+	go.opentelemetry.io/otel/metric v0.38.1 // indirect
 	go.opentelemetry.io/proto/otlp v0.19.0 // indirect
 	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
 	golang.org/x/net v0.9.0 // indirect

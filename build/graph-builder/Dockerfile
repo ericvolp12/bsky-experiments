@@ -6,7 +6,11 @@ COPY go.mod go.sum ./
 
 RUN go mod download
 
-COPY . .
+COPY pkg ./pkg
+
+COPY cmd/graph-builder ./cmd/graph-builder
+
+COPY Makefile ./
 
 RUN make build-graph-builder
 
@@ -19,5 +23,7 @@ FROM debian:stable-slim
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 COPY --from=builder /app/graph-builder .
+
+RUN mkdir -p /app/data
 
 CMD ["./graph-builder"]

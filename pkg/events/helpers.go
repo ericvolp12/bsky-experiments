@@ -57,7 +57,7 @@ func (bsky *BSky) DecodeFacets(
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "DecodeFacets")
 	defer span.End()
-	span.SetAttributes(attribute.Int("num_facets", len(facets)))
+	span.SetAttributes(attribute.Int("facets.count", len(facets)))
 
 	mentions := []string{}
 	links := []string{}
@@ -107,10 +107,10 @@ func (bsky *BSky) DecodeFacets(
 	bsky.SocialGraphMux.Unlock()
 
 	if failedLookups > 0 {
-		span.SetAttributes(attribute.Int("failed_lookups", failedLookups))
+		span.SetAttributes(attribute.Int("lookups.failed", failedLookups))
 	}
-	span.SetAttributes(attribute.Int("num_mentions", len(mentions)))
-	span.SetAttributes(attribute.Int("num_links", len(links)))
+	span.SetAttributes(attribute.Int("mentions.count", len(mentions)))
+	span.SetAttributes(attribute.Int("links.count", len(links)))
 	mentionCounter.Add(float64(len(mentions)))
 
 	return mentions, links, nil

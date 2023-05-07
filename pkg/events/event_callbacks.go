@@ -19,6 +19,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	lru "github.com/hashicorp/golang-lru"
+	"go.opentelemetry.io/otel"
 )
 
 // RepoRecord holds data needed for processing a RepoRecord
@@ -127,6 +128,9 @@ func NewBSky(
 // HandleRepoCommit is called when a repo commit is received and prints its contents
 func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) error {
 	ctx := context.Background()
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "HandleRepoCommit")
+	defer span.End()
 	rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
 	if err != nil {
 		fmt.Println(err)
