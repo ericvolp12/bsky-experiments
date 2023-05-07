@@ -41,22 +41,19 @@ var cacheMisses = promauto.NewCounterVec(prometheus.CounterOpts{
 	Help: "The total number of cache misses",
 }, []string{"cache_type"})
 
-type ThreadViewLayout struct {
-	Post         search.Post `json:"post"`
-	AuthorHandle string      `json:"author_handle"`
-	Depth        int         `json:"depth"`
-	X            float32     `json:"x"`
-	Y            float32     `json:"y"`
-}
-
 type ThreadViewCacheEntry struct {
 	ThreadView []search.PostView
 	Expiration time.Time
 }
 
 type LayoutCacheEntry struct {
-	Layout     []ThreadViewLayout
+	Layout     []layout.ThreadViewLayout
 	Expiration time.Time
+}
+
+type preheatItem struct {
+	authorID string
+	postID   string
 }
 
 type API struct {
@@ -127,7 +124,7 @@ func main() {
 		log.Fatalf("Failed to create threadViewCache: %v", err)
 	}
 
-	layoutCache, err := lru.NewARC(250)
+	layoutCache, err := lru.NewARC(500)
 	if err != nil {
 		log.Fatalf("Failed to create layoutCache: %v", err)
 	}
@@ -136,9 +133,9 @@ func main() {
 		PostRegistry:       postRegistry,
 		LayoutServiceHost:  layoutServiceHost,
 		ThreadViewCache:    threadViewCache,
-		ThreadViewCacheTTL: 5 * time.Minute,
+		ThreadViewCacheTTL: 30 * time.Minute,
 		LayoutCache:        layoutCache,
-		LayoutCacheTTL:     5 * time.Minute,
+		LayoutCacheTTL:     30 * time.Minute,
 	}
 
 	router := gin.New()
@@ -215,11 +212,39 @@ func main() {
 		port = "8080"
 	}
 
+	// Preheat the caches with some popular threads
+	preheatList := []preheatItem{
+		{authorID: "did:plc:wgaezxqi2spqm3mhrb5xvkzi", postID: "3juzlwllznd24"},
+	}
+
+	// Create a routine to preheat the caches every 25 minutes
+
+	go func() {
+		ctx := context.Background()
+		tracer := otel.Tracer("search-api")
+		for {
+			ctx, span := tracer.Start(ctx, "preheatCaches")
+			log.Printf("Preheating caches with %d threads", len(preheatList))
+			for _, threadToHeat := range preheatList {
+				threadView, err := api.getThreadView(ctx, threadToHeat.postID, threadToHeat.authorID)
+				if err != nil {
+					log.Printf("Error preheating thread view cache: %v", err)
+				}
+				_, err = api.layoutThread(ctx, threadToHeat.postID, threadView)
+				if err != nil {
+					log.Printf("Error preheating layout cache: %v", err)
+				}
+			}
+			span.End()
+			time.Sleep(25 * time.Minute)
+		}
+	}()
+
 	log.Printf("Starting server on port %s", port)
 	router.Run(fmt.Sprintf(":%s", port))
 }
 
-func (api *API) layoutThread(ctx context.Context, rootPostID string, threadView []search.PostView) ([]ThreadViewLayout, error) {
+func (api *API) layoutThread(ctx context.Context, rootPostID string, threadView []search.PostView) ([]layout.ThreadViewLayout, error) {
 	tracer := otel.Tracer("search-api")
 	ctx, span := tracer.Start(ctx, "layoutThread")
 	defer span.End()
@@ -239,26 +264,13 @@ func (api *API) layoutThread(ctx context.Context, rootPostID string, threadView 
 
 	cacheMisses.WithLabelValues("layout").Inc()
 
-	edges := createEdges(threadView)
-	points, err := layout.SendEdgeListRequest(ctx, api.LayoutServiceHost, edges)
+	threadViewLayout, err := layout.SendEdgeListRequestTS(ctx, api.LayoutServiceHost, threadView)
 	if err != nil {
 		return nil, fmt.Errorf("error sending edge list request: %w", err)
 	}
 
-	// Build a ThreadViewLayout list from the threadView and points
-	var threadViewLayout []ThreadViewLayout
-	for i, post := range threadView {
-		// Truncate X and Y to 2 decimal places
-		points[i][0] = float32(int(points[i][0]*100)) / 100
-		points[i][1] = float32(int(points[i][1]*100)) / 100
-
-		threadViewLayout = append(threadViewLayout, ThreadViewLayout{
-			Post:         post.Post,
-			AuthorHandle: post.AuthorHandle,
-			Depth:        post.Depth,
-			X:            points[i][0],
-			Y:            points[i][1],
-		})
+	if threadViewLayout == nil {
+		return nil, errors.New("layout service returned nil")
 	}
 
 	// Update the ARC Cache
@@ -483,27 +495,4 @@ func newTraceProvider(exp sdktrace.SpanExporter) *sdktrace.TracerProvider {
 		sdktrace.WithBatcher(exp),
 		sdktrace.WithResource(r),
 	)
-}
-
-func createEdges(authors []search.PostView) []layout.Edge {
-	var edges []layout.Edge
-	nodes := make(map[string]int)
-	counter := 0
-
-	for _, author := range authors {
-		post := author.Post
-		if post.ParentPostID != nil {
-			if _, ok := nodes[post.ID]; !ok {
-				nodes[post.ID] = counter
-				counter++
-			}
-			if _, ok := nodes[*post.ParentPostID]; !ok {
-				nodes[*post.ParentPostID] = counter
-				counter++
-			}
-			edges = append(edges, layout.Edge{nodes[*post.ParentPostID], nodes[post.ID]})
-		}
-	}
-
-	return edges
 }

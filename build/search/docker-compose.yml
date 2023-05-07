@@ -15,7 +15,7 @@ services:
     container_name: bsky-search
     environment:
       - GIN_MODE=release
-      - LAYOUT_SERVICE_HOST=http://host.docker.internal:8086
+      - LAYOUT_SERVICE_HOST=http://host.docker.internal:8087
     env_file:
       - ../../.env
     ports:
@@ -34,7 +34,7 @@ services:
     container_name: bsky-search-staging
     environment:
       - GIN_MODE=release
-      - LAYOUT_SERVICE_HOST=http://10.0.6.32:8086
+      - LAYOUT_SERVICE_HOST=http://host.docker.internal:8087
     env_file:
       - ../../.env
     ports:
