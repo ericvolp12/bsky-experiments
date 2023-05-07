@@ -480,7 +480,7 @@ func newTraceProvider(exp sdktrace.SpanExporter) *sdktrace.TracerProvider {
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceName("BSkySearchAPI-Staging"),
+			semconv.ServiceName("BSkySearchAPI"),
 		),
 	)
 
