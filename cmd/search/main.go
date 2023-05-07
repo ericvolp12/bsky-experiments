@@ -236,7 +236,8 @@ func main() {
 				}
 			}
 			span.End()
-			time.Sleep(25 * time.Minute)
+			// Sleep until the caches expire
+			time.Sleep(30*time.Minute + 5*time.Second)
 		}
 	}()
 
