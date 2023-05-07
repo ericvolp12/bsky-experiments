@@ -97,12 +97,12 @@ func main() {
 		bsky.SocialGraph = resumedGraph
 	}
 
-	graphTicker := time.NewTicker(30 * time.Second)
+	graphTicker := time.NewTicker(5 * time.Minute)
 	quit := make(chan struct{})
 
 	wg := &sync.WaitGroup{}
 
-	// Run a routine that dumps graph data to a file every 30 seconds
+	// Run a routine that dumps graph data to a file every 5 minutes
 	wg.Add(1)
 	go func() {
 		log.Println("starting graph dump routine...")
