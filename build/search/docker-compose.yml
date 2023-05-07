@@ -2,12 +2,12 @@ version: '3.8'
 
 services:
   bsky-search:
-    # build:
-    #   context: ../../
-    #   dockerfile: build/search/Dockerfile
+    build:
+      context: ../../
+      dockerfile: build/search/Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    image: bsky-search:working
+    image: bsky-search #:working
     logging:
       driver: loki
       options:
@@ -20,22 +20,22 @@ services:
       - ../../.env
     ports:
       - "8085:8080"
-  bsky-search-staging:
-    build:
-      context: ../../
-      dockerfile: build/search/Dockerfile
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    image: bsky-search
-    logging:
-      driver: loki
-      options:
-        loki-url: "http://10.0.6.7:3100/loki/api/v1/push"
-    container_name: bsky-search-staging
-    environment:
-      - GIN_MODE=release
-      - LAYOUT_SERVICE_HOST=http://host.docker.internal:8087
-    env_file:
-      - ../../.env
-    ports:
-      - "8084:8080"
+  # bsky-search-staging:
+  #   build:
+  #     context: ../../
+  #     dockerfile: build/search/Dockerfile
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   image: bsky-search
+  #   logging:
+  #     driver: loki
+  #     options:
+  #       loki-url: "http://10.0.6.7:3100/loki/api/v1/push"
+  #   container_name: bsky-search-staging
+  #   environment:
+  #     - GIN_MODE=release
+  #     - LAYOUT_SERVICE_HOST=http://host.docker.internal:8087
+  #   env_file:
+  #     - ../../.env
+  #   ports:
+  #     - "8084:8080"
