@@ -1,0 +1,197 @@
+openapi: 3.0.0
+info:
+  title: BSky Search API
+  version: 1.0.0
+paths:
+  /thread:
+    get:
+      summary: Get the thread view or layout of a post
+      parameters:
+        - in: query
+          name: authorID
+          schema:
+            type: string
+          description: Author's DID
+          required: false
+        - in: query
+          name: authorHandle
+          schema:
+            type: string
+          description: Author's handle
+          required: false
+        - in: query
+          name: postID
+          schema:
+            type: string
+          description: Post ID
+          required: true
+        - in: query
+          name: layout
+          schema:
+            type: string
+          description: Flag to return layout if set to "true"
+          required: false
+      responses:
+        200:
+          description: Successfully retrieved the post list or layout list
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/PostViewList"
+                  - $ref: "#/components/schemas/LayoutViewList"
+        400:
+          description: Bad request, authorID or authorHandle, and postID must be provided
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        404:
+          description: Author or post not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        500:
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /distance:
+    get:
+      summary: Get the social distance between two nodes
+      parameters:
+        - in: query
+          name: src
+          schema:
+            type: string
+          description: Source node DID
+          required: true
+        - in: query
+          name: dest
+          schema:
+            type: string
+          description: Destination node DID
+          required: true
+      responses:
+        200:
+          description: Successfully calculated the social distance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  distance:
+                    type: number
+                    format: double
+                  did_path:
+                    type: array
+                    items:
+                      type: string
+                  handle_path:
+                    type: array
+                    items:
+                      type: string
+                  weights:
+                    type: array
+                    items:
+                      type: number
+                      format: double
+        400:
+          description: Bad request, src and dest must be provided
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        404:
+          description: Source or destination node not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        500:
+          description: Internal server error, infinite weight or distance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+components:
+  schemas:
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        parent_post_id:
+          type: string
+          nullable: true
+        root_post_id:
+          type: string
+          nullable: true
+        author_did:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        has_embedded_media:
+          type: boolean
+        parent_relationship:
+          type: string
+          nullable: true
+
+    PostView:
+      type: object
+      properties:
+        post:
+          $ref: "#/components/schemas/Post"
+        author_handle:
+          type: string
+        depth:
+          type: integer
+
+    PostViewList:
+      type: array
+      items:
+        $ref: "#/components/schemas/PostView"
+
+    LayoutView:
+      type: object
+      properties:
+        post:
+          $ref: "#/components/schemas/Post"
+        author_handle:
+          type: string
+        depth:
+          type: integer
+        x:
+          type: number
+          format: float
+        y:
+          type: number
+          format: float
+
+    LayoutViewList:
+      type: array
+      items:
+        $ref: "#/components/schemas/LayoutView"

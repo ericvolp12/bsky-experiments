@@ -12,6 +12,7 @@ services:
     environment:
       - GIN_MODE=release
       - LAYOUT_SERVICE_HOST=http://host.docker.internal:8087
+      - BINARY_GRAPH_PATH=/app/graph.bin
     env_file:
       - ../../.env
     ports:
