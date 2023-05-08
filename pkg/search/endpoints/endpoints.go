@@ -323,10 +323,12 @@ func (api *API) getRootOrOldestParent(ctx context.Context, postID string) (*sear
 
 	span.SetAttributes(attribute.Bool("post.primary.found", true))
 
-	// If post has a root post and we've stored it, return it
+	var rootPost *search.Post
+
+	// If post has a root post and we've stored it, grab it from the registry
 	if post.RootPostID != nil {
 		span.AddEvent("getRootOrOldestParent:ResolveRootPost")
-		rootPost, err := api.PostRegistry.GetPost(ctx, *post.RootPostID)
+		rootPost, err = api.PostRegistry.GetPost(ctx, *post.RootPostID)
 		if err != nil {
 			// If we don't have the root post, continue to just return the oldest parent
 			if !errors.As(err, &search.NotFoundError{}) {
@@ -337,25 +339,50 @@ func (api *API) getRootOrOldestParent(ctx context.Context, postID string) (*sear
 
 		if rootPost != nil {
 			span.SetAttributes(attribute.Bool("post.root.found", true))
-			return rootPost, nil
 		}
 	}
 
-	// Otherwise, get the oldest parent from the registry
+	var oldestParent *search.Post
+
+	// Get the oldest parent from the registry
 	span.AddEvent("getRootOrOldestParent:ResolveOldestParent")
-	oldestParent, err := api.PostRegistry.GetOldestPresentParent(ctx, postID)
+	oldestParent, err = api.PostRegistry.GetOldestPresentParent(ctx, postID)
 	if err != nil {
-		if errors.As(err, &search.NotFoundError{}) {
-			span.SetAttributes(attribute.Bool("post.oldest_parent.found", false))
-			return post, nil
+		if !errors.As(err, &search.NotFoundError{}) {
+			return nil, err
 		}
-		return nil, err
+		span.SetAttributes(attribute.Bool("post.oldest_parent.found", false))
 	}
 
 	if oldestParent != nil {
 		span.SetAttributes(attribute.Bool("post.oldest_parent.found", true))
+	}
+
+	// If we have both a root post and an oldest parent, check if they're the same
+	if rootPost != nil && oldestParent != nil {
+		log.Printf("Comparing root post '%s' and oldest parent '%s'", rootPost.ID, oldestParent.ID)
+
+		if rootPost.ID == oldestParent.ID {
+			// If they're the same, return the root post
+			return rootPost, nil
+		}
+
+		// If they're different, return the oldest parent
+		// This should make it possible to visualize the oldest parent in the thread view when
+		// it detaches from the root post due to a missing link in the graph
 		return oldestParent, nil
 	}
 
+	// If we only have a root post, return it
+	if rootPost != nil {
+		return rootPost, nil
+	}
+
+	// If we only have an oldest parent, return it
+	if oldestParent != nil {
+		return oldestParent, nil
+	}
+
+	// If we have neither, return the post
 	return post, nil
 }
