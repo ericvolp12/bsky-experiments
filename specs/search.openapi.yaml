@@ -76,12 +76,14 @@ paths:
           schema:
             type: string
           description: Source node DID
+          example: did:plc:q6gjnaw2blty4crticxkmujt
           required: true
         - in: query
           name: dest
           schema:
             type: string
           description: Destination node DID
+          example: did:plc:oqbijttmayqui2xv3e2xwcdz
           required: true
       responses:
         200:

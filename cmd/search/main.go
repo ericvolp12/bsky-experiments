@@ -134,6 +134,9 @@ func main() {
 
 	router.Use(ginzap.RecoveryWithZap(logger, true))
 
+	// Serve static files from the public folder
+	router.Static("/public", "./public")
+
 	router.Use(otelgin.Middleware("BSkySearchAPI"))
 
 	// CORS middleware

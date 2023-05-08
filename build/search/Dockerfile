@@ -24,6 +24,10 @@ COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifica
 
 COPY --from=builder /app/search .
 
+COPY public/ public/
+
+COPY specs/search.openapi.yaml public/openapi3-spec.yaml
+
 COPY graph.bin /app/graph.bin
 
 CMD ["./search"]
