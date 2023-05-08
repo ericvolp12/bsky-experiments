@@ -49,6 +49,7 @@ type AuthorStats struct {
 	MeanPostCount float64      `json:"mean_post_count"`
 	Percentiles   []Percentile `json:"percentiles"`
 	Brackets      []Bracket    `json:"brackets"`
+	UpdatedAt     time.Time    `json:"updated_at"`
 }
 
 type PostView struct {
@@ -274,6 +275,7 @@ func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error
 				Count: authorStats.Gt100,
 			},
 		},
+		UpdatedAt: time.Now(),
 	}, nil
 }
 

@@ -236,6 +236,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Bracket"
+        last_updated:
+          type: string
+          format: date-time
     Percentile:
       type: object
       properties:
