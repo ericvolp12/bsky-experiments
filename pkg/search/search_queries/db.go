@@ -31,6 +31,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getAuthorStmt, err = db.PrepareContext(ctx, getAuthor); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuthor: %w", err)
 	}
+	if q.getAuthorStatsStmt, err = db.PrepareContext(ctx, getAuthorStats); err != nil {
+		return nil, fmt.Errorf("error preparing query GetAuthorStats: %w", err)
+	}
 	if q.getAuthorsByHandleStmt, err = db.PrepareContext(ctx, getAuthorsByHandle); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuthorsByHandle: %w", err)
 	}
@@ -61,6 +64,11 @@ func (q *Queries) Close() error {
 	if q.getAuthorStmt != nil {
 		if cerr := q.getAuthorStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getAuthorStmt: %w", cerr)
+		}
+	}
+	if q.getAuthorStatsStmt != nil {
+		if cerr := q.getAuthorStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getAuthorStatsStmt: %w", cerr)
 		}
 	}
 	if q.getAuthorsByHandleStmt != nil {
@@ -125,6 +133,7 @@ type Queries struct {
 	addAuthorStmt              *sql.Stmt
 	addPostStmt                *sql.Stmt
 	getAuthorStmt              *sql.Stmt
+	getAuthorStatsStmt         *sql.Stmt
 	getAuthorsByHandleStmt     *sql.Stmt
 	getOldestPresentParentStmt *sql.Stmt
 	getPostStmt                *sql.Stmt
@@ -138,6 +147,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addAuthorStmt:              q.addAuthorStmt,
 		addPostStmt:                q.addPostStmt,
 		getAuthorStmt:              q.getAuthorStmt,
+		getAuthorStatsStmt:         q.getAuthorStatsStmt,
 		getAuthorsByHandleStmt:     q.getAuthorsByHandleStmt,
 		getOldestPresentParentStmt: q.getOldestPresentParentStmt,
 		getPostStmt:                q.getPostStmt,

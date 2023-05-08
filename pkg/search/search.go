@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/XSAM/otelsql"
@@ -32,6 +33,23 @@ type Post struct {
 	CreatedAt          time.Time `json:"created_at"`
 	HasEmbeddedMedia   bool      `json:"has_embedded_media"`
 	ParentRelationship *string   `json:"parent_relationship"` // null, "r", "q"
+}
+
+type Percentile struct {
+	Percentile float64 `json:"percentile"`
+	Count      int64   `json:"count"`
+}
+
+type Bracket struct {
+	Min   int   `json:"min"`
+	Count int64 `json:"count"`
+}
+
+type AuthorStats struct {
+	TotalAuthors  int64        `json:"total_authors"`
+	MeanPostCount float64      `json:"mean_post_count"`
+	Percentiles   []Percentile `json:"percentiles"`
+	Brackets      []Bracket    `json:"brackets"`
 }
 
 type PostView struct {
@@ -194,6 +212,75 @@ func (pr *PostRegistry) GetPost(ctx context.Context, postID string) (*Post, erro
 	}
 
 	return postFromQueryPost(post), nil
+}
+
+func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error) {
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetAuthorStats")
+	defer span.End()
+	authorStats, err := pr.queries.GetAuthorStats(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	mean, err := strconv.ParseFloat(authorStats.Mean, 64)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing mean (%s): %w", authorStats.Mean, err)
+	}
+
+	return &AuthorStats{
+		TotalAuthors: authorStats.Total,
+		// Parse mean as a float64 from string
+		MeanPostCount: mean,
+		Percentiles: []Percentile{
+			{
+				Percentile: 0.25,
+				Count:      authorStats.P25.(int64),
+			},
+			{
+				Percentile: 0.50,
+				Count:      authorStats.P50.(int64),
+			},
+			{
+				Percentile: 0.75,
+				Count:      authorStats.P75.(int64),
+			},
+			{
+				Percentile: 0.90,
+				Count:      authorStats.P90.(int64),
+			},
+			{
+				Percentile: 0.95,
+				Count:      authorStats.P95.(int64),
+			},
+			{
+				Percentile: 0.99,
+				Count:      authorStats.P99.(int64),
+			},
+		},
+		Brackets: []Bracket{
+			{
+				Min:   1,
+				Count: authorStats.Gt1,
+			},
+			{
+				Min:   5,
+				Count: authorStats.Gt5,
+			},
+			{
+				Min:   10,
+				Count: authorStats.Gt10,
+			},
+			{
+				Min:   20,
+				Count: authorStats.Gt20,
+			},
+			{
+				Min:   100,
+				Count: authorStats.Gt100,
+			},
+		},
+	}, nil
 }
 
 func (pr *PostRegistry) GetAuthor(ctx context.Context, did string) (*Author, error) {
