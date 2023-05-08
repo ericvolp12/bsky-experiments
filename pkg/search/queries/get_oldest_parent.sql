@@ -20,7 +20,8 @@ WITH RECURSIVE cte AS (SELECT id,
                               p.parent_relationship
                        FROM posts p
                                 INNER JOIN
-                            cte ON p.id = cte.parent_post_id)
+                            cte ON p.id = cte.parent_post_id
+                       WHERE p.parent_relationship = 'r')
 SELECT id,
        text,
        parent_post_id,

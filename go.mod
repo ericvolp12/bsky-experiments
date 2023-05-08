@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/XSAM/otelsql v0.22.0
-	github.com/bluesky-social/indigo v0.0.0-20230428230924-93b159a0ea0d
+	github.com/bluesky-social/indigo v0.0.0-20230504025040-8915cccc3319
 	github.com/ericvolp12/go-gin-prometheus v0.0.0-20221219081010-fc0e0436c283
 	github.com/gin-contrib/cors v1.4.0
 	github.com/gin-contrib/zap v0.1.0
@@ -13,13 +13,13 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.16
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.15.0
+	github.com/prometheus/client_golang v1.15.1
 	github.com/stretchr/testify v1.8.2
 	go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin v0.41.1
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.41.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.15.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.15.0
-	go.opentelemetry.io/otel/sdk v1.15.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.41.1
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.15.1
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.15.1
+	go.opentelemetry.io/otel/sdk v1.15.1
 	golang.org/x/time v0.3.0
 )
 
@@ -29,6 +29,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
@@ -48,10 +49,13 @@ require (
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.42.0 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect
+	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.9 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.15.0 // indirect
+	github.com/urfave/cli/v2 v2.25.1 // indirect
+	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.15.1 // indirect
 	go.opentelemetry.io/otel/metric v0.38.1 // indirect
 	go.opentelemetry.io/proto/otlp v0.19.0 // indirect
 	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
