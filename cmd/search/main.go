@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
 
+	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/ericvolp12/bsky-experiments/pkg/layout"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	ginprometheus "github.com/ericvolp12/go-gin-prometheus"
@@ -87,6 +89,14 @@ func main() {
 	sugar := logger.Sugar()
 
 	sugar.Info("Reading config from environment...")
+
+	binReaderWriter := graph.BinaryGraphReaderWriter{}
+
+	// Read the graph from the Binary file
+	g1, err := binReaderWriter.ReadGraph("/app/graph.bin")
+	if err != nil {
+		log.Fatalf("Error reading graph1 from binary file: %v", err)
+	}
 
 	dbConnectionString := os.Getenv("REGISTRY_DB_CONNECTION_STRING")
 	if dbConnectionString == "" {
@@ -205,6 +215,51 @@ func main() {
 		authorHandle := c.Query("authorHandle")
 		postID := c.Query("postID")
 		api.processThreadRequest(c, authorID, authorHandle, postID)
+	})
+
+	router.GET("/distance", func(c *gin.Context) {
+		src := c.Query("src")
+		dest := c.Query("dest")
+
+		if src == "" || dest == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "src and dest must be provided"})
+			return
+		}
+
+		// Make sure src and dst DIDs are in the graph
+		if _, ok := g1.Nodes[graph.NodeID(src)]; !ok {
+			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("src with DID '%s' not found", src)})
+			return
+		}
+		if _, ok := g1.Nodes[graph.NodeID(dest)]; !ok {
+			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("dest with DID '%s' not found", dest)})
+			return
+		}
+
+		distance, path, weights := g1.FindSocialDistance(graph.NodeID(src), graph.NodeID(dest))
+
+		// Return the distance, path, and weights with Handles and DIDs
+
+		// Get the handles for the nodes in the path
+		handles := make([]string, len(path))
+		for i, nodeID := range path {
+			handles[i] = g1.Nodes[nodeID].Handle
+		}
+
+		// Make sure weights and distnaces aren't infinite before returning them
+		for i, weight := range weights {
+			if math.IsInf(weight, 0) {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("infinite weight for edge %s -> %s", path[i-1], path[i])})
+				return
+			}
+		}
+
+		if math.IsInf(distance, 0) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("infinite distance between %s and %s", src, dest)})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"distance": distance, "did_path": path, "handle_path": handles, "weights": weights})
 	})
 
 	port := os.Getenv("PORT")

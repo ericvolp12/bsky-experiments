@@ -8,6 +8,10 @@ if (!parentPort) {
   throw new Error("Parent port not available in worker thread");
 }
 
+const calculateWeight = (depth: number) => {
+  return 1 / (1 + depth);
+};
+
 // Listen for messages from the main thread
 parentPort.on("message", (responseJSON: ThreadItem[]) => {
   const nodesMap: Map<string, ThreadItem> = new Map();
@@ -29,6 +33,7 @@ parentPort.on("message", (responseJSON: ThreadItem[]) => {
     edges.push({
       source: post.post.parent_post_id || "root",
       target: post.post.id,
+      weight: 1, //calculateWeight(post.depth),
     });
   });
 
@@ -71,7 +76,9 @@ parentPort.on("message", (responseJSON: ThreadItem[]) => {
     if (edge.source === "root") {
       continue;
     }
-    graph.addEdge(edge.source, edge.target);
+    graph.addEdge(edge.source, edge.target, {
+      weight: edge.weight,
+    });
   }
 
   circular.assign(graph);

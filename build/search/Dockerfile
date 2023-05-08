@@ -24,4 +24,6 @@ COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifica
 
 COPY --from=builder /app/search .
 
+COPY graph.bin /app/graph.bin
+
 CMD ["./search"]
