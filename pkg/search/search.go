@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/XSAM/otelsql"
@@ -223,39 +222,34 @@ func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error
 		return nil, err
 	}
 
-	mean, err := strconv.ParseFloat(authorStats.Mean, 64)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing mean (%s): %w", authorStats.Mean, err)
-	}
-
 	return &AuthorStats{
 		TotalAuthors: authorStats.Total,
 		// Parse mean as a float64 from string
-		MeanPostCount: mean,
+		MeanPostCount: authorStats.Mean,
 		Percentiles: []Percentile{
 			{
 				Percentile: 0.25,
-				Count:      authorStats.P25.(int64),
+				Count:      authorStats.P25,
 			},
 			{
 				Percentile: 0.50,
-				Count:      authorStats.P50.(int64),
+				Count:      authorStats.P50,
 			},
 			{
 				Percentile: 0.75,
-				Count:      authorStats.P75.(int64),
+				Count:      authorStats.P75,
 			},
 			{
 				Percentile: 0.90,
-				Count:      authorStats.P90.(int64),
+				Count:      authorStats.P90,
 			},
 			{
 				Percentile: 0.95,
-				Count:      authorStats.P95.(int64),
+				Count:      authorStats.P95,
 			},
 			{
 				Percentile: 0.99,
-				Count:      authorStats.P99.(int64),
+				Count:      authorStats.P99,
 			},
 		},
 		Brackets: []Bracket{

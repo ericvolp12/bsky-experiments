@@ -41,6 +41,11 @@ type LayoutCacheEntry struct {
 	Expiration time.Time
 }
 
+type StatsCacheEntry struct {
+	Stats      search.AuthorStats
+	Expiration time.Time
+}
+
 type API struct {
 	PostRegistry       *search.PostRegistry
 	SocialGraph        *graph.Graph
@@ -49,6 +54,8 @@ type API struct {
 	ThreadViewCache    *lru.ARCCache
 	LayoutCacheTTL     time.Duration
 	LayoutCache        *lru.ARCCache
+	StatsCacheTTL      time.Duration
+	StatsCache         *StatsCacheEntry
 }
 
 func NewAPI(
@@ -57,6 +64,7 @@ func NewAPI(
 	layoutServiceHost string,
 	threadViewCacheTTL time.Duration,
 	layoutCacheTTL time.Duration,
+	statsCacheTTL time.Duration,
 ) (*API, error) {
 
 	// Read the graph from the Binary file
@@ -86,6 +94,7 @@ func NewAPI(
 		ThreadViewCache:    threadViewCache,
 		LayoutCacheTTL:     layoutCacheTTL,
 		LayoutCache:        layoutCache,
+		StatsCacheTTL:      statsCacheTTL,
 	}, nil
 }
 
@@ -137,6 +146,44 @@ func (api *API) GetSocialDistance(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"distance": distance, "did_path": path, "handle_path": handles, "weights": weights})
+}
+
+func (api *API) GetAuthorStats(c *gin.Context) {
+	ctx := c.Request.Context()
+	tracer := otel.Tracer("search-api")
+	ctx, span := tracer.Start(ctx, "GetAuthorStats")
+	defer span.End()
+
+	statsFromCache := api.StatsCache
+	if statsFromCache != nil && statsFromCache.Expiration.After(time.Now()) {
+		cacheHits.WithLabelValues("stats").Inc()
+		span.SetAttributes(attribute.Bool("caches.stats.hit", true))
+		c.JSON(http.StatusOK, statsFromCache.Stats)
+		return
+	}
+
+	cacheMisses.WithLabelValues("stats").Inc()
+
+	authorStats, err := api.PostRegistry.GetAuthorStats(ctx)
+	if err != nil {
+		log.Printf("Error getting author stats: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if authorStats == nil {
+		log.Printf("Author stats returned nil")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "author stats returned nil"})
+		return
+	}
+
+	// Update the plain old struct cache
+	api.StatsCache = &StatsCacheEntry{
+		Stats:      *authorStats,
+		Expiration: time.Now().Add(api.StatsCacheTTL),
+	}
+
+	c.JSON(http.StatusOK, *authorStats)
 }
 
 func (api *API) LayoutThread(ctx context.Context, rootPostID string, threadView []search.PostView) ([]layout.ThreadViewLayout, error) {

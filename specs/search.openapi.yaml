@@ -3,6 +3,27 @@ info:
   title: BSky Search API
   version: 1.0.0
 paths:
+  /stats:
+    get:
+      summary: Get BlueSky stats about Post Counts per Author
+      description: Retrieve the count of users at specified post thresholds, as well as the mean and percentiles of post counts for users. This data is based on what's stored in my Post DB being constructed from the firehose as of May 1st-ish 2023.
+      operationId: getStats
+      responses:
+        "200":
+          description: Successfully retrieved stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostStats"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
   /thread:
     get:
       summary: Get the thread view or layout of a post
@@ -197,3 +218,39 @@ components:
       type: array
       items:
         $ref: "#/components/schemas/LayoutView"
+
+    PostStats:
+      type: object
+      properties:
+        total_authors:
+          type: integer
+          format: int64
+        mean_post_count:
+          type: number
+          format: float
+        percentiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Percentile"
+        brackets:
+          type: array
+          items:
+            $ref: "#/components/schemas/Bracket"
+    Percentile:
+      type: object
+      properties:
+        percentile:
+          type: number
+          format: float
+        count:
+          type: integer
+          format: int64
+    Bracket:
+      type: object
+      properties:
+        min:
+          type: integer
+          format: int32
+        count:
+          type: integer
+          format: int64

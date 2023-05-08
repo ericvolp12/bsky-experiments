@@ -10,12 +10,12 @@ WITH postcounts AS (
 ),
 percentiles AS (
     SELECT
-        percentile_cont(0.25) WITHIN GROUP (ORDER BY num_posts) AS p25,
-        percentile_cont(0.50) WITHIN GROUP (ORDER BY num_posts) AS p50,
-        percentile_cont(0.75) WITHIN GROUP (ORDER BY num_posts) AS p75,
-        percentile_cont(0.90) WITHIN GROUP (ORDER BY num_posts) AS p90,
-        percentile_cont(0.95) WITHIN GROUP (ORDER BY num_posts) AS p95,
-        percentile_cont(0.99) WITHIN GROUP (ORDER BY num_posts) AS p99
+        (percentile_cont(0.25) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p25,
+        (percentile_cont(0.50) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p50,
+        (percentile_cont(0.75) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p75,
+        (percentile_cont(0.90) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p90,
+        (percentile_cont(0.95) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p95,
+        (percentile_cont(0.99) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99
     FROM
         postcounts
 ),
@@ -37,7 +37,7 @@ SELECT
     gt_10,
     gt_20,
     gt_100,
-    (SELECT AVG(num_posts) FROM postcounts) AS mean,
+    (SELECT AVG(num_posts) FROM postcounts)::float AS mean,
     p25,
     p50,
     p75,

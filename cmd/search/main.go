@@ -91,8 +91,9 @@ func main() {
 		postRegistry,
 		binaryGraphPath,
 		layoutServiceHost,
-		30*time.Minute,
-		30*time.Minute,
+		30*time.Minute, // Thread View Cache TTL
+		30*time.Minute, // Layout Cache TTL
+		5*time.Minute,  // Stats Cache TTL
 	)
 
 	router := gin.New()
@@ -162,6 +163,7 @@ func main() {
 
 	router.GET("/thread", api.ProcessThreadRequest)
 	router.GET("/distance", api.GetSocialDistance)
+	router.GET("/stats", api.GetAuthorStats)
 
 	port := os.Getenv("PORT")
 	if port == "" {

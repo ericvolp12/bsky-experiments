@@ -19,12 +19,12 @@ WITH postcounts AS (
 ),
 percentiles AS (
     SELECT
-        percentile_cont(0.25) WITHIN GROUP (ORDER BY num_posts) AS p25,
-        percentile_cont(0.50) WITHIN GROUP (ORDER BY num_posts) AS p50,
-        percentile_cont(0.75) WITHIN GROUP (ORDER BY num_posts) AS p75,
-        percentile_cont(0.90) WITHIN GROUP (ORDER BY num_posts) AS p90,
-        percentile_cont(0.95) WITHIN GROUP (ORDER BY num_posts) AS p95,
-        percentile_cont(0.99) WITHIN GROUP (ORDER BY num_posts) AS p99
+        (percentile_cont(0.25) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p25,
+        (percentile_cont(0.50) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p50,
+        (percentile_cont(0.75) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p75,
+        (percentile_cont(0.90) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p90,
+        (percentile_cont(0.95) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p95,
+        (percentile_cont(0.99) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99
     FROM
         postcounts
 ),
@@ -46,7 +46,7 @@ SELECT
     gt_10,
     gt_20,
     gt_100,
-    (SELECT AVG(num_posts) FROM postcounts) AS mean,
+    (SELECT AVG(num_posts) FROM postcounts)::float AS mean,
     p25,
     p50,
     p75,
@@ -60,19 +60,19 @@ LIMIT 1
 `
 
 type GetAuthorStatsRow struct {
-	Total int64       `json:"total"`
-	Gt1   int64       `json:"gt_1"`
-	Gt5   int64       `json:"gt_5"`
-	Gt10  int64       `json:"gt_10"`
-	Gt20  int64       `json:"gt_20"`
-	Gt100 int64       `json:"gt_100"`
-	Mean  string      `json:"mean"`
-	P25   interface{} `json:"p25"`
-	P50   interface{} `json:"p50"`
-	P75   interface{} `json:"p75"`
-	P90   interface{} `json:"p90"`
-	P95   interface{} `json:"p95"`
-	P99   interface{} `json:"p99"`
+	Total int64   `json:"total"`
+	Gt1   int64   `json:"gt_1"`
+	Gt5   int64   `json:"gt_5"`
+	Gt10  int64   `json:"gt_10"`
+	Gt20  int64   `json:"gt_20"`
+	Gt100 int64   `json:"gt_100"`
+	Mean  float64 `json:"mean"`
+	P25   int64   `json:"p25"`
+	P50   int64   `json:"p50"`
+	P75   int64   `json:"p75"`
+	P90   int64   `json:"p90"`
+	P95   int64   `json:"p95"`
+	P99   int64   `json:"p99"`
 }
 
 func (q *Queries) GetAuthorStats(ctx context.Context) (GetAuthorStatsRow, error) {
