@@ -13,16 +13,19 @@ export async function assignGraphLayout(
 
     worker.on("message", (graph: MultiDirectedGraph) => {
       resolve(graph);
+      worker.terminate();
     });
 
     worker.on("error", (error: Error) => {
       reject(error);
+      worker.terminate();
     });
 
     worker.on("exit", (code: number) => {
       if (code !== 0) {
         reject(new Error(`Worker stopped with exit code ${code}`));
       }
+      worker.terminate();
     });
 
     worker.postMessage(responseJSON);
