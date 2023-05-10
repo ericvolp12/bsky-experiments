@@ -311,6 +311,10 @@ func handleRepoStreamWithRetry(
 						// Cancel the context and close the WebSocket connection
 						// Reset the backoff timer
 						backoff = 0
+						// Set the lastupdate to now so we don't trigger this again
+						bsky.SocialGraphMux.Lock()
+						bsky.SocialGraph.LastUpdate = time.Now()
+						bsky.SocialGraphMux.Unlock()
 						cancel()
 						c.Close()
 						return
