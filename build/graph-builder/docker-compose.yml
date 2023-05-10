@@ -7,6 +7,7 @@ services:
       dockerfile: build/graph-builder/Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    restart: always
     image: bsky-graph-builder
     # logging:
     #   driver: loki

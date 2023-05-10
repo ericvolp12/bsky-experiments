@@ -37,7 +37,7 @@ type Count struct {
 }
 
 const (
-	maxBackoff       = 15 * time.Minute
+	maxBackoff       = 30 * time.Second
 	maxBackoffFactor = 2
 )
 
@@ -309,6 +309,8 @@ func handleRepoStreamWithRetry(
 						log.Printf("The graph hasn't been updated in the past %v seconds, closing and reopening the WebSocket...", updateCheckDuration)
 						bsky.SocialGraphMux.RUnlock()
 						// Cancel the context and close the WebSocket connection
+						// Reset the backoff timer
+						backoff = 0
 						cancel()
 						c.Close()
 						return
