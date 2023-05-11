@@ -55,6 +55,12 @@ ts-layout-up:
 	@echo "Starting TypeScript Layout API..."
 	docker-compose -f build/ts-layout/docker-compose.yml up --build -d
 
+# Build the Sentiment Analysis Python Service
+sentiment-up:
+	@echo "Starting Sentiment Analysis API..."
+	docker-compose -f build/sentiment/docker-compose.yml up --build -d
+
+
 # Generate SQLC Code
 sqlc:
 	@echo "Generating SQLC code..."

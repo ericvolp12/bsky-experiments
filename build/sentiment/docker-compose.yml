@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  bsky-sentiment:
+    build:
+      context: ../../
+      dockerfile: build/sentiment/Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    image: bsky-sentiment
+    restart: always
+    container_name: bsky-sentiment
+    env_file:
+      - ../../.env
+    environment:
+      - PORT=8088
+    ports:
+      - "8088:8088"
+
