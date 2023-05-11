@@ -26,6 +26,7 @@ const (
 type Sentiment struct {
 	SentimentServiceHost string
 	LanguageDetector     lingua.LanguageDetector
+	Client               *http.Client
 }
 
 type sentimentRequest struct {
@@ -65,6 +66,8 @@ func NewSentiment(sentimentServiceHost string) *Sentiment {
 		lingua.Persian,
 	}
 
+	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+
 	detector := lingua.NewLanguageDetectorBuilder().
 		FromLanguages(languages...).
 		Build()
@@ -72,6 +75,7 @@ func NewSentiment(sentimentServiceHost string) *Sentiment {
 	return &Sentiment{
 		SentimentServiceHost: sentimentServiceHost,
 		LanguageDetector:     detector,
+		Client:               &client,
 	}
 }
 
@@ -105,7 +109,7 @@ func (s *Sentiment) GetPostsSentiment(ctx context.Context, posts []search.Post) 
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := otelhttp.DefaultClient.Do(req)
+	resp, err := s.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send sentiment request: %w", err)
 	}

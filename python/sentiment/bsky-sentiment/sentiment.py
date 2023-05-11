@@ -1,4 +1,5 @@
 import os
+from opentelemetry import trace
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, AutoConfig
 import numpy as np
 from scipy.special import softmax
@@ -23,14 +24,17 @@ model.save_pretrained(os.getcwd() + "/cardiffnlp/twitter-roberta-base-sentiment-
 
 
 def get_sentiment(post_text):
-    text = preprocess(post_text)
-    encoded_input = tokenizer(text, return_tensors="pt")
-    output = model(**encoded_input)
-    scores = output[0][0].detach().numpy()
-    scores = softmax(scores)
+    tracer = trace.get_tracer("bsky-sentiment")
+    with tracer.start_as_current_span("get_sentiment"):
+        text = preprocess(post_text)
+        encoded_input = tokenizer(text, return_tensors="pt")
+        with tracer.start_as_current_span("model_inference"):
+            output = model(**encoded_input)
+        scores = output[0][0].detach().numpy()
+        scores = softmax(scores)
 
-    ranking = np.argsort(scores)
-    ranking = ranking[::-1]
-    sentiment = config.id2label[ranking[0]]
-    confidence_score = scores[ranking[0]]
-    return sentiment, confidence_score
+        ranking = np.argsort(scores)
+        ranking = ranking[::-1]
+        sentiment = config.id2label[ranking[0]]
+        confidence_score = scores[ranking[0]]
+        return sentiment, confidence_score
