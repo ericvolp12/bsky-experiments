@@ -195,6 +195,19 @@ func (bsky *BSky) ProcessRepoRecord(
 			post.ParentRelationship = &parentRelationsip
 		}
 
+		// If sentiment is enabled, get the sentiment for the post
+		if bsky.SentimentAnalysisEnabled {
+			span.AddEvent("HandleRepoCommit:GetPostsSentiment")
+			posts, err := bsky.SentimentAnalysis.GetPostsSentiment(ctx, []search.Post{post})
+			if err != nil {
+				span.SetAttributes(attribute.String("sentiment.error", err.Error()))
+				log.Printf("error getting sentiment for post %s: %+v\n", postID, err)
+			} else if len(posts) > 0 {
+				post.Sentiment = posts[0].Sentiment
+				post.SentimentConfidence = posts[0].SentimentConfidence
+			}
+		}
+
 		err = bsky.PostRegistry.AddAuthor(ctx, &author)
 		if err != nil {
 			log.Printf("error writing author to registry: %+v\n", err)

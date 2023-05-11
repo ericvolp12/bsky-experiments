@@ -20,6 +20,8 @@ WITH RECURSIVE post_tree AS (
            a2.handle,
            created_at,
            has_embedded_media,
+           sentiment,
+           sentiment_confidence,
            0 AS depth
     FROM posts
              LEFT JOIN authors a2 on a2.did = posts.author_did
@@ -37,6 +39,8 @@ WITH RECURSIVE post_tree AS (
            a.handle,
            p2.created_at,
            p2.has_embedded_media,
+           p2.sentiment,
+           p2.sentiment_confidence,
            pt.depth + 1 AS depth
     FROM posts p2
              JOIN
@@ -51,6 +55,8 @@ SELECT id,
        handle,
        created_at,
        has_embedded_media,
+       sentiment,
+       sentiment_confidence,
        depth
 FROM post_tree
 ORDER BY depth
@@ -62,15 +68,17 @@ type GetThreadViewParams struct {
 }
 
 type GetThreadViewRow struct {
-	ID               string         `json:"id"`
-	Text             string         `json:"text"`
-	ParentPostID     sql.NullString `json:"parent_post_id"`
-	RootPostID       sql.NullString `json:"root_post_id"`
-	AuthorDid        string         `json:"author_did"`
-	Handle           sql.NullString `json:"handle"`
-	CreatedAt        time.Time      `json:"created_at"`
-	HasEmbeddedMedia bool           `json:"has_embedded_media"`
-	Depth            interface{}    `json:"depth"`
+	ID                  string          `json:"id"`
+	Text                string          `json:"text"`
+	ParentPostID        sql.NullString  `json:"parent_post_id"`
+	RootPostID          sql.NullString  `json:"root_post_id"`
+	AuthorDid           string          `json:"author_did"`
+	Handle              sql.NullString  `json:"handle"`
+	CreatedAt           time.Time       `json:"created_at"`
+	HasEmbeddedMedia    bool            `json:"has_embedded_media"`
+	Sentiment           sql.NullString  `json:"sentiment"`
+	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
+	Depth               interface{}     `json:"depth"`
 }
 
 func (q *Queries) GetThreadView(ctx context.Context, arg GetThreadViewParams) ([]GetThreadViewRow, error) {
@@ -91,6 +99,8 @@ func (q *Queries) GetThreadView(ctx context.Context, arg GetThreadViewParams) ([
 			&i.Handle,
 			&i.CreatedAt,
 			&i.HasEmbeddedMedia,
+			&i.Sentiment,
+			&i.SentimentConfidence,
 			&i.Depth,
 		); err != nil {
 			return nil, err

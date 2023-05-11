@@ -7,5 +7,7 @@ CREATE TABLE posts (
     created_at TIMESTAMPTZ NOT NULL,
     has_embedded_media BOOLEAN NOT NULL,
     parent_relationship CHAR(3),
+    sentiment CHAR(3),
+    sentiment_confidence FLOAT,
     FOREIGN KEY (author_did) REFERENCES authors(did)
 );

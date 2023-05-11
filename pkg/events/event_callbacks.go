@@ -17,6 +17,7 @@ import (
 	"github.com/bluesky-social/indigo/repomgr"
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
+	"github.com/ericvolp12/bsky-experiments/pkg/sentiment"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	lru "github.com/hashicorp/golang-lru"
 	"go.opentelemetry.io/otel"
@@ -55,14 +56,17 @@ type BSky struct {
 
 	PostRegistryEnabled bool
 	PostRegistry        *search.PostRegistry
+
+	SentimentAnalysisEnabled bool
+	SentimentAnalysis        *sentiment.Sentiment
 }
 
 // NewBSky creates a new BSky struct with an authenticated XRPC client
 // and a social graph, initializing mutexes for cross-routine access
 func NewBSky(
 	ctx context.Context,
-	includeLinks, postRegistryEnabled bool,
-	dbConnectionString string,
+	includeLinks, postRegistryEnabled, sentimentAnalysisEnabled bool,
+	dbConnectionString, sentimentServiceHost string,
 	workerCount int,
 ) (*BSky, error) {
 	postCache, err := lru.NewARC(5000)
@@ -84,6 +88,12 @@ func NewBSky(
 		}
 	}
 
+	var sentimentAnalysis *sentiment.Sentiment
+
+	if sentimentAnalysisEnabled {
+		sentimentAnalysis = sentiment.NewSentiment(sentimentServiceHost)
+	}
+
 	bsky := &BSky{
 		IncludeLinks: includeLinks,
 
@@ -103,6 +113,9 @@ func NewBSky(
 
 		PostRegistryEnabled: postRegistryEnabled,
 		PostRegistry:        postRegistry,
+
+		SentimentAnalysisEnabled: sentimentAnalysisEnabled,
+		SentimentAnalysis:        sentimentAnalysis,
 	}
 
 	// Initialize the workers, each with their own BSky Client and Mutex

@@ -13,12 +13,14 @@ type Author struct {
 }
 
 type Post struct {
-	ID                 string         `json:"id"`
-	Text               string         `json:"text"`
-	ParentPostID       sql.NullString `json:"parent_post_id"`
-	RootPostID         sql.NullString `json:"root_post_id"`
-	AuthorDid          string         `json:"author_did"`
-	CreatedAt          time.Time      `json:"created_at"`
-	HasEmbeddedMedia   bool           `json:"has_embedded_media"`
-	ParentRelationship sql.NullString `json:"parent_relationship"`
+	ID                  string          `json:"id"`
+	Text                string          `json:"text"`
+	ParentPostID        sql.NullString  `json:"parent_post_id"`
+	RootPostID          sql.NullString  `json:"root_post_id"`
+	AuthorDid           string          `json:"author_did"`
+	CreatedAt           time.Time       `json:"created_at"`
+	HasEmbeddedMedia    bool            `json:"has_embedded_media"`
+	ParentRelationship  sql.NullString  `json:"parent_relationship"`
+	Sentiment           sql.NullString  `json:"sentiment"`
+	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
 }

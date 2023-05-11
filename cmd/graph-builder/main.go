@@ -79,8 +79,19 @@ func main() {
 		postRegistryEnabled = true
 	}
 
+	sentimentAnalysisEnabled := false
+	sentimentServiceHost := os.Getenv("SENTIMENT_SERVICE_HOST")
+	if sentimentServiceHost != "" {
+		sentimentAnalysisEnabled = true
+	}
+
 	log.Println("initializing BSky Event Handler...")
-	bsky, err := intEvents.NewBSky(ctx, includeLinks, postRegistryEnabled, dbConnectionString, workerCount)
+	bsky, err := intEvents.NewBSky(
+		ctx,
+		includeLinks, postRegistryEnabled, sentimentAnalysisEnabled,
+		dbConnectionString, sentimentServiceHost,
+		workerCount,
+	)
 	if err != nil {
 		log.Fatal(err)
 	}

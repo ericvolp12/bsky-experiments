@@ -78,7 +78,10 @@ if otel_endpoint:
     FastAPIInstrumentor.instrument_app(app)
 
 # Instrument FastAPI for Prometheus
-Instrumentator().instrument(app).expose(app, include_in_schema=False)
+Instrumentator().instrument(
+    app,
+    latency_lowr_buckets=[0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.5, 5, 10],
+).expose(app, include_in_schema=False)
 
 # Add logging middleware
 app.add_middleware(LoggingMiddleware)

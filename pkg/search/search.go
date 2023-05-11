@@ -21,17 +21,22 @@ type NotFoundError struct {
 const (
 	ReplyRelationship = "r"
 	QuoteRelationship = "q"
+	PositiveSentiment = "p"
+	NegativeSentiment = "n"
+	NeutralSentiment  = "u"
 )
 
 type Post struct {
-	ID                 string    `json:"id"`
-	Text               string    `json:"text"`
-	ParentPostID       *string   `json:"parent_post_id"`
-	RootPostID         *string   `json:"root_post_id"`
-	AuthorDID          string    `json:"author_did"`
-	CreatedAt          time.Time `json:"created_at"`
-	HasEmbeddedMedia   bool      `json:"has_embedded_media"`
-	ParentRelationship *string   `json:"parent_relationship"` // null, "r", "q"
+	ID                  string    `json:"id"`
+	Text                string    `json:"text"`
+	ParentPostID        *string   `json:"parent_post_id"`
+	RootPostID          *string   `json:"root_post_id"`
+	AuthorDID           string    `json:"author_did"`
+	CreatedAt           time.Time `json:"created_at"`
+	HasEmbeddedMedia    bool      `json:"has_embedded_media"`
+	ParentRelationship  *string   `json:"parent_relationship"` // null, "r", "q"
+	Sentiment           *string   `json:"sentiment"`
+	SentimentConfidence *float64  `json:"sentiment_confidence"`
 }
 
 type Percentile struct {
@@ -136,6 +141,8 @@ func (pr *PostRegistry) initializeDB() error {
 		created_at TIMESTAMPTZ NOT NULL,
 		has_embedded_media BOOLEAN NOT NULL,
 		parent_relationship CHAR(3),
+		sentiment CHAR(3),
+		sentiment_confidence FLOAT,
 		FOREIGN KEY (author_did) REFERENCES authors(did)
 	)`
 	_, err = pr.db.Exec(createPostsTableQuery)
@@ -174,15 +181,35 @@ func (pr *PostRegistry) AddPost(ctx context.Context, post *Post) error {
 		parentRelationship.Valid = true
 	}
 
+	sentiment := sql.NullString{
+		String: "",
+		Valid:  false,
+	}
+	if post.Sentiment != nil {
+		sentiment.String = *post.Sentiment
+		sentiment.Valid = true
+	}
+
+	sentimentConfidence := sql.NullFloat64{
+		Float64: 0,
+		Valid:   false,
+	}
+	if post.SentimentConfidence != nil {
+		sentimentConfidence.Float64 = *post.SentimentConfidence
+		sentimentConfidence.Valid = true
+	}
+
 	err := pr.queries.AddPost(ctx, search_queries.AddPostParams{
-		ID:                 post.ID,
-		Text:               post.Text,
-		ParentPostID:       parentPostID,
-		RootPostID:         rootPostID,
-		AuthorDid:          post.AuthorDID,
-		CreatedAt:          post.CreatedAt,
-		HasEmbeddedMedia:   post.HasEmbeddedMedia,
-		ParentRelationship: parentRelationship,
+		ID:                  post.ID,
+		Text:                post.Text,
+		ParentPostID:        parentPostID,
+		RootPostID:          rootPostID,
+		AuthorDid:           post.AuthorDID,
+		CreatedAt:           post.CreatedAt,
+		HasEmbeddedMedia:    post.HasEmbeddedMedia,
+		ParentRelationship:  parentRelationship,
+		Sentiment:           sentiment,
+		SentimentConfidence: sentimentConfidence,
 	})
 	return err
 }
@@ -340,15 +367,27 @@ func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID stri
 			rootPostIDPtr = &rootPostID
 		}
 
+		var sentiment *string
+		if threadView.Sentiment.Valid {
+			sentiment = &threadView.Sentiment.String
+		}
+
+		var sentimentConfidence *float64
+		if threadView.SentimentConfidence.Valid {
+			sentimentConfidence = &threadView.SentimentConfidence.Float64
+		}
+
 		retThreadViews[i] = PostView{
 			Post: Post{
-				ID:               threadView.ID,
-				Text:             threadView.Text,
-				ParentPostID:     parentPostIDPtr,
-				RootPostID:       rootPostIDPtr,
-				AuthorDID:        threadView.AuthorDid,
-				CreatedAt:        threadView.CreatedAt,
-				HasEmbeddedMedia: threadView.HasEmbeddedMedia,
+				ID:                  threadView.ID,
+				Text:                threadView.Text,
+				ParentPostID:        parentPostIDPtr,
+				RootPostID:          rootPostIDPtr,
+				AuthorDID:           threadView.AuthorDid,
+				CreatedAt:           threadView.CreatedAt,
+				HasEmbeddedMedia:    threadView.HasEmbeddedMedia,
+				Sentiment:           sentiment,
+				SentimentConfidence: sentimentConfidence,
 			},
 			AuthorHandle: threadView.Handle.String,
 			Depth:        int(threadView.Depth.(int64)),
@@ -385,15 +424,27 @@ func (pr *PostRegistry) GetOldestPresentParent(ctx context.Context, postID strin
 		parentRelationshipPtr = &postView.ParentRelationship.String
 	}
 
+	var sentiment *string
+	if postView.Sentiment.Valid {
+		sentiment = &postView.Sentiment.String
+	}
+
+	var sentimentConfidence *float64
+	if postView.SentimentConfidence.Valid {
+		sentimentConfidence = &postView.SentimentConfidence.Float64
+	}
+
 	return &Post{
-		ID:                 postView.ID,
-		Text:               postView.Text,
-		ParentPostID:       parentPostIDPtr,
-		RootPostID:         rootPostIDPtr,
-		AuthorDID:          postView.AuthorDid,
-		CreatedAt:          postView.CreatedAt,
-		HasEmbeddedMedia:   postView.HasEmbeddedMedia,
-		ParentRelationship: parentRelationshipPtr,
+		ID:                  postView.ID,
+		Text:                postView.Text,
+		ParentPostID:        parentPostIDPtr,
+		RootPostID:          rootPostIDPtr,
+		AuthorDID:           postView.AuthorDid,
+		CreatedAt:           postView.CreatedAt,
+		HasEmbeddedMedia:    postView.HasEmbeddedMedia,
+		ParentRelationship:  parentRelationshipPtr,
+		Sentiment:           sentiment,
+		SentimentConfidence: sentimentConfidence,
 	}, nil
 }
 
@@ -418,14 +469,26 @@ func postFromQueryPost(p search_queries.Post) *Post {
 		parentRelationshipPtr = &p.ParentRelationship.String
 	}
 
+	var sentiment *string
+	if p.Sentiment.Valid {
+		sentiment = &p.Sentiment.String
+	}
+
+	var sentimentConfidence *float64
+	if p.SentimentConfidence.Valid {
+		sentimentConfidence = &p.SentimentConfidence.Float64
+	}
+
 	return &Post{
-		ID:                 p.ID,
-		Text:               p.Text,
-		ParentPostID:       parentPostIDPtr,
-		RootPostID:         rootPostIDPtr,
-		AuthorDID:          p.AuthorDid,
-		CreatedAt:          p.CreatedAt,
-		HasEmbeddedMedia:   p.HasEmbeddedMedia,
-		ParentRelationship: parentRelationshipPtr,
+		ID:                  p.ID,
+		Text:                p.Text,
+		ParentPostID:        parentPostIDPtr,
+		RootPostID:          rootPostIDPtr,
+		AuthorDID:           p.AuthorDid,
+		CreatedAt:           p.CreatedAt,
+		HasEmbeddedMedia:    p.HasEmbeddedMedia,
+		ParentRelationship:  parentRelationshipPtr,
+		Sentiment:           sentiment,
+		SentimentConfidence: sentimentConfidence,
 	}
 }
