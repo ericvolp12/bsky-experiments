@@ -367,14 +367,16 @@ func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID stri
 			rootPostIDPtr = &rootPostID
 		}
 
-		var sentiment *string
+		var sentimentPtr *string
 		if threadView.Sentiment.Valid {
-			sentiment = &threadView.Sentiment.String
+			sentiment := fmt.Sprintf("%s", threadView.Sentiment.String)
+			sentimentPtr = &sentiment
 		}
 
-		var sentimentConfidence *float64
+		var sentimentConfidencePtr *float64
 		if threadView.SentimentConfidence.Valid {
-			sentimentConfidence = &threadView.SentimentConfidence.Float64
+			sentimentConfidence := threadView.SentimentConfidence.Float64
+			sentimentConfidencePtr = &sentimentConfidence
 		}
 
 		retThreadViews[i] = PostView{
@@ -386,8 +388,8 @@ func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID stri
 				AuthorDID:           threadView.AuthorDid,
 				CreatedAt:           threadView.CreatedAt,
 				HasEmbeddedMedia:    threadView.HasEmbeddedMedia,
-				Sentiment:           sentiment,
-				SentimentConfidence: sentimentConfidence,
+				Sentiment:           sentimentPtr,
+				SentimentConfidence: sentimentConfidencePtr,
 			},
 			AuthorHandle: threadView.Handle.String,
 			Depth:        int(threadView.Depth.(int64)),

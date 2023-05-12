@@ -20,6 +20,8 @@ export interface Post {
   author_did: string;
   created_at: string;
   has_embedded_media: boolean;
+  sentiment?: string;
+  sentiment_confidence?: number;
 }
 
 export interface ThreadItem {
