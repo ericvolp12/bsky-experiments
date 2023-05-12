@@ -1,9 +1,12 @@
+import logging
 import os
 import time
 from opentelemetry import trace
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, AutoConfig
 import numpy as np
 from scipy.special import softmax
+
+logger = logging.getLogger(__name__)
 
 
 def preprocess(text):
@@ -30,8 +33,32 @@ def get_sentiment(post_text):
         start = time.time()
         text = preprocess(post_text)
         encoded_input = tokenizer(text, return_tensors="pt")
+        # Log details about the inputs
+        input_ids = encoded_input["input_ids"]
+        logger.debug(f"Input IDs: {input_ids}")
+        logger.debug(f"Input IDs shape: {input_ids.shape}")
+        logger.debug(f"Max Input ID: {input_ids.max()}")
+        logger.debug(f"Min Input ID: {input_ids.min()}")
+
+        # Check if input shape is valid
+        if input_ids.shape[0] > 1 or input_ids.shape[1] > 514:
+            logger.error(f"Invalid input shape: {input_ids.shape} for text: {text}")
+            span.set_attribute("invalid_input_shape", True)
+            span.set_attribute("post_text", post_text)
+            span.set_attribute("input_dimensions", input_ids.shape)
+            return "u", 0
+
         with tracer.start_as_current_span("model_inference"):
             output = model(**encoded_input)
+
+        logits = output.logits
+        if logits.shape != (1, 3):  # Check that the output has dimensionality [1, 3]
+            logger.error(f"Unexpected output shape for text: {text}")
+            logger.error(f"Output: {logits.shape}")
+            span.set_attribute("unexpected_output_shape", True)
+            span.set_attribute("post_text", post_text)
+            span.set_attribute("output_dimensions", logits.shape)
+            return "u", 0
         scores = output[0][0].detach().numpy()
         scores = softmax(scores)
 
