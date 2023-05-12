@@ -139,7 +139,7 @@ def batch_update_posts():
 
         for row in rows:
             post_id, post_text = row
-            if post_text != "" and len(post_text) < 250:
+            if post_text != "":
                 sentiment, confidence_score = get_sentiment(post_text)
                 sentiment_as_char = ""
                 if sentiment == "positive":
@@ -156,6 +156,14 @@ def batch_update_posts():
                         post_id,
                         sentiment_as_char,
                         confidence_score,
+                    )
+                )
+            else:
+                updates.append(
+                    (
+                        post_id,
+                        "u",
+                        0,
                     )
                 )
         inference_done = time.time()
