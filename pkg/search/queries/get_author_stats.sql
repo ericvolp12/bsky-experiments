@@ -26,7 +26,8 @@ counts AS (
         SUM(CASE WHEN num_posts > 5 THEN 1 ELSE 0 END) AS gt_5,
         SUM(CASE WHEN num_posts > 10 THEN 1 ELSE 0 END) AS gt_10,
         SUM(CASE WHEN num_posts > 20 THEN 1 ELSE 0 END) AS gt_20,
-        SUM(CASE WHEN num_posts > 100 THEN 1 ELSE 0 END) AS gt_100
+        SUM(CASE WHEN num_posts > 100 THEN 1 ELSE 0 END) AS gt_100,
+        SUM(CASE WHEN num_posts > 1000 THEN 1 ELSE 0 END)as gt_1000
     FROM
         postcounts
 )
@@ -37,6 +38,7 @@ SELECT
     gt_10,
     gt_20,
     gt_100,
+    gt_1000,
     (SELECT AVG(num_posts) FROM postcounts)::float AS mean,
     p25,
     p50,

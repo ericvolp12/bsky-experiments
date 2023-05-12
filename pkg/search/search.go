@@ -301,6 +301,10 @@ func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error
 				Min:   100,
 				Count: authorStats.Gt100,
 			},
+			{
+				Min:   1000,
+				Count: authorStats.Gt1000,
+			},
 		},
 		UpdatedAt: time.Now(),
 	}, nil
