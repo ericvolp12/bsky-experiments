@@ -41,7 +41,7 @@ def get_sentiment(post_text):
         logger.debug(f"Min Input ID: {input_ids.min()}")
 
         # Check if input shape is valid
-        if input_ids.shape[0] > 1 or input_ids.shape[1] > 514:
+        if input_ids.shape[0] > 1 or input_ids.shape[1] > 512:
             logger.error(f"Invalid input shape: {input_ids.shape} for text: {text}")
             span.set_attribute("invalid_input_shape", True)
             span.set_attribute("post_text", post_text)
