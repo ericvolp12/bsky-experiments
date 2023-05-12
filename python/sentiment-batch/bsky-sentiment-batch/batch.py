@@ -10,6 +10,7 @@ from psycopg2.extensions import AsIs, register_adapter
 from psycopg2.extras import execute_values
 from scipy.special import softmax
 from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer
+from psycopg2.extras import LoggingConnection
 
 
 def adapt_numpy_float32(numpy_float32):
@@ -29,23 +30,29 @@ DB_PASSWORD = os.environ.get("DB_PASSWORD")
 DB_HOST = os.environ.get("DB_HOST")
 DB_PORT = os.environ.get("DB_PORT")
 
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+
 # Database connection setup
 conn = psycopg2.connect(
-    dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD, host=DB_HOST, port=DB_PORT
+    connection_factory=LoggingConnection,
+    dbname=DB_NAME,
+    user=DB_USER,
+    password=DB_PASSWORD,
+    host=DB_HOST,
+    port=DB_PORT,
 )
+
+conn.initialize(logger)
 
 conn.set_client_encoding("UTF8")
 
 cursor = conn.cursor()
 
 update_cursor = conn.cursor()
-
-logger = logging.getLogger(__name__)
-logger.setLevel("INFO")
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
 
 
 def preprocess(text):
@@ -123,7 +130,7 @@ def batch_update_posts():
                     sentiment_as_char = "n"
                 else:
                     sentiment_as_char = "u"
-                logging.info(
+                logging.debug(
                     f"Post ID: {post_id}: {sentiment_as_char} - {confidence_score}"
                 )
                 updates.append(
@@ -143,12 +150,16 @@ def batch_update_posts():
             page_size=250,
             fetch=False,
         )
+
+        conn.commit()
+
         update_done = time.time()
         rows_updated += len(rows)
         logger.info(
             f"Batch of {len(rows)} posts fetched in {fetch_done - batch_start:.2f}s, "
             f"inference done in {inference_done - fetch_done:.2f}s, "
-            f"update ({update_cursor.rowcount}) done in {update_done - inference_done:.2f}s"
+            f"update ({update_cursor.rowcount}) done in {update_done - inference_done:.2f}s, "
+            f"total rows fetched: {rows_fetched}, total rows updated: {rows_updated}"
         )
 
 
