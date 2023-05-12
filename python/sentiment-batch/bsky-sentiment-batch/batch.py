@@ -77,9 +77,26 @@ model = AutoModelForSequenceClassification.from_pretrained(MODEL).to(device)
 def get_sentiment(post_text):
     text = preprocess(post_text)
     encoded_input = tokenizer(text, return_tensors="pt").to(device)
+
+    # Log details about the inputs
+    input_ids = encoded_input["input_ids"]
+    logger.debug(f"Input IDs: {input_ids}")
+    logger.debug(f"Input IDs shape: {input_ids.shape}")
+    logger.debug(f"Max Input ID: {input_ids.max()}")
+    logger.debug(f"Min Input ID: {input_ids.min()}")
+
+    # Check if input shape is valid
+    if input_ids.shape[0] > 1 or input_ids.shape[1] > 514:
+        logger.error(f"Invalid input shape: {input_ids.shape} for text: {text}")
+        return "u", 0
+
     output = model(**encoded_input)
-    scores = output[0][0].cpu().detach().numpy()
-    scores = softmax(scores)
+    logits = output.logits
+    if logits.shape != (1, 3):  # Check that the output has dimensionality [1, 3]
+        logger.error(f"Unexpected output shape for text: {text}")
+        logger.error(f"Output: {logits.shape}")
+        return "u", 0
+    scores = softmax(logits.cpu().detach().numpy()[0])
 
     ranking = np.argsort(scores)
     ranking = ranking[::-1]
@@ -101,11 +118,12 @@ def batch_update_posts():
     while True:
         batch_start = time.time()
         cursor.execute(
-            """
+            f"""
             SELECT id, text
             FROM posts
             WHERE sentiment IS NULL AND sentiment_confidence IS NULL
             ORDER BY created_at ASC
+            OFFSET {rows_fetched}
             LIMIT 250
             """
         )
