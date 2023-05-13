@@ -12,6 +12,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/ericvolp12/bsky-experiments/pkg/layout"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
+	"github.com/ericvolp12/bsky-experiments/pkg/usercount"
 	"github.com/gin-gonic/gin"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/prometheus/client_golang/prometheus"
@@ -42,14 +43,27 @@ type LayoutCacheEntry struct {
 }
 
 type StatsCacheEntry struct {
-	Stats      search.AuthorStats
+	Stats      AuthorStatsResponse
 	Expiration time.Time
 }
 
+type AuthorStatsResponse struct {
+	TotalUsers    int                 `json:"total_users"`
+	TotalAuthors  int64               `json:"total_authors"`
+	MeanPostCount float64             `json:"mean_post_count"`
+	Percentiles   []search.Percentile `json:"percentiles"`
+	Brackets      []search.Bracket    `json:"brackets"`
+	UpdatedAt     time.Time           `json:"updated_at"`
+}
+
 type API struct {
-	PostRegistry       *search.PostRegistry
-	SocialGraph        *graph.Graph
-	LayoutServiceHost  string
+	PostRegistry *search.PostRegistry
+	UserCount    *usercount.UserCount
+
+	SocialGraph *graph.Graph
+
+	LayoutServiceHost string
+
 	ThreadViewCacheTTL time.Duration
 	ThreadViewCache    *lru.ARCCache
 	LayoutCacheTTL     time.Duration
@@ -60,6 +74,7 @@ type API struct {
 
 func NewAPI(
 	postRegistry *search.PostRegistry,
+	userCount *usercount.UserCount,
 	socialGraphPath string,
 	layoutServiceHost string,
 	threadViewCacheTTL time.Duration,
@@ -88,6 +103,7 @@ func NewAPI(
 
 	return &API{
 		PostRegistry:       postRegistry,
+		UserCount:          userCount,
 		SocialGraph:        &g1,
 		LayoutServiceHost:  layoutServiceHost,
 		ThreadViewCacheTTL: threadViewCacheTTL,
@@ -154,12 +170,26 @@ func (api *API) GetAuthorStats(c *gin.Context) {
 	ctx, span := tracer.Start(ctx, "GetAuthorStats")
 	defer span.End()
 
+	authorStats, err := api.GenerateSiteStats(ctx)
+	if err != nil {
+		log.Printf("Error getting author stats: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, authorStats)
+}
+
+func (api *API) GenerateSiteStats(ctx context.Context) (AuthorStatsResponse, error) {
+	tracer := otel.Tracer("search-api")
+	ctx, span := tracer.Start(ctx, "GenerateSiteStats")
+	defer span.End()
+
 	statsFromCache := api.StatsCache
 	if statsFromCache != nil && statsFromCache.Expiration.After(time.Now()) {
 		cacheHits.WithLabelValues("stats").Inc()
 		span.SetAttributes(attribute.Bool("caches.stats.hit", true))
-		c.JSON(http.StatusOK, statsFromCache.Stats)
-		return
+		return statsFromCache.Stats, nil
 	}
 
 	cacheMisses.WithLabelValues("stats").Inc()
@@ -167,23 +197,35 @@ func (api *API) GetAuthorStats(c *gin.Context) {
 	authorStats, err := api.PostRegistry.GetAuthorStats(ctx)
 	if err != nil {
 		log.Printf("Error getting author stats: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return AuthorStatsResponse{}, err
 	}
 
 	if authorStats == nil {
 		log.Printf("Author stats returned nil")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "author stats returned nil"})
-		return
+		return AuthorStatsResponse{}, errors.New("author stats returned nil")
+	}
+
+	// Get usercount from UserCount service
+	userCount, err := api.UserCount.GetUserCount(ctx)
+	if err != nil {
+		log.Printf("Error getting user count: %v", err)
+		return AuthorStatsResponse{}, err
 	}
 
 	// Update the plain old struct cache
 	api.StatsCache = &StatsCacheEntry{
-		Stats:      *authorStats,
+		Stats: AuthorStatsResponse{
+			TotalUsers:    userCount,
+			TotalAuthors:  authorStats.TotalAuthors,
+			MeanPostCount: authorStats.MeanPostCount,
+			Percentiles:   authorStats.Percentiles,
+			Brackets:      authorStats.Brackets,
+			UpdatedAt:     authorStats.UpdatedAt,
+		},
 		Expiration: time.Now().Add(api.StatsCacheTTL),
 	}
 
-	c.JSON(http.StatusOK, *authorStats)
+	return api.StatsCache.Stats, nil
 }
 
 func (api *API) LayoutThread(ctx context.Context, rootPostID string, threadView []search.PostView) ([]layout.ThreadViewLayout, error) {

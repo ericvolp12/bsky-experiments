@@ -33,12 +33,7 @@ func (bsky *BSky) RefreshAuthToken(ctx context.Context, workerID int) error {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "RefreshAuthToken")
 	defer span.End()
-	span.AddEvent("RefreshAuthToken:AcquireClientLock")
-	worker.ClientMux.Lock()
-	span.AddEvent("RefreshAuthToken:ClientLockAcquired")
-	err := intXRPC.RefreshAuth(ctx, worker.Client)
-	span.AddEvent("RefreshAuthToken:ReleaseClientLock")
-	worker.ClientMux.Unlock()
+	err := intXRPC.RefreshAuth(ctx, worker.Client, &worker.ClientMux)
 	return err
 }
 

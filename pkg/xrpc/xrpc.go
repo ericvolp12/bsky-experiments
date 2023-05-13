@@ -8,17 +8,32 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // RefreshAuth refreshes the auth token for the client
-func RefreshAuth(ctx context.Context, client *xrpc.Client) error {
+func RefreshAuth(ctx context.Context, client *xrpc.Client, clientMux *sync.RWMutex) error {
+	tracer := otel.Tracer("xrpc")
+	ctx, span := tracer.Start(ctx, "RefreshAuth")
+	defer span.End()
+
 	// Set the AccessJWT to the RefreshJWT so we have permission to refresh
+	if clientMux != nil {
+		span.AddEvent("RefreshAuth:AcquireClientLock")
+		clientMux.Lock()
+		span.AddEvent("RefreshAuth:ClientLockAcquired")
+	} else {
+		span.SetAttributes(attribute.Bool("clientMux", false))
+	}
+
 	client.Auth.AccessJwt = client.Auth.RefreshJwt
 
 	refreshedSession, err := comatproto.ServerRefreshSession(ctx, client)
@@ -32,6 +47,11 @@ func RefreshAuth(ctx context.Context, client *xrpc.Client) error {
 		Did:        refreshedSession.Did,
 		RefreshJwt: refreshedSession.RefreshJwt,
 		AccessJwt:  refreshedSession.AccessJwt,
+	}
+
+	if clientMux != nil {
+		span.AddEvent("RefreshAuth:ReleaseClientLock")
+		clientMux.Unlock()
 	}
 
 	return nil

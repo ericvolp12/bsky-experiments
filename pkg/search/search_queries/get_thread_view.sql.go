@@ -44,7 +44,7 @@ WITH RECURSIVE post_tree AS (
            pt.depth + 1 AS depth
     FROM posts p2
              JOIN
-         post_tree pt ON p2.parent_post_id = pt.id AND p2.parent_relationship = 'r'
+         post_tree pt ON p2.parent_post_id = pt.id AND p2.parent_relationship != ''
              LEFT JOIN authors a on p2.author_did = a.did)
 
 SELECT id,

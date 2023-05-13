@@ -10,6 +10,8 @@ import (
 
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/endpoints"
+	"github.com/ericvolp12/bsky-experiments/pkg/usercount"
+	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	ginprometheus "github.com/ericvolp12/go-gin-prometheus"
 	"github.com/gin-contrib/cors"
 	ginzap "github.com/gin-contrib/zap"
@@ -87,8 +89,16 @@ func main() {
 	}
 	defer postRegistry.Close()
 
+	client, err := intXRPC.GetXRPCClient(ctx)
+	if err != nil {
+		log.Fatalf("Failed to create XRPC client: %v", err)
+	}
+
+	userCount := usercount.NewUserCount(ctx, client)
+
 	api, err := endpoints.NewAPI(
 		postRegistry,
+		userCount,
 		binaryGraphPath,
 		layoutServiceHost,
 		30*time.Minute, // Thread View Cache TTL
@@ -196,6 +206,23 @@ func main() {
 			span.End()
 			// Sleep until the caches expire
 			time.Sleep(30*time.Minute + 5*time.Second)
+		}
+	}()
+
+	// Create a routine to refresh site stats every 5 minutes
+	go func() {
+		ctx := context.Background()
+		tracer := otel.Tracer("search-api")
+		for {
+			ctx, span := tracer.Start(ctx, "refreshSiteStats")
+			log.Printf("Refreshing site stats")
+			_, err := api.GenerateSiteStats(ctx)
+			if err != nil {
+				log.Printf("Error refreshing site stats: %v", err)
+			}
+			span.End()
+
+			time.Sleep(4 * time.Minute)
 		}
 	}()
 
