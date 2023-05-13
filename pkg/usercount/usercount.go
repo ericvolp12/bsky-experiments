@@ -48,14 +48,14 @@ func NewUserCount(ctx context.Context, client *xrpc.Client) *UserCount {
 		}
 	}()
 
-	// Set up a rate limiter to limit requests to 5 per second
-	limiter := rate.NewLimiter(rate.Limit(5), 1)
+	// Set up a rate limiter to limit requests to 25 per second
+	limiter := rate.NewLimiter(rate.Limit(25), 1)
 
 	return &UserCount{
 		Client:      client,
 		RateLimiter: limiter,
 		ClientMux:   clientMux,
-		Cursors:     []string{""},
+		Cursors:     []string{},
 	}
 }
 
@@ -67,59 +67,12 @@ func (uc *UserCount) GetUserCount(ctx context.Context) (int, error) {
 	tracer := otel.Tracer("usercount")
 	ctx, span := tracer.Start(ctx, "GetUserCount")
 	defer span.End()
+	cursor := ""
 
 	numUsers := 0
 
-	countChannel := make(chan int, len(uc.Cursors)-1)
-	errorChannel := make(chan error, len(uc.Cursors)-1)
+	uc.Cursors = []string{}
 
-	// Iterate over all but the final cursor in goroutines
-	for i, cursor := range uc.Cursors {
-		if i == len(uc.Cursors)-1 {
-			break
-		}
-		go func(cursor string) {
-			log.Printf("getting repos with cursor %s\n", cursor)
-
-			// Use rate limiter before each request
-			err := uc.RateLimiter.Wait(ctx)
-			if err != nil {
-				fmt.Printf("error waiting for rate limiter: %v", err)
-				errorChannel <- fmt.Errorf("error waiting for rate limiter: %w", err)
-				return
-			}
-
-			span.AddEvent("AcquireClientRLock")
-			uc.ClientMux.RLock()
-			span.AddEvent("ClientRLockAcquired")
-			repoOutput, err := comatproto.SyncListRepos(ctx, uc.Client, cursor, 1000)
-			if err != nil {
-				fmt.Printf("error listing repos: %s\n", err)
-				errorChannel <- fmt.Errorf("error listing repos: %w", err)
-				return
-			}
-			span.AddEvent("ReleaseClientRLock")
-			uc.ClientMux.RUnlock()
-
-			countChannel <- len(repoOutput.Repos)
-		}(cursor)
-	}
-
-	// Read from the channels
-	for i := 0; i < len(uc.Cursors)-1; i++ {
-		select {
-		case count := <-countChannel:
-			numUsers += count
-		case err := <-errorChannel:
-			return -1, err
-		}
-	}
-
-	log.Printf("fetching final cursor: %s\n", uc.Cursors[len(uc.Cursors)-1])
-
-	cursor := uc.Cursors[len(uc.Cursors)-1]
-	// Iterate over the final cursor in the main thread
-	// this also builds up the cursor list on the first run
 	for {
 		// Use rate limiter before each request
 		err := uc.RateLimiter.Wait(ctx)
