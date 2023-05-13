@@ -10,6 +10,7 @@ import (
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/xrpc"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
+	"go.opentelemetry.io/otel"
 
 	"golang.org/x/time/rate"
 )
@@ -61,6 +62,9 @@ func NewUserCount(ctx context.Context, client *xrpc.Client) *UserCount {
 // It does not implement any caching, so it will make a series of requests to the API every time it is called
 // Caching should be implemented one layer up in the application
 func (uc *UserCount) GetUserCount(ctx context.Context) (int, error) {
+	tracer := otel.Tracer("usercount")
+	ctx, span := tracer.Start(ctx, "GetUserCount")
+	defer span.End()
 	cursor := ""
 
 	numUsers := 0
@@ -73,11 +77,16 @@ func (uc *UserCount) GetUserCount(ctx context.Context) (int, error) {
 			return -1, fmt.Errorf("error waiting for rate limiter: %w", err)
 		}
 
+		span.AddEvent("AcquireClientRLock")
+		uc.ClientMux.RLock()
+		span.AddEvent("ClientRLockAcquired")
 		repoOutput, err := comatproto.SyncListRepos(ctx, uc.Client, cursor, 1000)
 		if err != nil {
 			fmt.Printf("error listing repos: %s\n", err)
 			return -1, fmt.Errorf("error listing repos: %w", err)
 		}
+		span.AddEvent("ReleaseClientRLock")
+		uc.ClientMux.RUnlock()
 
 		numUsers += len(repoOutput.Repos)
 
