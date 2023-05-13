@@ -186,7 +186,7 @@ func main() {
 	}
 
 	// Create a routine to preheat the caches every 30 minutes
-	cachePreheatTicker := time.NewTicker(30*time.Minute + 5*time.Second)
+	cachePreheatTicker := time.NewTicker(30*time.Minute + 45*time.Second)
 	go func() {
 		ctx := context.Background()
 		tracer := otel.Tracer("search-api")
@@ -213,7 +213,7 @@ func main() {
 		}
 	}()
 
-	statsRefreshTicker := time.NewTicker(5*time.Minute + 5*time.Second)
+	statsRefreshTicker := time.NewTicker(5*time.Minute + 25*time.Second)
 
 	// Create a routine to refresh site stats every 5 minutes
 	go func() {
