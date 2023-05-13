@@ -185,8 +185,8 @@ func main() {
 		{authorID: "did:plc:wgaezxqi2spqm3mhrb5xvkzi", postID: "3juzlwllznd24"},
 	}
 
-	// Create a routine to preheat the caches every 25 minutes
-
+	// Create a routine to preheat the caches every 30 minutes
+	cachePreheatTicker := time.NewTicker(30*time.Minute + 5*time.Second)
 	go func() {
 		ctx := context.Background()
 		tracer := otel.Tracer("search-api")
@@ -204,10 +204,16 @@ func main() {
 				}
 			}
 			span.End()
-			// Sleep until the caches expire
-			time.Sleep(30*time.Minute + 5*time.Second)
+			select {
+			case <-cachePreheatTicker.C:
+				continue
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
+
+	statsRefreshTicker := time.NewTicker(5*time.Minute + 5*time.Second)
 
 	// Create a routine to refresh site stats every 5 minutes
 	go func() {
@@ -221,8 +227,12 @@ func main() {
 				log.Printf("Error refreshing site stats: %v", err)
 			}
 			span.End()
-
-			time.Sleep(4 * time.Minute)
+			select {
+			case <-statsRefreshTicker.C:
+				continue
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 

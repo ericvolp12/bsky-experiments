@@ -20,7 +20,8 @@ type UserCount struct {
 	ClientMux        *sync.RWMutex
 	CurrentUserCount int
 	RateLimiter      *rate.Limiter
-	Cursors          []string
+	LastCursor       string
+	LastPageSize     int
 }
 
 func NewUserCount(ctx context.Context, client *xrpc.Client) *UserCount {
@@ -48,14 +49,14 @@ func NewUserCount(ctx context.Context, client *xrpc.Client) *UserCount {
 		}
 	}()
 
-	// Set up a rate limiter to limit requests to 25 per second
-	limiter := rate.NewLimiter(rate.Limit(25), 1)
+	// Set up a rate limiter to limit requests to 50 per second
+	limiter := rate.NewLimiter(rate.Limit(50), 1)
 
 	return &UserCount{
 		Client:      client,
 		RateLimiter: limiter,
 		ClientMux:   clientMux,
-		Cursors:     []string{},
+		LastCursor:  "",
 	}
 }
 
@@ -68,93 +69,8 @@ func (uc *UserCount) GetUserCount(ctx context.Context) (int, error) {
 	ctx, span := tracer.Start(ctx, "GetUserCount")
 	defer span.End()
 
-	numUsers := 0
-
-	// If Cursors are empty, build the cursor list
-	if len(uc.Cursors) == 0 {
-		cursor := ""
-		uc.Cursors = append(uc.Cursors, "")
-		for {
-			// Use rate limiter before each request
-			err := uc.RateLimiter.Wait(ctx)
-			if err != nil {
-				fmt.Printf("error waiting for rate limiter: %v", err)
-				return -1, fmt.Errorf("error waiting for rate limiter: %w", err)
-			}
-
-			span.AddEvent("AcquireClientRLock")
-			uc.ClientMux.RLock()
-			span.AddEvent("ClientRLockAcquired")
-			repoOutput, err := comatproto.SyncListRepos(ctx, uc.Client, cursor, 1000)
-			if err != nil {
-				fmt.Printf("error listing repos: %s\n", err)
-				return -1, fmt.Errorf("error listing repos: %w", err)
-			}
-			span.AddEvent("ReleaseClientRLock")
-			uc.ClientMux.RUnlock()
-
-			numUsers += len(repoOutput.Repos)
-
-			if repoOutput.Cursor == nil {
-				break
-			}
-
-			cursor = *repoOutput.Cursor
-			uc.Cursors = append(uc.Cursors, cursor)
-		}
-
-		return numUsers, nil
-	}
-
-	// Parallelize the fetching of each page
-	var wg sync.WaitGroup
-	results := make(chan int, len(uc.Cursors))
-	newCursorChan := make(chan string)
-
-	for i, cursor := range uc.Cursors {
-		wg.Add(1)
-
-		go func(c string, idx int) {
-			defer wg.Done()
-
-			// Use rate limiter before each request
-			err := uc.RateLimiter.Wait(ctx)
-			if err != nil {
-				log.Printf("error waiting for rate limiter: %v", err)
-				return
-			}
-
-			span.AddEvent("AcquireClientRLock")
-			uc.ClientMux.RLock()
-			span.AddEvent("ClientRLockAcquired")
-			repoOutput, err := comatproto.SyncListRepos(ctx, uc.Client, c, 1000)
-			if err != nil {
-				log.Printf("error listing repos: %s\n", err)
-				return
-			}
-
-			span.AddEvent("ReleaseClientRLock")
-			uc.ClientMux.RUnlock()
-
-			results <- len(repoOutput.Repos)
-
-			if repoOutput.Cursor != nil && *repoOutput.Cursor != c {
-				if idx == len(uc.Cursors)-1 { // if this is the last cursor
-					newCursorChan <- *repoOutput.Cursor
-				}
-			}
-		}(cursor, i)
-	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-		close(newCursorChan)
-	}()
-
-	// Check for new cursors
-	for newCursor := range newCursorChan {
-		uc.Cursors = append(uc.Cursors, newCursor)
+	for {
+		// Use rate limiter before each request
 		err := uc.RateLimiter.Wait(ctx)
 		if err != nil {
 			fmt.Printf("error waiting for rate limiter: %v", err)
@@ -164,7 +80,7 @@ func (uc *UserCount) GetUserCount(ctx context.Context) (int, error) {
 		span.AddEvent("AcquireClientRLock")
 		uc.ClientMux.RLock()
 		span.AddEvent("ClientRLockAcquired")
-		repoOutput, err := comatproto.SyncListRepos(ctx, uc.Client, newCursor, 1000)
+		repoOutput, err := comatproto.SyncListRepos(ctx, uc.Client, uc.LastCursor, 1000)
 		if err != nil {
 			fmt.Printf("error listing repos: %s\n", err)
 			return -1, fmt.Errorf("error listing repos: %w", err)
@@ -172,15 +88,16 @@ func (uc *UserCount) GetUserCount(ctx context.Context) (int, error) {
 		span.AddEvent("ReleaseClientRLock")
 		uc.ClientMux.RUnlock()
 
-		numUsers += len(repoOutput.Repos)
+		// On the last page, the cursor will be nil and the repo list will be empty
+
+		uc.CurrentUserCount += len(repoOutput.Repos)
+
+		if repoOutput.Cursor == nil {
+			break
+		}
+
+		uc.LastCursor = *repoOutput.Cursor
 	}
 
-	// Sum up the results
-	for r := range results {
-		numUsers += r
-	}
-
-	uc.CurrentUserCount = numUsers
-
-	return numUsers, nil
+	return uc.CurrentUserCount, nil
 }
