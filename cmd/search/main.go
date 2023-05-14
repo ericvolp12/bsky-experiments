@@ -213,28 +213,36 @@ func main() {
 		}
 	}()
 
-	statsRefreshTicker := time.NewTicker(5*time.Minute + 25*time.Second)
+	statsRefreshTicker := time.NewTicker(5 * time.Minute)
 
 	// Create a routine to refresh site stats every 5 minutes
 	go func() {
 		ctx := context.Background()
 		tracer := otel.Tracer("search-api")
 		for {
-			ctx, span := tracer.Start(ctx, "refreshSiteStats")
-			log.Printf("Refreshing site stats")
-			_, err := api.GenerateSiteStats(ctx)
-			if err != nil {
-				log.Printf("Error refreshing site stats: %v", err)
-			}
-			span.End()
 			select {
 			case <-statsRefreshTicker.C:
-				continue
+				ctx, span := tracer.Start(ctx, "refreshSiteStats")
+				log.Printf("Refreshing site stats")
+				err := api.RefreshSiteStats(ctx)
+				if err != nil {
+					log.Printf("Error refreshing site stats: %v", err)
+				}
+				span.End()
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
+
+	// Synchronously refresh site stats on startup
+	log.Printf("Fetching site stats on startup...")
+	err = api.RefreshSiteStats(ctx)
+	if err != nil {
+		log.Printf("Error refreshing site stats: %v", err)
+	}
+
+	log.Printf("...initial site stats fetched")
 
 	log.Printf("Starting server on port %s", port)
 	router.Run(fmt.Sprintf(":%s", port))

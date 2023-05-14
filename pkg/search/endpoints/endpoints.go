@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
@@ -59,6 +60,7 @@ type API struct {
 	LayoutCache        *lru.ARCCache
 	StatsCacheTTL      time.Duration
 	StatsCache         *StatsCacheEntry
+	StatsCacheRWMux    *sync.RWMutex
 }
 
 func NewAPI(
@@ -100,6 +102,7 @@ func NewAPI(
 		LayoutCacheTTL:     layoutCacheTTL,
 		LayoutCache:        layoutCache,
 		StatsCacheTTL:      statsCacheTTL,
+		StatsCacheRWMux:    &sync.RWMutex{},
 	}, nil
 }
 
@@ -159,53 +162,57 @@ func (api *API) GetAuthorStats(c *gin.Context) {
 	ctx, span := tracer.Start(ctx, "GetAuthorStats")
 	defer span.End()
 
-	authorStats, err := api.GenerateSiteStats(ctx)
-	if err != nil {
-		log.Printf("Error getting author stats: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, authorStats)
-}
-
-func (api *API) GenerateSiteStats(ctx context.Context) (AuthorStatsResponse, error) {
-	tracer := otel.Tracer("search-api")
-	ctx, span := tracer.Start(ctx, "GenerateSiteStats")
-	defer span.End()
+	// Lock the stats mux for reading
+	span.AddEvent("GetAuthorStats:AcquireStatsCacheRLock")
+	api.StatsCacheRWMux.RLock()
+	span.AddEvent("GetAuthorStats:StatsCacheRLockAcquired")
 
 	statsFromCache := api.StatsCache
-	if statsFromCache != nil && statsFromCache.Expiration.After(time.Now()) {
+	if statsFromCache != nil {
 		cacheHits.WithLabelValues("stats").Inc()
 		span.SetAttributes(attribute.Bool("caches.stats.hit", true))
-		return statsFromCache.Stats, nil
-	}
 
-	cacheMisses.WithLabelValues("stats").Inc()
+		// Unlock the stats mux for reading
+		span.AddEvent("GetAuthorStats:ReleaseStatsCacheRLock")
+
+		c.JSON(http.StatusOK, statsFromCache.Stats)
+		return
+	}
+	// Unlock the stats mux for reading
+	span.AddEvent("GetAuthorStats:ReleaseStatsCacheRLock")
+
+	log.Printf("Stats cache is empty, this shouldn't happen")
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "stats cache is empty"})
+}
+
+func (api *API) RefreshSiteStats(ctx context.Context) error {
+	tracer := otel.Tracer("search-api")
+	ctx, span := tracer.Start(ctx, "RefreshSiteStats")
+	defer span.End()
 
 	authorStats, err := api.PostRegistry.GetAuthorStats(ctx)
 	if err != nil {
 		log.Printf("Error getting author stats: %v", err)
-		return AuthorStatsResponse{}, err
+		return fmt.Errorf("error getting author stats: %w", err)
 	}
 
 	if authorStats == nil {
 		log.Printf("Author stats returned nil")
-		return AuthorStatsResponse{}, errors.New("author stats returned nil")
+		return errors.New("author stats returned nil")
 	}
 
 	// Get the top 25 posters
 	topPosters, err := api.PostRegistry.GetTopPosters(ctx, 25)
 	if err != nil {
 		log.Printf("Error getting top posters: %v", err)
-		return AuthorStatsResponse{}, err
+		return fmt.Errorf("error getting top posters: %w", err)
 	}
 
 	// Get usercount from UserCount service
 	userCount, err := api.UserCount.GetUserCount(ctx)
 	if err != nil {
 		log.Printf("Error getting user count: %v", err)
-		return AuthorStatsResponse{}, err
+		return fmt.Errorf("error getting user count: %w", err)
 	}
 
 	// Update the metrics
@@ -213,6 +220,10 @@ func (api *API) GenerateSiteStats(ctx context.Context) (AuthorStatsResponse, err
 	totalAuthors.Set(float64(authorStats.TotalAuthors))
 	meanPostCount.Set(authorStats.MeanPostCount)
 
+	// Lock the stats mux for writing
+	span.AddEvent("RefreshSiteStats:AcquireStatsCacheWLock")
+	api.StatsCacheRWMux.Lock()
+	span.AddEvent("RefreshSiteStats:StatsCacheWLockAcquired")
 	// Update the plain old struct cache
 	api.StatsCache = &StatsCacheEntry{
 		Stats: AuthorStatsResponse{
@@ -227,7 +238,11 @@ func (api *API) GenerateSiteStats(ctx context.Context) (AuthorStatsResponse, err
 		Expiration: time.Now().Add(api.StatsCacheTTL),
 	}
 
-	return api.StatsCache.Stats, nil
+	// Unlock the stats mux for writing
+	span.AddEvent("RefreshSiteStats:ReleaseStatsCacheWLock")
+	api.StatsCacheRWMux.Unlock()
+
+	return nil
 }
 
 func (api *API) LayoutThread(ctx context.Context, rootPostID string, threadView []search.PostView) ([]layout.ThreadViewLayout, error) {
