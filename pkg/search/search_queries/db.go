@@ -46,6 +46,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getThreadViewStmt, err = db.PrepareContext(ctx, getThreadView); err != nil {
 		return nil, fmt.Errorf("error preparing query GetThreadView: %w", err)
 	}
+	if q.getTopPostersStmt, err = db.PrepareContext(ctx, getTopPosters); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTopPosters: %w", err)
+	}
 	return &q, nil
 }
 
@@ -89,6 +92,11 @@ func (q *Queries) Close() error {
 	if q.getThreadViewStmt != nil {
 		if cerr := q.getThreadViewStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getThreadViewStmt: %w", cerr)
+		}
+	}
+	if q.getTopPostersStmt != nil {
+		if cerr := q.getTopPostersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTopPostersStmt: %w", cerr)
 		}
 	}
 	return err
@@ -138,6 +146,7 @@ type Queries struct {
 	getOldestPresentParentStmt *sql.Stmt
 	getPostStmt                *sql.Stmt
 	getThreadViewStmt          *sql.Stmt
+	getTopPostersStmt          *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -152,5 +161,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getOldestPresentParentStmt: q.getOldestPresentParentStmt,
 		getPostStmt:                q.getPostStmt,
 		getThreadViewStmt:          q.getThreadViewStmt,
+		getTopPostersStmt:          q.getTopPostersStmt,
 	}
 }

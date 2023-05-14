@@ -247,7 +247,7 @@ func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error
 	defer span.End()
 	authorStats, err := pr.queries.GetAuthorStats(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get author stats: %w", err)
 	}
 
 	return &AuthorStats{
@@ -308,6 +308,19 @@ func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error
 		},
 		UpdatedAt: time.Now(),
 	}, nil
+}
+
+func (pr *PostRegistry) GetTopPosters(ctx context.Context, count int32) ([]search_queries.GetTopPostersRow, error) {
+	tracer := otel.Tracer("search")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetTopPosters")
+	defer span.End()
+
+	topPosters, err := pr.queries.GetTopPosters(ctx, count)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get top posters: %w", err)
+	}
+
+	return topPosters, nil
 }
 
 func (pr *PostRegistry) GetAuthor(ctx context.Context, did string) (*Author, error) {

@@ -12,25 +12,13 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/ericvolp12/bsky-experiments/pkg/layout"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
+	"github.com/ericvolp12/bsky-experiments/pkg/search/search_queries"
 	"github.com/ericvolp12/bsky-experiments/pkg/usercount"
 	"github.com/gin-gonic/gin"
 	lru "github.com/hashicorp/golang-lru"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
-
-// Initialize Prometheus Metrics for cache hits and misses
-var cacheHits = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "bsky_cache_hits_total",
-	Help: "The total number of cache hits",
-}, []string{"cache_type"})
-
-var cacheMisses = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "bsky_cache_misses_total",
-	Help: "The total number of cache misses",
-}, []string{"cache_type"})
 
 type ThreadViewCacheEntry struct {
 	ThreadView []search.PostView
@@ -48,12 +36,13 @@ type StatsCacheEntry struct {
 }
 
 type AuthorStatsResponse struct {
-	TotalUsers    int                 `json:"total_users"`
-	TotalAuthors  int64               `json:"total_authors"`
-	MeanPostCount float64             `json:"mean_post_count"`
-	Percentiles   []search.Percentile `json:"percentiles"`
-	Brackets      []search.Bracket    `json:"brackets"`
-	UpdatedAt     time.Time           `json:"updated_at"`
+	TotalUsers    int                               `json:"total_users"`
+	TotalAuthors  int64                             `json:"total_authors"`
+	MeanPostCount float64                           `json:"mean_post_count"`
+	Percentiles   []search.Percentile               `json:"percentiles"`
+	Brackets      []search.Bracket                  `json:"brackets"`
+	UpdatedAt     time.Time                         `json:"updated_at"`
+	TopPosters    []search_queries.GetTopPostersRow `json:"top_posters"`
 }
 
 type API struct {
@@ -205,12 +194,24 @@ func (api *API) GenerateSiteStats(ctx context.Context) (AuthorStatsResponse, err
 		return AuthorStatsResponse{}, errors.New("author stats returned nil")
 	}
 
+	// Get the top 25 posters
+	topPosters, err := api.PostRegistry.GetTopPosters(ctx, 25)
+	if err != nil {
+		log.Printf("Error getting top posters: %v", err)
+		return AuthorStatsResponse{}, err
+	}
+
 	// Get usercount from UserCount service
 	userCount, err := api.UserCount.GetUserCount(ctx)
 	if err != nil {
 		log.Printf("Error getting user count: %v", err)
 		return AuthorStatsResponse{}, err
 	}
+
+	// Update the metrics
+	totalUsers.Set(float64(userCount))
+	totalAuthors.Set(float64(authorStats.TotalAuthors))
+	meanPostCount.Set(authorStats.MeanPostCount)
 
 	// Update the plain old struct cache
 	api.StatsCache = &StatsCacheEntry{
@@ -221,6 +222,7 @@ func (api *API) GenerateSiteStats(ctx context.Context) (AuthorStatsResponse, err
 			Percentiles:   authorStats.Percentiles,
 			Brackets:      authorStats.Brackets,
 			UpdatedAt:     authorStats.UpdatedAt,
+			TopPosters:    topPosters,
 		},
 		Expiration: time.Now().Add(api.StatsCacheTTL),
 	}
