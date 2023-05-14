@@ -191,6 +191,7 @@ func (api *API) GetAuthorStats(c *gin.Context) {
 
 	// Unlock the stats mux for reading
 	span.AddEvent("GetAuthorStats:ReleaseStatsCacheRLock")
+	api.StatsCacheRWMux.RUnlock()
 
 	c.JSON(http.StatusOK, statsFromCache.Stats)
 	return
