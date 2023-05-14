@@ -162,11 +162,21 @@ func (api *API) GetAuthorStats(c *gin.Context) {
 	ctx, span := tracer.Start(ctx, "GetAuthorStats")
 	defer span.End()
 
+	timeout := 30 * time.Second
+	timeWaited := 0 * time.Second
+	sleepTime := 100 * time.Millisecond
+
 	// Wait for the stats cache to be populated
 	if api.StatsCache == nil {
 		span.AddEvent("GetAuthorStats:WaitForStatsCache")
 		for api.StatsCache == nil {
-			time.Sleep(100 * time.Millisecond)
+			if timeWaited > timeout {
+				c.JSON(http.StatusRequestTimeout, gin.H{"error": "timed out waiting for stats cache to populate"})
+				return
+			}
+
+			time.Sleep(sleepTime)
+			timeWaited += sleepTime
 		}
 	}
 
@@ -176,21 +186,14 @@ func (api *API) GetAuthorStats(c *gin.Context) {
 	span.AddEvent("GetAuthorStats:StatsCacheRLockAcquired")
 
 	statsFromCache := api.StatsCache
-	if statsFromCache != nil {
-		cacheHits.WithLabelValues("stats").Inc()
-		span.SetAttributes(attribute.Bool("caches.stats.hit", true))
+	cacheHits.WithLabelValues("stats").Inc()
+	span.SetAttributes(attribute.Bool("caches.stats.hit", true))
 
-		// Unlock the stats mux for reading
-		span.AddEvent("GetAuthorStats:ReleaseStatsCacheRLock")
-
-		c.JSON(http.StatusOK, statsFromCache.Stats)
-		return
-	}
 	// Unlock the stats mux for reading
 	span.AddEvent("GetAuthorStats:ReleaseStatsCacheRLock")
 
-	log.Printf("Stats cache is empty, this shouldn't happen")
-	c.JSON(http.StatusInternalServerError, gin.H{"error": "stats cache is empty"})
+	c.JSON(http.StatusOK, statsFromCache.Stats)
+	return
 }
 
 func (api *API) RefreshSiteStats(ctx context.Context) error {
