@@ -219,28 +219,22 @@ func main() {
 	go func() {
 		ctx := context.Background()
 		tracer := otel.Tracer("search-api")
+		ctx, span := tracer.Start(ctx, "refreshSiteStats")
+		log.Printf("Refreshing site stats")
+		err := api.RefreshSiteStats(ctx)
+		if err != nil {
+			log.Printf("Error refreshing site stats: %v", err)
+		}
+		span.End()
 		for {
 			select {
 			case <-statsRefreshTicker.C:
-				ctx, span := tracer.Start(ctx, "refreshSiteStats")
-				log.Printf("Refreshing site stats")
-				err := api.RefreshSiteStats(ctx)
-				if err != nil {
-					log.Printf("Error refreshing site stats: %v", err)
-				}
-				span.End()
+				continue
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-
-	// Synchronously refresh site stats on startup
-	log.Printf("Fetching site stats on startup...")
-	err = api.RefreshSiteStats(ctx)
-	if err != nil {
-		log.Printf("Error refreshing site stats: %v", err)
-	}
 
 	log.Printf("...initial site stats fetched")
 

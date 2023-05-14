@@ -162,6 +162,14 @@ func (api *API) GetAuthorStats(c *gin.Context) {
 	ctx, span := tracer.Start(ctx, "GetAuthorStats")
 	defer span.End()
 
+	// Wait for the stats cache to be populated
+	if api.StatsCache == nil {
+		span.AddEvent("GetAuthorStats:WaitForStatsCache")
+		for api.StatsCache == nil {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
 	// Lock the stats mux for reading
 	span.AddEvent("GetAuthorStats:AcquireStatsCacheRLock")
 	api.StatsCacheRWMux.RLock()
