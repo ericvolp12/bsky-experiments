@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -21,6 +20,7 @@ import (
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	lru "github.com/hashicorp/golang-lru"
 	"go.opentelemetry.io/otel"
+	"go.uber.org/zap"
 )
 
 // RepoRecord holds data needed for processing a RepoRecord
@@ -40,6 +40,8 @@ type BSky struct {
 
 	SocialGraph    graph.Graph
 	SocialGraphMux sync.RWMutex
+
+	Logger *zap.SugaredLogger
 
 	// Generate a Profile Cache with a TTL
 	profileCache    *lru.ARCCache
@@ -65,6 +67,7 @@ type BSky struct {
 // and a social graph, initializing mutexes for cross-routine access
 func NewBSky(
 	ctx context.Context,
+	log *zap.SugaredLogger,
 	includeLinks, postRegistryEnabled, sentimentAnalysisEnabled bool,
 	dbConnectionString, sentimentServiceHost string,
 	workerCount int,
@@ -94,11 +97,15 @@ func NewBSky(
 		sentimentAnalysis = sentiment.NewSentiment(sentimentServiceHost)
 	}
 
+	log = log.With("source", "event_handler")
+
 	bsky := &BSky{
 		IncludeLinks: includeLinks,
 
 		SocialGraph:    graph.NewGraph(),
 		SocialGraphMux: sync.RWMutex{},
+
+		Logger: log,
 
 		profileCache: profileCache,
 		postCache:    postCache,
@@ -126,10 +133,24 @@ func NewBSky(
 			return nil, err
 		}
 
+		rawlog, err := zap.NewProduction()
+		if err != nil {
+			log.Fatalf("failed to create logger: %+v\n", err)
+		}
+		defer func() {
+			err := rawlog.Sync()
+			if err != nil {
+				fmt.Printf("failed to sync logger on teardown: %+v", err.Error())
+			}
+		}()
+
+		log := rawlog.Sugar().With("worker_id", i)
+
 		bsky.Workers[i] = &Worker{
 			WorkerID:  i,
 			Client:    client,
 			ClientMux: sync.RWMutex{},
+			Logger:    log,
 		}
 
 		go bsky.worker(i)
@@ -144,9 +165,12 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "HandleRepoCommit")
 	defer span.End()
+
+	log := bsky.Logger.With("repo", evt.Repo, "seq", evt.Seq)
+
 	rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
 	if err != nil {
-		fmt.Println(err)
+		log.Errorf("failed to read repo from car: %+v\n", err)
 	} else {
 		for _, op := range evt.Ops {
 			ek := repomgr.EventKind(op.Action)
@@ -156,14 +180,14 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				rc, rec, err := rr.GetRecord(ctx, op.Path)
 				if err != nil {
 					e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
-					log.Printf("failed to get a record from the event: %+v\n", e)
+					log.Errorf("failed to get a record from the event: %+v\n", e)
 					return nil
 				}
 
 				// Verify that the record cid matches the cid in the event
 				if lexutil.LexLink(rc) != *op.Cid {
 					e := fmt.Errorf("mismatch in record and op cid: %s != %s", rc, *op.Cid)
-					log.Printf("failed to LexLink the record in the event: %+v\n", e)
+					log.Errorf("failed to LexLink the record in the event: %+v\n", e)
 					return nil
 				}
 
@@ -174,7 +198,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				// Attempt to Unpack the CAR Blocks into JSON Byte Array
 				b, err := recordAsCAR.MarshalJSON()
 				if err != nil {
-					log.Printf("failed to marshal record as CAR: %+v\n", err)
+					log.Errorf("failed to marshal record as CAR: %+v\n", err)
 					return nil
 				}
 
@@ -182,7 +206,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				var pst = appbsky.FeedPost{}
 				err = json.Unmarshal(b, &pst)
 				if err != nil {
-					log.Printf("failed to unmarshal post into a FeedPost: %+v\n", err)
+					log.Errorf("failed to unmarshal post into a FeedPost: %+v\n", err)
 					return nil
 				}
 

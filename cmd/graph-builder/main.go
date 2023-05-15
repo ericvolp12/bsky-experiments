@@ -29,6 +29,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 )
 
 // Count is used for sorting and storing mention counts
@@ -46,11 +47,24 @@ var tracer trace.Tracer
 
 func main() {
 	ctx := context.Background()
-	log.Println("starting graph builder...")
+	rawlog, err := zap.NewProduction()
+	if err != nil {
+		log.Fatalf("failed to create logger: %+v\n", err)
+	}
+	defer func() {
+		err := rawlog.Sync()
+		if err != nil {
+			fmt.Printf("failed to sync logger on teardown: %+v", err.Error())
+		}
+	}()
+
+	log := rawlog.Sugar().With("source", "graph_builder_main")
+
+	log.Info("starting graph builder...")
 
 	// Registers a tracer Provider globally if the exporter endpoint is set
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
-		log.Println("initializing tracer...")
+		log.Info("initializing tracer...")
 		shutdown, err := installExportPipeline(ctx)
 		if err != nil {
 			log.Fatal(err)
@@ -86,9 +100,10 @@ func main() {
 		sentimentAnalysisEnabled = true
 	}
 
-	log.Println("initializing BSky Event Handler...")
+	log.Info("initializing BSky Event Handler...")
 	bsky, err := intEvents.NewBSky(
 		ctx,
+		log,
 		includeLinks, postRegistryEnabled, sentimentAnalysisEnabled,
 		dbConnectionString, sentimentServiceHost,
 		workerCount,
@@ -99,13 +114,13 @@ func main() {
 
 	binReaderWriter := graph.BinaryGraphReaderWriter{}
 
-	log.Println("reading social graph from binary file...")
+	log.Info("reading social graph from binary file...")
 	resumedGraph, err := binReaderWriter.ReadGraph(graphFile)
 	if err != nil {
-		log.Printf("error reading social graph from binary: %s\n", err)
-		log.Println("creating a new graph for this session...")
+		log.Infof("error reading social graph from binary: %s\n", err)
+		log.Info("creating a new graph for this session...")
 	} else {
-		log.Println("social graph resumed successfully")
+		log.Info("social graph resumed successfully")
 		bsky.SocialGraph = resumedGraph
 	}
 
@@ -117,12 +132,13 @@ func main() {
 	// Run a routine that dumps graph data to a file every 5 minutes
 	wg.Add(1)
 	go func() {
-		log.Println("starting graph dump routine...")
+		log = log.With("source", "graph_dump")
+		log.Info("starting graph dump routine...")
 		ctx := context.Background()
 		for {
 			select {
 			case <-graphTicker.C:
-				saveGraph(ctx, bsky, &binReaderWriter, graphFile)
+				saveGraph(ctx, log, bsky, &binReaderWriter, graphFile)
 			case <-quit:
 				graphTicker.Stop()
 				wg.Done()
@@ -133,10 +149,11 @@ func main() {
 
 	// Server for pprof and prometheus via promhttp
 	go func() {
-		log.Println("starting pprof and prometheus server...")
+		log = log.With("source", "pprof_server")
+		log.Info("starting pprof and prometheus server...")
 		// Create a handler to write out the plaintext graph
 		http.HandleFunc("/graph", func(w http.ResponseWriter, r *http.Request) {
-			fmt.Printf("\u001b[90m[%s]\u001b[32m writing graph to HTTP Response...\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+			log.Info("writing graph to HTTP Response...")
 			bsky.SocialGraphMux.Lock()
 			defer bsky.SocialGraphMux.Unlock()
 
@@ -149,18 +166,18 @@ func main() {
 
 			err := bsky.SocialGraph.Write(w)
 			if err != nil {
-				log.Printf("error writing graph: %s", err)
+				log.Errorf("error writing graph: %s", err)
 			} else {
-				fmt.Printf("\u001b[90m[%s]\u001b[32m graph written to HTTP Response successfully\u001b[0m\n", time.Now().Format("02.01.06 15:04:05"))
+				log.Info("graph written to HTTP Response successfully")
 			}
 		})
 
 		http.Handle("/metrics", promhttp.Handler())
-		fmt.Println(http.ListenAndServe("0.0.0.0:6060", nil))
+		log.Info(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
 
 	// Run a routine that handles the events from the WebSocket
-	log.Println("starting repo sync routine...")
+	log.Info("starting repo sync routine...")
 	err = handleRepoStreamWithRetry(ctx, bsky, u, &events.RepoStreamCallbacks{
 		RepoCommit: bsky.HandleRepoCommit,
 		RepoInfo:   intEvents.HandleRepoInfo,
@@ -168,13 +185,13 @@ func main() {
 	})
 
 	if err != nil {
-		log.Printf("Error: %v\n", err)
+		log.Errorf("Error: %v\n", err)
 	}
 
-	log.Println("waiting for routines to finish...")
+	log.Info("waiting for routines to finish...")
 	close(quit)
 	wg.Wait()
-	log.Println("routines finished, exiting...")
+	log.Info("routines finished, exiting...")
 }
 
 func getHalfHourFileName(baseName string) string {
@@ -191,33 +208,46 @@ func getHalfHourFileName(baseName string) string {
 	return fmt.Sprintf("%s-%s_%s%s", fileName, now.Format("2006_01_02_15"), halfHourSuffix, fileExt)
 }
 
-func saveGraph(ctx context.Context, bsky *intEvents.BSky, binReaderWriter *graph.BinaryGraphReaderWriter, graphFileFromEnv string) {
+func saveGraph(
+	ctx context.Context,
+	log *zap.SugaredLogger,
+	bsky *intEvents.BSky,
+	binReaderWriter *graph.BinaryGraphReaderWriter,
+	graphFileFromEnv string,
+) {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "SaveGraph")
 	defer span.End()
-	// Acquire locks on the data structures we're reading from
+
+	timestampedGraphFilePath := getHalfHourFileName(graphFileFromEnv)
+
+	// Acquire a lock on the graph before we write it
 	span.AddEvent("saveGraph:AcquireGraphLock")
 	bsky.SocialGraphMux.RLock()
 	span.AddEvent("saveGraph:GraphLockAcquired")
-	timestampedGraphFilePath := getHalfHourFileName(graphFileFromEnv)
 
-	fmt.Printf("\u001b[90m[%s]\u001b[32m writing social graph to binary file, last updated: %s\u001b[0m\n",
-		time.Now().Format("02.01.06 15:04:05"),
+	log.Infof("writing social graph to binary file, last updated: %s",
 		bsky.SocialGraph.LastUpdate.Format("02.01.06 15:04:05"),
+		"graph_last_updated_at", bsky.SocialGraph.LastUpdate,
 	)
 
+	// Write the graph to a timestamped file
 	err := binReaderWriter.WriteGraph(bsky.SocialGraph, timestampedGraphFilePath)
 	if err != nil {
-		log.Printf("error writing social graph to binary file: %s", err)
+		log.Errorf("error writing social graph to binary file: %s", err)
 	}
 
-	err = copyFile(timestampedGraphFilePath, graphFileFromEnv)
-	if err != nil {
-		log.Printf("error copying binary file: %s", err)
-	}
-
+	// Release the lock after we're done writing the inital file
 	span.AddEvent("saveGraph:ReleaseGraphLock")
 	bsky.SocialGraphMux.RUnlock()
+
+	// Copy the file to the "latest" path, we don't need to lock the graph for this
+	err = copyFile(timestampedGraphFilePath, graphFileFromEnv)
+	if err != nil {
+		log.Errorf("error copying binary file: %s", err)
+	}
+
+	log.Info("social graph written to binary file successfully")
 }
 
 func copyFile(src, dst string) error {

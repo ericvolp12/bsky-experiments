@@ -3,7 +3,6 @@ package events
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -22,24 +21,13 @@ type Worker struct {
 	WorkerID  int
 	Client    *xrpc.Client
 	ClientMux sync.RWMutex
+	Logger    *zap.SugaredLogger
 }
 
 func (bsky *BSky) worker(workerID int) {
 	ctx := context.Background()
-	rawlog, err := zap.NewProduction()
-	if err != nil {
-		log.Fatalf("failed to create logger: %+v\n", err)
-	}
-	defer func() {
-		err := rawlog.Sync()
-		if err != nil {
-			fmt.Printf("failed to sync logger on teardown: %+v", err.Error())
-		}
-	}()
 
-	log := rawlog.Sugar()
-
-	log = log.With("worker_id", workerID)
+	log := bsky.Workers[workerID].Logger
 
 	log.Infof("starting worker %d\n", workerID)
 
@@ -70,7 +58,6 @@ func (bsky *BSky) worker(workerID int) {
 		record := <-bsky.RepoRecordQueue
 		err := bsky.ProcessRepoRecord(
 			record.ctx,
-			log,
 			record.pst,
 			record.opPath,
 			record.repoName,
@@ -85,7 +72,6 @@ func (bsky *BSky) worker(workerID int) {
 
 func (bsky *BSky) ProcessRepoRecord(
 	ctx context.Context,
-	log *zap.SugaredLogger,
 	pst appbsky.FeedPost,
 	opPath string,
 	repoName string,
@@ -101,13 +87,17 @@ func (bsky *BSky) ProcessRepoRecord(
 		return nil
 	}
 
+	log := bsky.Workers[workerID].Logger
+
 	span.SetAttributes(attribute.String("repo.name", repoName))
 	span.SetAttributes(attribute.String("record.type.id", pst.LexiconTypeID))
+
 	log = log.With(
 		"repo_name", repoName,
 		"record_type_id", pst.LexiconTypeID,
 		"trace_id", span.SpanContext().TraceID().String(),
 	)
+
 	span.AddEvent("HandleRepoCommit:ResolveProfile")
 	authorProfile, err := bsky.ResolveProfile(ctx, repoName, workerID)
 	if err != nil {
@@ -146,7 +136,7 @@ func (bsky *BSky) ProcessRepoRecord(
 	// Handle direct replies
 	if pst.Reply != nil && pst.Reply.Parent != nil {
 		replyingToURI := pst.Reply.Parent.Uri
-		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, log, authorProfile, replyingToURI, workerID)
+		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, authorProfile, replyingToURI, workerID)
 		if err != nil {
 			log.Errorf("error processing reply relation: %+v\n", err)
 			return nil
@@ -168,7 +158,7 @@ func (bsky *BSky) ProcessRepoRecord(
 	// Handle quote reposts
 	if pst.Embed != nil && pst.Embed.EmbedRecord != nil && pst.Embed.EmbedRecord.Record != nil {
 		quotingURI := pst.Embed.EmbedRecord.Record.Uri
-		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, log, authorProfile, quotingURI, workerID)
+		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, authorProfile, quotingURI, workerID)
 		if err != nil {
 			log.Errorf("error processing quote relation: %+v\n", err)
 			return nil
@@ -263,7 +253,6 @@ func (bsky *BSky) ProcessRepoRecord(
 // It also updates the graph with the relation by incrementing the edge weight
 func (bsky *BSky) ProcessRelation(
 	ctx context.Context,
-	log *zap.SugaredLogger,
 	authorProfile *appbsky.ActorDefs_ProfileViewDetailed,
 	parentPostURI string,
 	workerID int,
@@ -271,6 +260,9 @@ func (bsky *BSky) ProcessRelation(
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "ProcessRelation")
 	defer span.End()
+
+	log := bsky.Workers[workerID].Logger
+
 	parentAuthorDID := ""
 	parentAuthorHandle := ""
 
