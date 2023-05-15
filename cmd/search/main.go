@@ -236,8 +236,6 @@ func main() {
 		}
 	}()
 
-	log.Printf("...initial site stats fetched")
-
 	log.Printf("Starting server on port %s", port)
 	router.Run(fmt.Sprintf(":%s", port))
 }

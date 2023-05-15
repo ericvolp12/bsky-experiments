@@ -15,6 +15,7 @@ import (
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.uber.org/zap"
 )
 
 type Worker struct {
@@ -25,25 +26,37 @@ type Worker struct {
 
 func (bsky *BSky) worker(workerID int) {
 	ctx := context.Background()
+	rawlog, err := zap.NewProduction()
+	if err != nil {
+		log.Fatalf("failed to create logger: %+v\n", err)
+	}
+	defer func() {
+		err := rawlog.Sync()
+		if err != nil {
+			fmt.Printf("failed to sync logger on teardown: %+v", err.Error())
+		}
+	}()
 
-	prefix := fmt.Sprintf("[w:%d]", workerID)
-	log.SetPrefix(prefix)
-	log.Printf("starting worker %d\n", workerID)
+	log := rawlog.Sugar()
+
+	log = log.With("worker_id", workerID)
+
+	log.Infof("starting worker %d\n", workerID)
 
 	// Run a routine that refreshes the auth token every 10 minutes
 	authTicker := time.NewTicker(10 * time.Minute)
 	quit := make(chan struct{})
 	go func() {
-		log.Println("starting auth refresh routine...")
+		log.Info("starting auth refresh routine...")
 		for {
 			select {
 			case <-authTicker.C:
-				log.Println("refreshing auth token...")
+				log.Info("refreshing auth token...")
 				err := bsky.RefreshAuthToken(ctx, workerID)
 				if err != nil {
-					log.Printf("error refreshing auth token: %s\n", err)
+					log.Error("error refreshing auth token: %s\n", err)
 				} else {
-					log.Println("successfully refreshed auth token")
+					log.Info("successfully refreshed auth token")
 				}
 			case <-quit:
 				authTicker.Stop()
@@ -57,6 +70,7 @@ func (bsky *BSky) worker(workerID int) {
 		record := <-bsky.RepoRecordQueue
 		err := bsky.ProcessRepoRecord(
 			record.ctx,
+			log,
 			record.pst,
 			record.opPath,
 			record.repoName,
@@ -64,13 +78,14 @@ func (bsky *BSky) worker(workerID int) {
 			workerID,
 		)
 		if err != nil {
-			log.Printf("failed to process record: %v\n", err)
+			log.Error("failed to process record: %v\n", err)
 		}
 	}
 }
 
 func (bsky *BSky) ProcessRepoRecord(
 	ctx context.Context,
+	log *zap.SugaredLogger,
 	pst appbsky.FeedPost,
 	opPath string,
 	repoName string,
@@ -80,8 +95,6 @@ func (bsky *BSky) ProcessRepoRecord(
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "ProcessRepoRecord")
 	defer span.End()
-	prefix := fmt.Sprintf("[w:%d]", workerID)
-	log.SetPrefix(prefix)
 	start := time.Now()
 
 	if pst.LexiconTypeID != "app.bsky.feed.post" {
@@ -90,11 +103,15 @@ func (bsky *BSky) ProcessRepoRecord(
 
 	span.SetAttributes(attribute.String("repo.name", repoName))
 	span.SetAttributes(attribute.String("record.type.id", pst.LexiconTypeID))
-
+	log = log.With(
+		"repo_name", repoName,
+		"record_type_id", pst.LexiconTypeID,
+		"trace_id", span.SpanContext().TraceID().String(),
+	)
 	span.AddEvent("HandleRepoCommit:ResolveProfile")
 	authorProfile, err := bsky.ResolveProfile(ctx, repoName, workerID)
 	if err != nil {
-		log.Printf("error getting profile for %s: %+v\n", repoName, err)
+		log.Errorf("error getting profile for %s: %+v\n", repoName, err)
 		return nil
 	}
 
@@ -104,13 +121,13 @@ func (bsky *BSky) ProcessRepoRecord(
 	span.AddEvent("HandleRepoCommit:DecodeFacets")
 	mentions, links, err := bsky.DecodeFacets(ctx, authorProfile.Did, authorProfile.Handle, pst.Facets, workerID)
 	if err != nil {
-		log.Printf("error decoding post facets: %+v\n", err)
+		log.Errorf("error decoding post facets: %+v\n", err)
 	}
 
 	// Parse time from the event time string
 	t, err := time.Parse(time.RFC3339, eventTime)
 	if err != nil {
-		log.Printf("error parsing time: %+v\n", err)
+		log.Errorf("error parsing time: %+v\n", err)
 		return nil
 	}
 
@@ -129,9 +146,9 @@ func (bsky *BSky) ProcessRepoRecord(
 	// Handle direct replies
 	if pst.Reply != nil && pst.Reply.Parent != nil {
 		replyingToURI := pst.Reply.Parent.Uri
-		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, authorProfile, replyingToURI, workerID)
+		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, log, authorProfile, replyingToURI, workerID)
 		if err != nil {
-			log.Printf("error processing reply relation: %+v\n", err)
+			log.Errorf("error processing reply relation: %+v\n", err)
 			return nil
 		}
 		replyingToHandle = parentAuthorHandle
@@ -151,9 +168,9 @@ func (bsky *BSky) ProcessRepoRecord(
 	// Handle quote reposts
 	if pst.Embed != nil && pst.Embed.EmbedRecord != nil && pst.Embed.EmbedRecord.Record != nil {
 		quotingURI := pst.Embed.EmbedRecord.Record.Uri
-		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, authorProfile, quotingURI, workerID)
+		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, log, authorProfile, quotingURI, workerID)
 		if err != nil {
-			log.Printf("error processing quote relation: %+v\n", err)
+			log.Errorf("error processing quote relation: %+v\n", err)
 			return nil
 		}
 		quotingHandle = parentAuthorHandle
@@ -201,7 +218,7 @@ func (bsky *BSky) ProcessRepoRecord(
 			posts, err := bsky.SentimentAnalysis.GetPostsSentiment(ctx, []search.Post{post})
 			if err != nil {
 				span.SetAttributes(attribute.String("sentiment.error", err.Error()))
-				log.Printf("error getting sentiment for post %s: %+v\n", postID, err)
+				log.Errorf("error getting sentiment for post %s: %+v\n", postID, err)
 			} else if len(posts) > 0 {
 				post.Sentiment = posts[0].Sentiment
 				post.SentimentConfidence = posts[0].SentimentConfidence
@@ -210,30 +227,29 @@ func (bsky *BSky) ProcessRepoRecord(
 
 		err = bsky.PostRegistry.AddAuthor(ctx, &author)
 		if err != nil {
-			log.Printf("error writing author to registry: %+v\n", err)
+			log.Errorf("error writing author to registry: %+v\n", err)
 		}
 
 		err = bsky.PostRegistry.AddPost(ctx, &post)
 		if err != nil {
-			log.Printf("error writing post to registry: %+v\n", err)
+			log.Errorf("error writing post to registry: %+v\n", err)
 		}
 	}
 
-	// Build the log message
-	logMsg := bsky.buildLogMessage(
-		prefix,
-		postLink,
-		t,
-		authorProfile,
-		quotingHandle,
-		replyingToHandle,
-		postBody,
-		mentions,
-		links,
-	)
-
-	// Print the content of the post and any mentions or links
-	fmt.Printf("%s", logMsg)
+	log.Infow("post processed",
+		"post_id", postID,
+		"post_link", postLink,
+		"post_body", postBody,
+		"mentions", mentions,
+		"links", links,
+		"author_handle", authorProfile.Handle,
+		"author_did", authorProfile.Did,
+		"quoting_handle", quotingHandle,
+		"replying_to_handle", replyingToHandle,
+		"parent_id", parentID,
+		"root_id", rootID,
+		"parent_relationship", parentRelationsip,
+		"created_at", t)
 
 	// Record the time to process and the count
 	postsProcessedCounter.Inc()
@@ -247,6 +263,7 @@ func (bsky *BSky) ProcessRepoRecord(
 // It also updates the graph with the relation by incrementing the edge weight
 func (bsky *BSky) ProcessRelation(
 	ctx context.Context,
+	log *zap.SugaredLogger,
 	authorProfile *appbsky.ActorDefs_ProfileViewDetailed,
 	parentPostURI string,
 	workerID int,
@@ -260,11 +277,11 @@ func (bsky *BSky) ProcessRelation(
 	post, err := bsky.ResolvePost(ctx, parentPostURI, workerID)
 	if err != nil {
 		errmsg := fmt.Sprintf("error resolving replying-to post (%s): %+v\n", parentPostURI, err)
-		log.Printf("%s\n", errmsg)
+		log.Errorf("%s\n", errmsg)
 		return "", "", errors.Wrap(err, errmsg)
 	} else if post == nil {
 		errmsg := fmt.Sprintf("replying-to post (%s) not found", parentPostURI)
-		log.Printf("%s\n", errmsg)
+		log.Errorf("%s\n", errmsg)
 		return "", "", fmt.Errorf(errmsg)
 	}
 
@@ -293,47 +310,4 @@ func (bsky *BSky) ProcessRelation(
 	bsky.SocialGraphMux.Unlock()
 
 	return parentAuthorDID, parentAuthorHandle, nil
-}
-
-func (bsky *BSky) buildLogMessage(
-	prefix string,
-	postLink string,
-	t time.Time,
-	authorProfile *appbsky.ActorDefs_ProfileViewDetailed,
-	quotingHandle string,
-	replyingToHandle string,
-	postBody string,
-	mentions []string,
-	links []string,
-) string {
-	logMsg := fmt.Sprintf("%s", prefix)
-
-	// Add a Timestamp with a post link in it if we want one
-	if bsky.IncludeLinks {
-		logMsg += fmt.Sprintf("\u001b[90m[\x1b]8;;%s\x07%s\x1b]8;;\x07]\u001b[0m", postLink, t.Local().Format("02.01.06 15:04:05"))
-	} else {
-		logMsg += fmt.Sprintf("\u001b[90m%s\u001b[0m", t.Local().Format("02.01.06 15:04:05"))
-	}
-
-	// Add the user and who they are replying to if they are
-	logMsg += fmt.Sprintf(" %s", authorProfile.Handle)
-	if replyingToHandle != "" {
-		logMsg += fmt.Sprintf(" \u001b[90m->\u001b[0m %s ", replyingToHandle)
-	}
-	if quotingHandle != "" {
-		logMsg += fmt.Sprintf(" \u001b[90m->\u001b[0m QRP:[%s] ", quotingHandle)
-	}
-
-	// Add the Post Body
-	logMsg += fmt.Sprintf(": \n\t%s\n", postBody)
-
-	// Add any Mentions or Links
-	if len(mentions) > 0 {
-		logMsg += fmt.Sprintf("\tMentions: %s\n", mentions)
-	}
-	if len(links) > 0 {
-		logMsg += fmt.Sprintf("\tLinks: %s\n", links)
-	}
-
-	return logMsg
 }
