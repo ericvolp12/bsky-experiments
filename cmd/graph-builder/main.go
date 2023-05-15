@@ -132,9 +132,9 @@ func main() {
 	// Run a routine that dumps graph data to a file every 5 minutes
 	wg.Add(1)
 	go func() {
+		ctx := context.Background()
 		log = log.With("source", "graph_dump")
 		log.Info("starting graph dump routine...")
-		ctx := context.Background()
 		for {
 			select {
 			case <-graphTicker.C:
@@ -175,6 +175,8 @@ func main() {
 		http.Handle("/metrics", promhttp.Handler())
 		log.Info(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
+
+	log = log.With("source", "repo_stream_main_loop")
 
 	// Run a routine that handles the events from the WebSocket
 	log.Info("starting repo sync routine...")
@@ -226,7 +228,7 @@ func saveGraph(
 	bsky.SocialGraphMux.RLock()
 	span.AddEvent("saveGraph:GraphLockAcquired")
 
-	log.Infof("writing social graph to binary file, last updated: %s",
+	log.Info("writing social graph to binary file, last updated: %s",
 		bsky.SocialGraph.LastUpdate.Format("02.01.06 15:04:05"),
 		"graph_last_updated_at", bsky.SocialGraph.LastUpdate,
 	)
