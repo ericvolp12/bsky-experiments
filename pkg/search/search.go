@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/XSAM/otelsql"
@@ -68,12 +69,36 @@ type Author struct {
 	Handle string `json:"handle"`
 }
 
-type PostRegistry struct {
+type PostgresRegistry struct {
 	db      *sql.DB
 	queries *search_queries.Queries
 }
 
-func NewPostRegistry(connectionString string) (*PostRegistry, error) {
+type PostRegistry interface {
+	initializeDB() error
+	AddPost(ctx context.Context, post *Post) error
+	AddAuthor(ctx context.Context, author *Author) error
+	GetPost(ctx context.Context, postID string) (*Post, error)
+	GetAuthorStats(ctx context.Context) (*AuthorStats, error)
+	GetTopPosters(ctx context.Context, count int32) ([]search_queries.GetTopPostersRow, error)
+	GetAuthor(ctx context.Context, did string) (*Author, error)
+	GetAuthorsByHandle(ctx context.Context, handle string) ([]*Author, error)
+	GetThreadView(ctx context.Context, postID, authorID string) ([]PostView, error)
+	GetOldestPresentParent(ctx context.Context, postID string) (*Post, error)
+	Close() error
+}
+
+func NewPostRegistry(connectionString string) (PostRegistry, error) {
+	if strings.HasPrefix(connectionString, "postgres://") {
+		return newPostgresRegistry(connectionString)
+	}
+	if strings.HasPrefix(connectionString, "neo4j") || strings.HasPrefix(connectionString, "bolt") {
+		return newNeo4jRegistry(connectionString)
+	}
+	return nil, fmt.Errorf("unknown connection: %s", connectionString)
+}
+
+func newPostgresRegistry(connectionString string) (PostRegistry, error) {
 	var db *sql.DB
 	var err error
 
@@ -109,7 +134,7 @@ func NewPostRegistry(connectionString string) (*PostRegistry, error) {
 
 	queries := search_queries.New(db)
 
-	registry := &PostRegistry{
+	registry := &PostgresRegistry{
 		db:      db,
 		queries: queries,
 	}
@@ -122,7 +147,7 @@ func NewPostRegistry(connectionString string) (*PostRegistry, error) {
 	return registry, nil
 }
 
-func (pr *PostRegistry) initializeDB() error {
+func (pr *PostgresRegistry) initializeDB() error {
 	createAuthorsTableQuery := `CREATE TABLE IF NOT EXISTS authors (
 		did TEXT PRIMARY KEY,
 		handle TEXT NOT NULL
@@ -149,7 +174,7 @@ func (pr *PostRegistry) initializeDB() error {
 	return err
 }
 
-func (pr *PostRegistry) AddPost(ctx context.Context, post *Post) error {
+func (pr *PostgresRegistry) AddPost(ctx context.Context, post *Post) error {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AddPost")
 	defer span.End()
@@ -214,7 +239,7 @@ func (pr *PostRegistry) AddPost(ctx context.Context, post *Post) error {
 	return err
 }
 
-func (pr *PostRegistry) AddAuthor(ctx context.Context, author *Author) error {
+func (pr *PostgresRegistry) AddAuthor(ctx context.Context, author *Author) error {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AddAuthor")
 	defer span.End()
@@ -226,7 +251,7 @@ func (pr *PostRegistry) AddAuthor(ctx context.Context, author *Author) error {
 	return err
 }
 
-func (pr *PostRegistry) GetPost(ctx context.Context, postID string) (*Post, error) {
+func (pr *PostgresRegistry) GetPost(ctx context.Context, postID string) (*Post, error) {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetPost")
 	defer span.End()
@@ -241,7 +266,7 @@ func (pr *PostRegistry) GetPost(ctx context.Context, postID string) (*Post, erro
 	return postFromQueryPost(post), nil
 }
 
-func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error) {
+func (pr *PostgresRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error) {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetAuthorStats")
 	defer span.End()
@@ -310,7 +335,7 @@ func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error
 	}, nil
 }
 
-func (pr *PostRegistry) GetTopPosters(ctx context.Context, count int32) ([]search_queries.GetTopPostersRow, error) {
+func (pr *PostgresRegistry) GetTopPosters(ctx context.Context, count int32) ([]search_queries.GetTopPostersRow, error) {
 	tracer := otel.Tracer("search")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetTopPosters")
 	defer span.End()
@@ -323,7 +348,7 @@ func (pr *PostRegistry) GetTopPosters(ctx context.Context, count int32) ([]searc
 	return topPosters, nil
 }
 
-func (pr *PostRegistry) GetAuthor(ctx context.Context, did string) (*Author, error) {
+func (pr *PostgresRegistry) GetAuthor(ctx context.Context, did string) (*Author, error) {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetAuthor")
 	defer span.End()
@@ -337,7 +362,7 @@ func (pr *PostRegistry) GetAuthor(ctx context.Context, did string) (*Author, err
 	return &Author{DID: author.Did, Handle: author.Handle}, nil
 }
 
-func (pr *PostRegistry) GetAuthorsByHandle(ctx context.Context, handle string) ([]*Author, error) {
+func (pr *PostgresRegistry) GetAuthorsByHandle(ctx context.Context, handle string) ([]*Author, error) {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetAuthorsByHandle")
 	defer span.End()
@@ -358,7 +383,7 @@ func (pr *PostRegistry) GetAuthorsByHandle(ctx context.Context, handle string) (
 	return retAuthors, nil
 }
 
-func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID string) ([]PostView, error) {
+func (pr *PostgresRegistry) GetThreadView(ctx context.Context, postID, authorID string) ([]PostView, error) {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetThreadView")
 	defer span.End()
@@ -416,7 +441,7 @@ func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID stri
 	return retThreadViews, nil
 }
 
-func (pr *PostRegistry) GetOldestPresentParent(ctx context.Context, postID string) (*Post, error) {
+func (pr *PostgresRegistry) GetOldestPresentParent(ctx context.Context, postID string) (*Post, error) {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetOldestPresentParent")
 	defer span.End()
@@ -467,7 +492,7 @@ func (pr *PostRegistry) GetOldestPresentParent(ctx context.Context, postID strin
 	}, nil
 }
 
-func (pr *PostRegistry) Close() error {
+func (pr *PostgresRegistry) Close() error {
 	return pr.db.Close()
 }
 

@@ -57,7 +57,7 @@ type BSky struct {
 	Workers     []*Worker
 
 	PostRegistryEnabled bool
-	PostRegistry        *search.PostRegistry
+	PostRegistry        search.PostRegistry
 
 	SentimentAnalysisEnabled bool
 	SentimentAnalysis        *sentiment.Sentiment
@@ -82,7 +82,7 @@ func NewBSky(
 		return nil, err
 	}
 
-	var postRegistry *search.PostRegistry
+	var postRegistry search.PostRegistry
 
 	if postRegistryEnabled {
 		postRegistry, err = search.NewPostRegistry(dbConnectionString)

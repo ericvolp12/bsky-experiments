@@ -47,7 +47,7 @@ type AuthorStatsResponse struct {
 }
 
 type API struct {
-	PostRegistry *search.PostRegistry
+	PostRegistry search.PostRegistry
 	UserCount    *usercount.UserCount
 
 	SocialGraph *graph.Graph
@@ -64,7 +64,7 @@ type API struct {
 }
 
 func NewAPI(
-	postRegistry *search.PostRegistry,
+	postRegistry search.PostRegistry,
 	userCount *usercount.UserCount,
 	socialGraphPath string,
 	layoutServiceHost string,
