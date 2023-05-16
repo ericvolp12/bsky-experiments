@@ -5,6 +5,7 @@ from opentelemetry import trace
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, AutoConfig
 import numpy as np
 from scipy.special import softmax
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +23,9 @@ MODEL = f"cardiffnlp/twitter-roberta-base-sentiment-latest"
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL)
 config = AutoConfig.from_pretrained(MODEL)
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-model = AutoModelForSequenceClassification.from_pretrained(MODEL)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL).to(device)
 model.save_pretrained(os.getcwd() + "/cardiffnlp/twitter-roberta-base-sentiment-latest")
 
 
@@ -32,7 +34,7 @@ def get_sentiment(post_text):
     with tracer.start_as_current_span("get_sentiment") as span:
         start = time.time()
         text = preprocess(post_text)
-        encoded_input = tokenizer(text, return_tensors="pt")
+        encoded_input = tokenizer(text, return_tensors="pt").to(device)
         # Log details about the inputs
         input_ids = encoded_input["input_ids"]
         logger.debug(f"Input IDs: {input_ids}")
@@ -59,8 +61,7 @@ def get_sentiment(post_text):
             span.set_attribute("post_text", post_text)
             span.set_attribute("output_dimensions", logits.shape)
             return "u", 0
-        scores = output[0][0].detach().numpy()
-        scores = softmax(scores)
+        scores = softmax(logits.cpu().detach().numpy()[0])
 
         ranking = np.argsort(scores)
         ranking = ranking[::-1]

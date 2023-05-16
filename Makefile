@@ -60,6 +60,11 @@ sentiment-up:
 	@echo "Starting Sentiment Analysis API..."
 	docker-compose -f build/sentiment/docker-compose.yml up --build -d
 
+# Build the Sentiment Analysis Python Service with GPU Acceleration
+sentiment-gpu-up:
+	@echo "Starting Sentiment Analysis API with GPU Acceleration..."
+	docker-compose -f build/sentiment/gpu.docker-compose.yml up --build -d
+
 
 # Generate SQLC Code
 sqlc:

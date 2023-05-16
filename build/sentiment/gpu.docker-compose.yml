@@ -4,7 +4,7 @@ services:
   bsky-sentiment:
     build:
       context: ../../
-      dockerfile: build/sentiment/gpu.Dockerfile
+      dockerfile: build/sentiment/Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
     image: bsky-sentiment
@@ -16,4 +16,10 @@ services:
       - PORT=8088
     ports:
       - "8088:8088"
-
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
