@@ -4,7 +4,7 @@ services:
   bsky-sentiment:
     build:
       context: ../../
-      dockerfile: build/sentiment/Dockerfile
+      dockerfile: build/sentiment/gpu.Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
     image: bsky-sentiment
