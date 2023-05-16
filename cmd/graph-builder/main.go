@@ -228,8 +228,10 @@ func saveGraph(
 	bsky.SocialGraphMux.RLock()
 	span.AddEvent("saveGraph:GraphLockAcquired")
 
-	log.Info("writing social graph to binary file, last updated: %s",
-		bsky.SocialGraph.LastUpdate.Format("02.01.06 15:04:05"),
+	logMsg := fmt.Sprintf("writing social graph to binary file, last updated: %s",
+		bsky.SocialGraph.LastUpdate.Format("02.01.06 15:04:05"))
+
+	log.Infow(logMsg,
 		"graph_last_updated_at", bsky.SocialGraph.LastUpdate,
 	)
 
