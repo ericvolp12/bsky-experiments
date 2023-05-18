@@ -30,7 +30,7 @@ percentiles AS (
 ),
 counts AS (
     SELECT
-        count(num_posts) AS total,
+        count(num_posts) AS total_authors,
         SUM(CASE WHEN num_posts > 1 THEN 1 ELSE 0 END) AS gt_1,
         SUM(CASE WHEN num_posts > 5 THEN 1 ELSE 0 END) AS gt_5,
         SUM(CASE WHEN num_posts > 10 THEN 1 ELSE 0 END) AS gt_10,
@@ -39,16 +39,26 @@ counts AS (
         SUM(CASE WHEN num_posts > 1000 THEN 1 ELSE 0 END)as gt_1000
     FROM
         postcounts
+),
+hellthread_posts AS (
+    SELECT
+        count(id) AS hellthread_post_count
+    FROM
+        posts
+    WHERE
+        root_post_id = '3juzlwllznd24'
 )
 SELECT
-    total,
+    total_authors,
+    (SELECT SUM(num_posts) FROM postcounts)::bigint AS total_posts,
+    hellthread_post_count,
+    (SELECT AVG(num_posts) FROM postcounts)::float AS mean_posts_per_author,
     gt_1,
     gt_5,
     gt_10,
     gt_20,
     gt_100,
     gt_1000,
-    (SELECT AVG(num_posts) FROM postcounts)::float AS mean,
     p25,
     p50,
     p75,
@@ -57,39 +67,44 @@ SELECT
     p99
 FROM
     counts,
-    percentiles
+    percentiles,
+    hellthread_posts
 LIMIT 1
 `
 
 type GetAuthorStatsRow struct {
-	Total  int64   `json:"total"`
-	Gt1    int64   `json:"gt_1"`
-	Gt5    int64   `json:"gt_5"`
-	Gt10   int64   `json:"gt_10"`
-	Gt20   int64   `json:"gt_20"`
-	Gt100  int64   `json:"gt_100"`
-	Gt1000 int64   `json:"gt_1000"`
-	Mean   float64 `json:"mean"`
-	P25    int64   `json:"p25"`
-	P50    int64   `json:"p50"`
-	P75    int64   `json:"p75"`
-	P90    int64   `json:"p90"`
-	P95    int64   `json:"p95"`
-	P99    int64   `json:"p99"`
+	TotalAuthors        int64   `json:"total_authors"`
+	TotalPosts          int64   `json:"total_posts"`
+	HellthreadPostCount int64   `json:"hellthread_post_count"`
+	MeanPostsPerAuthor  float64 `json:"mean_posts_per_author"`
+	Gt1                 int64   `json:"gt_1"`
+	Gt5                 int64   `json:"gt_5"`
+	Gt10                int64   `json:"gt_10"`
+	Gt20                int64   `json:"gt_20"`
+	Gt100               int64   `json:"gt_100"`
+	Gt1000              int64   `json:"gt_1000"`
+	P25                 int64   `json:"p25"`
+	P50                 int64   `json:"p50"`
+	P75                 int64   `json:"p75"`
+	P90                 int64   `json:"p90"`
+	P95                 int64   `json:"p95"`
+	P99                 int64   `json:"p99"`
 }
 
 func (q *Queries) GetAuthorStats(ctx context.Context) (GetAuthorStatsRow, error) {
 	row := q.queryRow(ctx, q.getAuthorStatsStmt, getAuthorStats)
 	var i GetAuthorStatsRow
 	err := row.Scan(
-		&i.Total,
+		&i.TotalAuthors,
+		&i.TotalPosts,
+		&i.HellthreadPostCount,
+		&i.MeanPostsPerAuthor,
 		&i.Gt1,
 		&i.Gt5,
 		&i.Gt10,
 		&i.Gt20,
 		&i.Gt100,
 		&i.Gt1000,
-		&i.Mean,
 		&i.P25,
 		&i.P50,
 		&i.P75,

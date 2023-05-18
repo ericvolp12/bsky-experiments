@@ -30,3 +30,13 @@ var meanPostCount = promauto.NewGauge(prometheus.GaugeOpts{
 	Name: "bsky_mean_post_count",
 	Help: "The mean number of posts per author",
 })
+
+var totalPostCount = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "bsky_total_post_count",
+	Help: "The total number of posts",
+})
+
+var hellthreadPostCount = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "bsky_hellthread_post_count",
+	Help: "The number of posts in the hellthread",
+})

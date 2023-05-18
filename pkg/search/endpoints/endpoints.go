@@ -37,13 +37,15 @@ type StatsCacheEntry struct {
 }
 
 type AuthorStatsResponse struct {
-	TotalUsers    int                               `json:"total_users"`
-	TotalAuthors  int64                             `json:"total_authors"`
-	MeanPostCount float64                           `json:"mean_post_count"`
-	Percentiles   []search.Percentile               `json:"percentiles"`
-	Brackets      []search.Bracket                  `json:"brackets"`
-	UpdatedAt     time.Time                         `json:"updated_at"`
-	TopPosters    []search_queries.GetTopPostersRow `json:"top_posters"`
+	TotalUsers      int                               `json:"total_users"`
+	TotalAuthors    int64                             `json:"total_authors"`
+	TotalPosts      int64                             `json:"total_posts"`
+	HellthreadPosts int64                             `json:"hellthread_posts"`
+	MeanPostCount   float64                           `json:"mean_post_count"`
+	Percentiles     []search.Percentile               `json:"percentiles"`
+	Brackets        []search.Bracket                  `json:"brackets"`
+	UpdatedAt       time.Time                         `json:"updated_at"`
+	TopPosters      []search_queries.GetTopPostersRow `json:"top_posters"`
 }
 
 type API struct {
@@ -229,6 +231,8 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 	totalUsers.Set(float64(userCount))
 	totalAuthors.Set(float64(authorStats.TotalAuthors))
 	meanPostCount.Set(authorStats.MeanPostCount)
+	totalPostCount.Set(float64(authorStats.TotalPosts))
+	hellthreadPostCount.Set(float64(authorStats.HellthreadPosts))
 
 	// Lock the stats mux for writing
 	span.AddEvent("RefreshSiteStats:AcquireStatsCacheWLock")
@@ -237,13 +241,15 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 	// Update the plain old struct cache
 	api.StatsCache = &StatsCacheEntry{
 		Stats: AuthorStatsResponse{
-			TotalUsers:    userCount,
-			TotalAuthors:  authorStats.TotalAuthors,
-			MeanPostCount: authorStats.MeanPostCount,
-			Percentiles:   authorStats.Percentiles,
-			Brackets:      authorStats.Brackets,
-			UpdatedAt:     authorStats.UpdatedAt,
-			TopPosters:    topPosters,
+			TotalUsers:      userCount,
+			TotalAuthors:    authorStats.TotalAuthors,
+			TotalPosts:      authorStats.TotalPosts,
+			HellthreadPosts: authorStats.HellthreadPosts,
+			MeanPostCount:   authorStats.MeanPostCount,
+			Percentiles:     authorStats.Percentiles,
+			Brackets:        authorStats.Brackets,
+			UpdatedAt:       authorStats.UpdatedAt,
+			TopPosters:      topPosters,
 		},
 		Expiration: time.Now().Add(api.StatsCacheTTL),
 	}
