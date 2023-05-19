@@ -3,9 +3,16 @@ import { Server } from './lexicon'
 import { AppContext } from './config'
 import { validateAuth } from './auth'
 
+const availableFeeds = ['hellthread', 'positivifeed']
+
 export default function (server: Server, ctx: AppContext) {
   server.app.bsky.feed.getFeedSkeleton(async ({ params, req }) => {
-    if (params.feed !== 'did:example:alice/app.bsky.feed.generator/whats-alf') {
+    if (
+      !params.feed.startsWith(
+        'at://did:web:feedsky.jazco.io/app.bsky.feed.generator',
+      ) ||
+      !availableFeeds.includes(params.feed.split('/').pop() ?? '')
+    ) {
       throw new InvalidRequestError(
         'Unsupported algorithm',
         'UnsupportedAlgorithm',
@@ -13,22 +20,25 @@ export default function (server: Server, ctx: AppContext) {
     }
     /**
      * Example of how to check auth if giving user-specific results:
-     *
-     * const requesterDid = await validateAuth(
-     *   req,
-     *   ctx.cfg.serviceDid,
-     *   ctx.didResolver,
-     * )
-     */
+     **/
+    // const requesterDid = await validateAuth(
+    //   req,
+    //   ctx.cfg.serviceDid,
+    //   ctx.didResolver,
+    // )
+
+    const selectedFeed = params.feed.split('/').pop() ?? ''
 
     let builder = ctx.db
       .selectFrom('post')
+      .where('post.feed', '=', selectedFeed)
       .selectAll()
       .orderBy('indexedAt', 'desc')
       .orderBy('cid', 'desc')
+      .limit(params.limit)
 
     if (params.cursor) {
-      const [indexedAt, cid] = params.cursor.split('..')
+      const [indexedAt, cid] = params.cursor.split('::')
       if (!indexedAt || !cid) {
         throw new InvalidRequestError('malformed cursor')
       }
@@ -42,13 +52,6 @@ export default function (server: Server, ctx: AppContext) {
 
     const feed = res.map((row) => ({
       post: row.uri,
-      replyTo:
-        row.replyParent && row.replyRoot
-          ? {
-              root: row.replyRoot,
-              parent: row.replyParent,
-            }
-          : undefined,
     }))
 
     let cursor: string | undefined

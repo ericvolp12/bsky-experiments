@@ -46,6 +46,10 @@ We've taken care of setting this server up with a did:web. However, you're free 
 
 Once the custom algorithms feature launches, you'll be able to publish your feed in-app by providing the DID of your service.
 
+## Running the Server
+
+Install dependencies with `yarn` and then run the server with `yarn start`. This will start the server on port 3000, or what's defined in `.env`. You can then watch the firehose output in the console and access the output of the default custom ALF feed at [http://localhost:3000/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:example:alice/app.bsky.feed.generator/whats-alf](http://localhost:3000/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:example:alice/app.bsky.feed.generator/whats-alf).
+
 ## Some Details
 
 ### Skeleton Metadata
@@ -60,18 +64,12 @@ The skeleton that a Feed Generator puts together is, in its simplest form, a lis
 ]
 ```
 
-However, we include two locations to attach some additional context. Here is the full schema:
+However, we include an additionl location to attach some context. Here is the full schema:
 
 ```ts
 type SkeletonItem = {
   post: string // post URI
-  
-  // optional metadata about the thread that this post is in reply to
-  replyTo?: {
-    root: string, // reply root URI
-    parent: string, // reply parent URI
-  }
-  
+
   // optional reason for inclusion in the feed
   // (generally to be displayed in client)
   reason?: Reason
@@ -82,8 +80,7 @@ type Reason = ReasonRepost
 
 type ReasonRepost = {
   $type: 'app.bsky.feed.defs#skeletonReasonRepost'
-  by: string // the did of the reposting user
-  indexedAt: string // the time that the repost took place
+  repost: string // repost URI
 }
 ```
 

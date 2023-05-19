@@ -115,26 +115,26 @@ export const getOpsByType = async (evt: Commit): Promise<OperationsByType> => {
   return opsByType
 }
 
-type OperationsByType = {
+export type OperationsByType = {
   posts: Operations<PostRecord>
   reposts: Operations<RepostRecord>
   likes: Operations<LikeRecord>
   follows: Operations<FollowRecord>
 }
 
-type Operations<T = Record<string, unknown>> = {
+export type Operations<T = Record<string, unknown>> = {
   creates: CreateOp<T>[]
   deletes: DeleteOp[]
 }
 
-type CreateOp<T> = {
+export type CreateOp<T> = {
   uri: string
   cid: string
   author: string
   record: T
 }
 
-type DeleteOp = {
+export type DeleteOp = {
   uri: string
 }
 

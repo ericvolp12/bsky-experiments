@@ -108,6 +108,21 @@ func NewAPI(
 	}, nil
 }
 
+func (api *API) GetPost(c *gin.Context) {
+	postID := c.Param("id")
+	post, err := api.PostRegistry.GetPost(c.Request.Context(), postID)
+	if err != nil {
+		if errors.As(err, &search.NotFoundError{}) {
+			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("post with ID '%s' not found", postID)})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, post)
+}
+
 func (api *API) GetSocialDistance(c *gin.Context) {
 	ctx := c.Request.Context()
 	tracer := otel.Tracer("search-api")

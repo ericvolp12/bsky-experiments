@@ -5,21 +5,21 @@ FROM node:18
 WORKDIR /usr/src/app
 
 # Copy Package files
-COPY ts/layout/package.json .
-COPY ts/layout/yarn.lock .
+COPY ts/feed-generator/package.json .
+COPY ts/feed-generator/yarn.lock .
 
 # Install the dependencies
 RUN yarn install --frozen-lockfile
 
 # Copy the source files to the container
-COPY ts/layout .
+COPY ts/feed-generator .
 
 # Build the application
 RUN yarn build
 
-ENV PORT=8087
+ENV PORT=8092
 
-# Expose the port for the Node application
+# Expose the port for the Feed Generator application
 EXPOSE ${PORT}
 
 # Start the application

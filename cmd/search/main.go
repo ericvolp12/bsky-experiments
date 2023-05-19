@@ -174,6 +174,7 @@ func main() {
 	router.GET("/thread", api.ProcessThreadRequest)
 	router.GET("/distance", api.GetSocialDistance)
 	router.GET("/stats", api.GetAuthorStats)
+	router.GET("/post/:id", api.GetPost)
 
 	port := os.Getenv("PORT")
 	if port == "" {
