@@ -25,6 +25,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addAuthorStmt, err = db.PrepareContext(ctx, addAuthor); err != nil {
 		return nil, fmt.Errorf("error preparing query AddAuthor: %w", err)
 	}
+	if q.addImageStmt, err = db.PrepareContext(ctx, addImage); err != nil {
+		return nil, fmt.Errorf("error preparing query AddImage: %w", err)
+	}
 	if q.addPostStmt, err = db.PrepareContext(ctx, addPost); err != nil {
 		return nil, fmt.Errorf("error preparing query AddPost: %w", err)
 	}
@@ -36,6 +39,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getAuthorsByHandleStmt, err = db.PrepareContext(ctx, getAuthorsByHandle); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuthorsByHandle: %w", err)
+	}
+	if q.getImageStmt, err = db.PrepareContext(ctx, getImage); err != nil {
+		return nil, fmt.Errorf("error preparing query GetImage: %w", err)
+	}
+	if q.getImagesForAuthorDIDStmt, err = db.PrepareContext(ctx, getImagesForAuthorDID); err != nil {
+		return nil, fmt.Errorf("error preparing query GetImagesForAuthorDID: %w", err)
+	}
+	if q.getImagesForPostStmt, err = db.PrepareContext(ctx, getImagesForPost); err != nil {
+		return nil, fmt.Errorf("error preparing query GetImagesForPost: %w", err)
 	}
 	if q.getOldestPresentParentStmt, err = db.PrepareContext(ctx, getOldestPresentParent); err != nil {
 		return nil, fmt.Errorf("error preparing query GetOldestPresentParent: %w", err)
@@ -49,6 +61,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getTopPostersStmt, err = db.PrepareContext(ctx, getTopPosters); err != nil {
 		return nil, fmt.Errorf("error preparing query GetTopPosters: %w", err)
 	}
+	if q.updateImageStmt, err = db.PrepareContext(ctx, updateImage); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateImage: %w", err)
+	}
 	return &q, nil
 }
 
@@ -57,6 +72,11 @@ func (q *Queries) Close() error {
 	if q.addAuthorStmt != nil {
 		if cerr := q.addAuthorStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addAuthorStmt: %w", cerr)
+		}
+	}
+	if q.addImageStmt != nil {
+		if cerr := q.addImageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addImageStmt: %w", cerr)
 		}
 	}
 	if q.addPostStmt != nil {
@@ -79,6 +99,21 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getAuthorsByHandleStmt: %w", cerr)
 		}
 	}
+	if q.getImageStmt != nil {
+		if cerr := q.getImageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getImageStmt: %w", cerr)
+		}
+	}
+	if q.getImagesForAuthorDIDStmt != nil {
+		if cerr := q.getImagesForAuthorDIDStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getImagesForAuthorDIDStmt: %w", cerr)
+		}
+	}
+	if q.getImagesForPostStmt != nil {
+		if cerr := q.getImagesForPostStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getImagesForPostStmt: %w", cerr)
+		}
+	}
 	if q.getOldestPresentParentStmt != nil {
 		if cerr := q.getOldestPresentParentStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getOldestPresentParentStmt: %w", cerr)
@@ -97,6 +132,11 @@ func (q *Queries) Close() error {
 	if q.getTopPostersStmt != nil {
 		if cerr := q.getTopPostersStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getTopPostersStmt: %w", cerr)
+		}
+	}
+	if q.updateImageStmt != nil {
+		if cerr := q.updateImageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateImageStmt: %w", cerr)
 		}
 	}
 	return err
@@ -139,14 +179,19 @@ type Queries struct {
 	db                         DBTX
 	tx                         *sql.Tx
 	addAuthorStmt              *sql.Stmt
+	addImageStmt               *sql.Stmt
 	addPostStmt                *sql.Stmt
 	getAuthorStmt              *sql.Stmt
 	getAuthorStatsStmt         *sql.Stmt
 	getAuthorsByHandleStmt     *sql.Stmt
+	getImageStmt               *sql.Stmt
+	getImagesForAuthorDIDStmt  *sql.Stmt
+	getImagesForPostStmt       *sql.Stmt
 	getOldestPresentParentStmt *sql.Stmt
 	getPostStmt                *sql.Stmt
 	getThreadViewStmt          *sql.Stmt
 	getTopPostersStmt          *sql.Stmt
+	updateImageStmt            *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -154,13 +199,18 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		db:                         tx,
 		tx:                         tx,
 		addAuthorStmt:              q.addAuthorStmt,
+		addImageStmt:               q.addImageStmt,
 		addPostStmt:                q.addPostStmt,
 		getAuthorStmt:              q.getAuthorStmt,
 		getAuthorStatsStmt:         q.getAuthorStatsStmt,
 		getAuthorsByHandleStmt:     q.getAuthorsByHandleStmt,
+		getImageStmt:               q.getImageStmt,
+		getImagesForAuthorDIDStmt:  q.getImagesForAuthorDIDStmt,
+		getImagesForPostStmt:       q.getImagesForPostStmt,
 		getOldestPresentParentStmt: q.getOldestPresentParentStmt,
 		getPostStmt:                q.getPostStmt,
 		getThreadViewStmt:          q.getThreadViewStmt,
 		getTopPostersStmt:          q.getTopPostersStmt,
+		updateImageStmt:            q.updateImageStmt,
 	}
 }

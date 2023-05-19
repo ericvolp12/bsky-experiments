@@ -24,6 +24,14 @@ type Worker struct {
 	Logger    *zap.SugaredLogger
 }
 
+type ImageMeta struct {
+	CID          string `json:"cid"`
+	MimeType     string `json:"mime_type"`
+	AltText      string `json:"alt_text"`
+	FullsizeURL  string `json:"fullsize_url"`
+	ThumbnailURL string `json:"thumbnail_url"`
+}
+
 func (bsky *BSky) worker(workerID int) {
 	ctx := context.Background()
 
@@ -172,6 +180,38 @@ func (bsky *BSky) ProcessRepoRecord(
 		parentID = parentParts[len(parentParts)-1]
 	}
 
+	// Extract any embedded images
+	images := []ImageMeta{}
+
+	if pst.Embed != nil && pst.Embed.EmbedImages != nil && pst.Embed.EmbedImages.Images != nil {
+		// Fetch the post with metadata from the BSky API (this includes signed URLs for the images)
+		postPath := fmt.Sprintf("at://%s/%s", repoName, opPath)
+		postMeta, err := bsky.ResolvePost(ctx, postPath, workerID)
+		if err != nil {
+			log.Errorf("error fetching post with metadata: %+v\n", err)
+		} else if postMeta == nil {
+			log.Errorf("post with metadata not found")
+		} else if postMeta.Embed != nil &&
+			postMeta.Embed.EmbedImages_View != nil &&
+			postMeta.Embed.EmbedImages_View.Images != nil &&
+			len(postMeta.Embed.EmbedImages_View.Images) == len(pst.Embed.EmbedImages.Images) {
+			// Iterate through the images and add them to the list with enriched metadata
+			for idx, image := range pst.Embed.EmbedImages.Images {
+				imageMeta := postMeta.Embed.EmbedImages_View.Images[idx]
+				if image.Image != nil && imageMeta != nil {
+					imageCID := image.Image.Ref.String()
+					images = append(images, ImageMeta{
+						CID:          imageCID,
+						MimeType:     image.Image.MimeType,
+						AltText:      image.Alt,
+						FullsizeURL:  imageMeta.Fullsize,
+						ThumbnailURL: imageMeta.Thumb,
+					})
+				}
+			}
+		}
+	}
+
 	postLink := fmt.Sprintf("https://staging.bsky.app/profile/%s/post/%s", authorProfile.Handle, postID)
 
 	// Write the post to the Post Registry if enabled
@@ -224,6 +264,27 @@ func (bsky *BSky) ProcessRepoRecord(
 		if err != nil {
 			log.Errorf("error writing post to registry: %+v\n", err)
 		}
+
+		// If there are images, write them to the registry
+		if len(images) > 0 {
+			for _, image := range images {
+				altText := image.AltText
+				registryImage := search.Image{
+					CID:          image.CID,
+					PostID:       postID,
+					AuthorDID:    authorProfile.Did,
+					MimeType:     image.MimeType,
+					AltText:      &altText,
+					FullsizeURL:  image.FullsizeURL,
+					ThumbnailURL: image.ThumbnailURL,
+					CreatedAt:    t,
+				}
+				err = bsky.PostRegistry.AddImage(ctx, &registryImage)
+				if err != nil {
+					log.Errorf("error writing image to registry: %+v\n", err)
+				}
+			}
+		}
 	}
 
 	log.Infow("post processed",
@@ -231,6 +292,7 @@ func (bsky *BSky) ProcessRepoRecord(
 		"post_link", postLink,
 		"post_body", postBody,
 		"mentions", mentions,
+		"image_count", len(images),
 		"links", links,
 		"author_handle", authorProfile.Handle,
 		"author_did", authorProfile.Did,
