@@ -181,6 +181,8 @@ func main() {
 	router.GET("/distance", api.GetSocialDistance)
 	router.GET("/stats", api.GetAuthorStats)
 	router.GET("/post/:id", api.GetPost)
+
+	router.GET("/clusters", api.GetClusterList)
 	router.GET("/users/by_handle/:handle/cluster", api.GetClusterForHandle)
 	router.GET("/users/by_did/:did/cluster", api.GetClusterForDID)
 

@@ -163,6 +163,10 @@ func (api *API) GetClusterForDID(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"cluster_id": cluster.ClusterID, "cluster_name": cluster.ClusterName})
 }
 
+func (api *API) GetClusterList(c *gin.Context) {
+	c.JSON(http.StatusOK, api.ClusterManager.Clusters)
+}
+
 func (api *API) GetSocialDistance(c *gin.Context) {
 	ctx := c.Request.Context()
 	tracer := otel.Tracer("search-api")

@@ -78,6 +78,9 @@ func NewClusterManager(graphJSONUrl string) (*ClusterManager, error) {
 	log.Printf("found %d clusters and %d users", len(graphData.Attributes.Clusters), len(graphData.Nodes))
 
 	for id, cluster := range graphData.Attributes.Clusters {
+		if cluster.Label == "" {
+			continue
+		}
 		cm.Clusters[id] = &Cluster{
 			ClusterID:   id,
 			ClusterName: cluster.Label,

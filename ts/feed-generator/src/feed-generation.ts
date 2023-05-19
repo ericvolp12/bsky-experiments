@@ -1,9 +1,10 @@
 import { InvalidRequestError } from '@atproto/xrpc-server'
 import { Server } from './lexicon'
 import { AppContext } from './config'
+import { ClusterMap } from './util/clusters'
 import { validateAuth } from './auth'
 
-const availableFeeds = ['hellthread', 'positivifeed']
+const availableFeeds = ['hellthread', 'positivifeed', 'cluster']
 
 export default function (server: Server, ctx: AppContext) {
   server.app.bsky.feed.getFeedSkeleton(async ({ params, req }) => {
@@ -11,7 +12,8 @@ export default function (server: Server, ctx: AppContext) {
       !params.feed.startsWith(
         'at://did:web:feedsky.jazco.io/app.bsky.feed.generator',
       ) ||
-      !availableFeeds.includes(params.feed.split('/').pop() ?? '')
+      (!availableFeeds.includes(params.feed.split('/').pop() ?? '') &&
+        !params.feed.split('/').pop()?.startsWith('cluster'))
     ) {
       throw new InvalidRequestError(
         'Unsupported algorithm',
@@ -27,7 +29,18 @@ export default function (server: Server, ctx: AppContext) {
     //   ctx.didResolver,
     // )
 
-    const selectedFeed = params.feed.split('/').pop() ?? ''
+    let selectedFeed = params.feed.split('/').pop() ?? ''
+
+    if (selectedFeed.startsWith('cluster-')) {
+      const clusterAlias = selectedFeed.substring(8)
+      if (!clusterAlias) {
+        throw new InvalidRequestError('malformed cluster feed')
+      }
+      if (!ClusterMap[clusterAlias]) {
+        throw new InvalidRequestError('unknown cluster')
+      }
+      selectedFeed = `cluster-${ClusterMap[clusterAlias].ClusterID}`
+    }
 
     let builder = ctx.db
       .selectFrom('post')

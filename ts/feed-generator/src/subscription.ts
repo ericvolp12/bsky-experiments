@@ -14,6 +14,13 @@ async function fetchPost(postID: string) {
   return res.data
 }
 
+async function getClusterAssignmentForDID(did: string) {
+  const res = await axios.get(
+    `https://bsky-search.jazco.io/users/by_did/${did}/cluster`,
+  )
+  return res.data
+}
+
 async function shouldIncludePost(create: any): Promise<boolean> {
   // lookup post ID at https://bsky-search.jazco.io/post?id={}
   // Wait for 1 second to make sure the post is indexed
@@ -73,6 +80,39 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
         create.record.reply?.root.uri?.split('/').pop() === '3juzlwllznd24',
     )
 
+    const clusterAssignments = await Promise.all(
+      ops.posts.creates.map(async (create) => {
+        try {
+          const clusterAssignment = await getClusterAssignmentForDID(
+            create.author,
+          )
+          return clusterAssignment
+        } catch (e) {
+          if (e.response.status === 404) {
+            return undefined
+          }
+          console.log(
+            `Error fetching cluster assignment for ${create.author}: ${e.response.status} - ${e?.response.data?.error}`,
+          )
+        }
+      }),
+    )
+
+    const clusterEnrichedPosts = ops.posts.creates
+      .map((create, i) => {
+        if (clusterAssignments[i] === undefined) {
+          return {
+            ...create,
+            cluster: null,
+          }
+        }
+        return {
+          ...create,
+          cluster: clusterAssignments[i].cluster_id,
+        }
+      })
+      .filter((create) => create.cluster !== null)
+
     const postsToCreate = positivePosts.map((create) => {
       return {
         uri: create.uri,
@@ -86,13 +126,25 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
     postsToCreate.push(
       ...hellthreadPosts.map((create) => {
-        // map alf-related posts to a db row
         return {
           uri: create.uri,
           cid: create.cid,
           replyParent: create.record?.reply?.parent.uri ?? null,
           replyRoot: create.record?.reply?.root.uri ?? null,
           feed: 'hellthread',
+          indexedAt: new Date().toISOString(),
+        }
+      }),
+    )
+
+    postsToCreate.push(
+      ...clusterEnrichedPosts.map((create) => {
+        return {
+          uri: create.uri,
+          cid: create.cid,
+          replyParent: create.record?.reply?.parent.uri ?? null,
+          replyRoot: create.record?.reply?.root.uri ?? null,
+          feed: `cluster-${create.cluster}`,
           indexedAt: new Date().toISOString(),
         }
       }),
