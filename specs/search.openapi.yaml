@@ -157,8 +157,144 @@ paths:
                 properties:
                   error:
                     type: string
+  /post/{id}:
+    get:
+      summary: Get a post by ID
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          description: Post ID
+          required: true
+      responses:
+        200:
+          description: Successfully retrieved the post
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+        404:
+          description: Post not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        500:
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /users/by_handle/{handle}/cluster:
+    get:
+      summary: Get the cluster label for a user if assigned
+      parameters:
+        - in: path
+          name: handle
+          schema:
+            type: string
+          description: User's handle
+          required: true
+      responses:
+        200:
+          description: Successfully retrieved the cluster
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cluster:
+                    $ref: "#/components/schemas/Cluster"
+        400:
+          description: Bad request, depth must be greater than 0
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        404:
+          description: User not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        500:
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /users/by_did/{did}/cluster:
+    get:
+      summary: Get the cluster label for a user if assigned
+      parameters:
+        - in: path
+          name: did
+          schema:
+            type: string
+          description: User's DID
+          required: true
+      responses:
+        200:
+          description: Successfully retrieved the cluster
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cluster:
+                    $ref: "#/components/schemas/Cluster"
+        400:
+          description: Bad request, depth must be greater than 0
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        404:
+          description: User not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        500:
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
 components:
   schemas:
+    Cluster:
+      type: object
+      properties:
+        cluster_id:
+          type: integer
+        cluster_name:
+          type: string
     Post:
       type: object
       properties:
@@ -181,6 +317,13 @@ components:
           type: boolean
         parent_relationship:
           type: string
+          nullable: true
+        sentiment:
+          type: string
+          nullable: true
+        sentiment_score:
+          type: number
+          format: float
           nullable: true
 
     PostView:
@@ -225,6 +368,15 @@ components:
         total_authors:
           type: integer
           format: int64
+        total_users:
+          type: integer
+          format: int64
+        total_posts:
+          type: integer
+          format: int64
+        hellthread_posts:
+          type: integer
+          format: int64
         mean_post_count:
           type: number
           format: float
@@ -236,6 +388,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Bracket"
+        topPosters:
+          type: array
+          items:
+            type: object
+            properties:
+              author_did:
+                type: string
+              handle:
+                type: string
+              post_count:
+                type: integer
+                format: int64
         last_updated:
           type: string
           format: date-time

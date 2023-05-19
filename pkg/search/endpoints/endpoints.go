@@ -13,6 +13,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/ericvolp12/bsky-experiments/pkg/layout"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
+	"github.com/ericvolp12/bsky-experiments/pkg/search/clusters"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/search_queries"
 	"github.com/ericvolp12/bsky-experiments/pkg/usercount"
 	"github.com/gin-gonic/gin"
@@ -52,7 +53,8 @@ type API struct {
 	PostRegistry *search.PostRegistry
 	UserCount    *usercount.UserCount
 
-	SocialGraph *graph.Graph
+	SocialGraph    *graph.Graph
+	ClusterManager *clusters.ClusterManager
 
 	LayoutServiceHost string
 
@@ -69,12 +71,12 @@ func NewAPI(
 	postRegistry *search.PostRegistry,
 	userCount *usercount.UserCount,
 	socialGraphPath string,
+	graphJSONUrl string,
 	layoutServiceHost string,
 	threadViewCacheTTL time.Duration,
 	layoutCacheTTL time.Duration,
 	statsCacheTTL time.Duration,
 ) (*API, error) {
-
 	// Read the graph from the Binary file
 	readerWriter := graph.BinaryGraphReaderWriter{}
 
@@ -94,10 +96,16 @@ func NewAPI(
 		return nil, fmt.Errorf("error initializing layout cache: %w", err)
 	}
 
+	clusterManager, err := clusters.NewClusterManager(graphJSONUrl)
+	if err != nil {
+		return nil, fmt.Errorf("error initializing cluster manager: %w", err)
+	}
+
 	return &API{
 		PostRegistry:       postRegistry,
 		UserCount:          userCount,
 		SocialGraph:        &g1,
+		ClusterManager:     clusterManager,
 		LayoutServiceHost:  layoutServiceHost,
 		ThreadViewCacheTTL: threadViewCacheTTL,
 		ThreadViewCache:    threadViewCache,
@@ -121,6 +129,38 @@ func (api *API) GetPost(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, post)
+}
+
+func (api *API) GetClusterForHandle(c *gin.Context) {
+	handle := c.Param("handle")
+	cluster, err := api.ClusterManager.GetClusterForHandle(c.Request.Context(), handle)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if cluster == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("handle '%s' not found or not assigned to a labeled cluster", handle)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"cluster_id": cluster.ClusterID, "cluster_name": cluster.ClusterName})
+}
+
+func (api *API) GetClusterForDID(c *gin.Context) {
+	did := c.Param("did")
+	cluster, err := api.ClusterManager.GetClusterForDID(c.Request.Context(), did)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if cluster == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("did '%s' not found or not assigned to a labeled cluster", did)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"cluster_id": cluster.ClusterID, "cluster_name": cluster.ClusterName})
 }
 
 func (api *API) GetSocialDistance(c *gin.Context) {

@@ -64,6 +64,11 @@ func main() {
 		layoutServiceHost = "http://localhost:8086"
 	}
 
+	graphJSONUrl := os.Getenv("GRAPH_JSON_URL")
+	if graphJSONUrl == "" {
+		graphJSONUrl = "https://s3.jazco.io/exported_graph_enriched.json"
+	}
+
 	// Registers a tracer Provider globally if the exporter endpoint is set
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
 		log.Println("initializing tracer...")
@@ -100,6 +105,7 @@ func main() {
 		postRegistry,
 		userCount,
 		binaryGraphPath,
+		graphJSONUrl,
 		layoutServiceHost,
 		30*time.Minute, // Thread View Cache TTL
 		30*time.Minute, // Layout Cache TTL
@@ -175,6 +181,8 @@ func main() {
 	router.GET("/distance", api.GetSocialDistance)
 	router.GET("/stats", api.GetAuthorStats)
 	router.GET("/post/:id", api.GetPost)
+	router.GET("/users/by_handle/:handle/cluster", api.GetClusterForHandle)
+	router.GET("/users/by_did/:did/cluster", api.GetClusterForDID)
 
 	port := os.Getenv("PORT")
 	if port == "" {
