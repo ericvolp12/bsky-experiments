@@ -1,12 +1,15 @@
-import http from 'http'
+import { DidResolver, MemoryCache } from '@atproto/did-resolver'
 import events from 'events'
 import express from 'express'
-import { DidResolver, MemoryCache } from '@atproto/did-resolver'
-import { createServer } from './lexicon'
-import feedGeneration from './feed-generation'
-import { createDb, Database, migrateToLatest } from './db'
-import { FirehoseSubscription } from './subscription'
+import promMid from 'express-prometheus-middleware'
+import http from 'http'
+import morgan from 'morgan'
+import client from 'prom-client'
 import { AppContext, Config } from './config'
+import { Database, createDb, migrateToLatest } from './db'
+import feedGeneration from './feed-generation'
+import { createServer } from './lexicon'
+import { FirehoseSubscription } from './subscription'
 import wellKnown from './well-known'
 
 export class FeedGenerator {
@@ -37,6 +40,30 @@ export class FeedGenerator {
       serviceDid: config?.serviceDid ?? 'did:example:test',
     }
     const app = express()
+
+    // Configure Middleware for Telemetry
+    app.use(
+      promMid({
+        metricsPath: '/metrics',
+        collectDefaultMetrics: true,
+        requestDurationBuckets: [0.001, 0.05, 0.5, 1, 3, 5, 10],
+        requestLengthBuckets: client.exponentialBuckets(10, 10, 7),
+        responseLengthBuckets: client.exponentialBuckets(10, 10, 7),
+        customLabels: ['feed'],
+        transformLabels: (labels, req) => {
+          let feed = ''
+          if (req.query.feed) {
+            const fullFeed = req.query.feed as string
+            feed = fullFeed.split('/').pop() as string
+          }
+          labels.feed = feed
+        },
+      }),
+    )
+
+    // Add morgan logging middleware
+    app.use(morgan('combined'))
+
     const db = createDb(cfg.sqliteLocation)
     const firehose = new FirehoseSubscription(db, cfg.subscriptionEndpoint)
 
@@ -60,6 +87,7 @@ export class FeedGenerator {
       cfg,
     }
     feedGeneration(server, ctx)
+
     app.use(server.xrpc.router)
     app.use(wellKnown(cfg.hostname))
 

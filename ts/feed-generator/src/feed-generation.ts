@@ -52,6 +52,7 @@ export default function (server: Server, ctx: AppContext) {
 
     const feed = res.map((row) => ({
       post: row.uri,
+      reply: row.replyParent || null,
     }))
 
     let cursor: string | undefined
