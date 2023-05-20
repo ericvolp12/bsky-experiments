@@ -84,8 +84,6 @@ func main() {
 		log.Info(http.ListenAndServe("0.0.0.0:8094", nil))
 	}()
 
-	ticker := time.NewTicker(10 * time.Second)
-
 	for {
 		log.Info("Processing images...")
 		start := time.Now()
@@ -146,8 +144,8 @@ func main() {
 		case <-ctx.Done():
 			log.Info("Context cancelled, exiting...")
 			return
-		case <-ticker.C:
-			continue
+		default:
+			time.Sleep(10 * time.Second)
 		}
 	}
 }

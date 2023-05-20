@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/XSAM/otelsql"
@@ -40,6 +41,7 @@ type Post struct {
 	ParentRelationship  *string   `json:"parent_relationship"` // null, "r", "q"
 	Sentiment           *string   `json:"sentiment"`
 	SentimentConfidence *float64  `json:"sentiment_confidence"`
+	Images              []*Image  `json:"images,omitempty"`
 }
 
 type Image struct {
@@ -496,7 +498,9 @@ func (pr *PostRegistry) GetPost(ctx context.Context, postID string) (*Post, erro
 		return nil, err
 	}
 
-	return postFromQueryPost(post), nil
+	enrichedPost, err := postFromQueryPost(post)
+
+	return enrichedPost, err
 }
 
 func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error) {
@@ -732,7 +736,7 @@ func (pr *PostRegistry) Close() error {
 }
 
 // postFromQueryPost turns a queries.Post into a search.Post
-func postFromQueryPost(p search_queries.Post) *Post {
+func postFromQueryPost(p search_queries.GetPostRow) (*Post, error) {
 	var parentPostIDPtr *string
 	if p.ParentPostID.Valid {
 		parentPostIDPtr = &p.ParentPostID.String
@@ -758,6 +762,29 @@ func postFromQueryPost(p search_queries.Post) *Post {
 		sentimentConfidence = &p.SentimentConfidence.Float64
 	}
 
+	var images []*Image
+	switch v := p.Images.(type) {
+	case []byte:
+		// Try to unmarshal if it's a slice of bytes
+		var imagesData []map[string]interface{}
+		if err := json.Unmarshal(v, &imagesData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal images: %v", err)
+		}
+		// If unmarshaling is successful, loop through the data and convert each item to an Image
+		for _, data := range imagesData {
+			imageData, _ := json.Marshal(data)
+			var image Image
+			if err := json.Unmarshal(imageData, &image); err != nil {
+				log.Printf("failed to convert data to image: %v", err)
+				continue
+			}
+			images = append(images, &image)
+		}
+
+	default:
+		return nil, fmt.Errorf("unexpected type for images: %T", v)
+	}
+
 	return &Post{
 		ID:                  p.ID,
 		Text:                p.Text,
@@ -769,5 +796,6 @@ func postFromQueryPost(p search_queries.Post) *Post {
 		ParentRelationship:  parentRelationshipPtr,
 		Sentiment:           sentiment,
 		SentimentConfidence: sentimentConfidence,
-	}
+		Images:              images,
+	}, nil
 }
