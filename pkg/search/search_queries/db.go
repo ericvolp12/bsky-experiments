@@ -61,6 +61,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getTopPostersStmt, err = db.PrepareContext(ctx, getTopPosters); err != nil {
 		return nil, fmt.Errorf("error preparing query GetTopPosters: %w", err)
 	}
+	if q.getUnprocessedImagesStmt, err = db.PrepareContext(ctx, getUnprocessedImages); err != nil {
+		return nil, fmt.Errorf("error preparing query GetUnprocessedImages: %w", err)
+	}
 	if q.updateImageStmt, err = db.PrepareContext(ctx, updateImage); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateImage: %w", err)
 	}
@@ -134,6 +137,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getTopPostersStmt: %w", cerr)
 		}
 	}
+	if q.getUnprocessedImagesStmt != nil {
+		if cerr := q.getUnprocessedImagesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getUnprocessedImagesStmt: %w", cerr)
+		}
+	}
 	if q.updateImageStmt != nil {
 		if cerr := q.updateImageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateImageStmt: %w", cerr)
@@ -191,6 +199,7 @@ type Queries struct {
 	getPostStmt                *sql.Stmt
 	getThreadViewStmt          *sql.Stmt
 	getTopPostersStmt          *sql.Stmt
+	getUnprocessedImagesStmt   *sql.Stmt
 	updateImageStmt            *sql.Stmt
 }
 
@@ -211,6 +220,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getPostStmt:                q.getPostStmt,
 		getThreadViewStmt:          q.getThreadViewStmt,
 		getTopPostersStmt:          q.getTopPostersStmt,
+		getUnprocessedImagesStmt:   q.getUnprocessedImagesStmt,
 		updateImageStmt:            q.updateImageStmt,
 	}
 }

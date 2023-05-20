@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  bsky-image-processor:
+    build:
+      context: ../../
+      dockerfile: build/image-processor/Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: always
+    image: bsky-image-processor
+    container_name: bsky-image-processor
+    env_file:
+      - ../../.env
+    ports:
+      - "8094:8094"
+    volumes:
+      - type: bind
+        source: ../../data/
+        target: /app/data/
+      - type: bind
+        source: ../../.env
+        target: /app/.env
+

@@ -421,6 +421,57 @@ func (pr *PostRegistry) GetImagesForPost(ctx context.Context, postID string) ([]
 	return retImages, nil
 }
 
+func (pr *PostRegistry) GetUnprocessedImages(ctx context.Context, limit int32) ([]*Image, error) {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetUnprocessedImages")
+	defer span.End()
+
+	images, err := pr.queries.GetUnprocessedImages(ctx, limit)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, NotFoundError{fmt.Errorf("images not found")}
+		}
+		return nil, err
+	}
+
+	retImages := make([]*Image, len(images))
+	for i, image := range images {
+		var altTextPtr *string
+		if image.AltText.Valid {
+			altText := image.AltText.String
+			altTextPtr = &altText
+		}
+
+		var cvRunAtPtr *time.Time
+		if image.CvRunAt.Valid {
+			cvRunAt := image.CvRunAt.Time
+			cvRunAtPtr = &cvRunAt
+		}
+
+		var cvClassesPtr *json.RawMessage
+		if image.CvClasses.Valid {
+			cvClasses := image.CvClasses.RawMessage
+			cvClassesPtr = &cvClasses
+		}
+
+		retImages[i] = &Image{
+			CID:          image.Cid,
+			PostID:       image.PostID,
+			AuthorDID:    image.AuthorDid,
+			AltText:      altTextPtr,
+			MimeType:     image.MimeType,
+			FullsizeURL:  image.FullsizeUrl,
+			ThumbnailURL: image.ThumbnailUrl,
+			CreatedAt:    image.CreatedAt,
+			CVCompleted:  image.CvCompleted,
+			CVRunAt:      cvRunAtPtr,
+			CVClasses:    cvClassesPtr,
+		}
+	}
+
+	return retImages, nil
+}
+
 func (pr *PostRegistry) AddAuthor(ctx context.Context, author *Author) error {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AddAuthor")

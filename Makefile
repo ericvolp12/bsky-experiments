@@ -80,6 +80,15 @@ object-detection-gpu-up:
 	@echo "Starting Object Detection API with GPU Acceleration..."
 	docker-compose -f build/object-detection/gpu.docker-compose.yml up --build -d
 
+# Build the Image Processor Go binary
+build-image-processor:
+	@echo "Building Image Processor Go binary..."
+	$(GO_CMD_W_CGO) build -o image-processor cmd/image-processor/*.go
+
+image-processor-up:
+	@echo "Starting Image Processor..."
+	docker-compose -f build/image-processor/docker-compose.yml up --build -d
+
 # Generate SQLC Code
 sqlc:
 	@echo "Generating SQLC code..."
