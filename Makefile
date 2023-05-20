@@ -70,6 +70,15 @@ feedgen-up:
 	@echo "Starting TypeScript Feed Generator API..."
 	docker-compose -f build/feedgen/docker-compose.yml up --build -d
 
+# Build the Object Detection Python Service
+object-detection-up:
+	@echo "Starting Object Detection API..."
+	docker-compose -f build/object-detection/docker-compose.yml up --build -d
+
+# Build the Object Detection Python Service with GPU Acceleration
+object-detection-gpu-up:
+	@echo "Starting Object Detection API with GPU Acceleration..."
+	docker-compose -f build/object-detection/gpu.docker-compose.yml up --build -d
 
 # Generate SQLC Code
 sqlc:
