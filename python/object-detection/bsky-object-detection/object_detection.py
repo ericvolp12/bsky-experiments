@@ -32,10 +32,10 @@ def detect_objects(image: Image.Image) -> List[DetectionResult]:
             outputs = model(**inputs)
 
         # convert outputs (bounding boxes and class logits) to COCO API
-        # let's only keep detections with score > 0.75
+        # let's only keep detections with score > 0.5
         target_sizes = torch.tensor([image.size[::-1]])
         model_results = processor.post_process_object_detection(
-            outputs, target_sizes=target_sizes, threshold=0.75
+            outputs, target_sizes=target_sizes, threshold=0.5
         )[0]
 
         processing_time = time.time() - start
