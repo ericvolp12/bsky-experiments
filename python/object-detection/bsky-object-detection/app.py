@@ -18,7 +18,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger import jsonlogger
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .models import ImageMeta, ImageMetaFromRequest, ImageResult
+from .models import ImageMeta, ImageResult
 from .object_detection import detect_objects
 
 # Set up JSON logging

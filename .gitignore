@@ -5,3 +5,4 @@ node_modules/
 handles.txt
 target/
 dist/
+__pycache__/
