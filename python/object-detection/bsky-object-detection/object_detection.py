@@ -39,11 +39,7 @@ def detect_objects(image: Image.Image) -> List[DetectionResult]:
         )[0]
 
         processing_time = time.time() - start
-        # If it takes longer than 1 second to process, add some attributes to the span
-        if processing_time > 1:
-            span.set_attribute("slow_process", True)
-            span.set_attribute("processing_time", processing_time)
-            span.set_attribute("post_text", image)
+        span.set_attribute("processing_time", processing_time)
 
         detection_results: List[DetectionResult] = []
 
