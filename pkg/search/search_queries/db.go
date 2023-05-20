@@ -25,6 +25,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addAuthorStmt, err = db.PrepareContext(ctx, addAuthor); err != nil {
 		return nil, fmt.Errorf("error preparing query AddAuthor: %w", err)
 	}
+	if q.addAuthorToClusterStmt, err = db.PrepareContext(ctx, addAuthorToCluster); err != nil {
+		return nil, fmt.Errorf("error preparing query AddAuthorToCluster: %w", err)
+	}
+	if q.addClusterStmt, err = db.PrepareContext(ctx, addCluster); err != nil {
+		return nil, fmt.Errorf("error preparing query AddCluster: %w", err)
+	}
 	if q.addImageStmt, err = db.PrepareContext(ctx, addImage); err != nil {
 		return nil, fmt.Errorf("error preparing query AddImage: %w", err)
 	}
@@ -52,11 +58,17 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getImagesForPostStmt, err = db.PrepareContext(ctx, getImagesForPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetImagesForPost: %w", err)
 	}
+	if q.getMembersOfClusterStmt, err = db.PrepareContext(ctx, getMembersOfCluster); err != nil {
+		return nil, fmt.Errorf("error preparing query GetMembersOfCluster: %w", err)
+	}
 	if q.getOldestPresentParentStmt, err = db.PrepareContext(ctx, getOldestPresentParent); err != nil {
 		return nil, fmt.Errorf("error preparing query GetOldestPresentParent: %w", err)
 	}
 	if q.getPostStmt, err = db.PrepareContext(ctx, getPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPost: %w", err)
+	}
+	if q.getPostsPageByClusterAliasStmt, err = db.PrepareContext(ctx, getPostsPageByClusterAlias); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsPageByClusterAlias: %w", err)
 	}
 	if q.getPostsPageWithLabelStmt, err = db.PrepareContext(ctx, getPostsPageWithLabel); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsPageWithLabel: %w", err)
@@ -81,6 +93,16 @@ func (q *Queries) Close() error {
 	if q.addAuthorStmt != nil {
 		if cerr := q.addAuthorStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addAuthorStmt: %w", cerr)
+		}
+	}
+	if q.addAuthorToClusterStmt != nil {
+		if cerr := q.addAuthorToClusterStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addAuthorToClusterStmt: %w", cerr)
+		}
+	}
+	if q.addClusterStmt != nil {
+		if cerr := q.addClusterStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addClusterStmt: %w", cerr)
 		}
 	}
 	if q.addImageStmt != nil {
@@ -128,6 +150,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getImagesForPostStmt: %w", cerr)
 		}
 	}
+	if q.getMembersOfClusterStmt != nil {
+		if cerr := q.getMembersOfClusterStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getMembersOfClusterStmt: %w", cerr)
+		}
+	}
 	if q.getOldestPresentParentStmt != nil {
 		if cerr := q.getOldestPresentParentStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getOldestPresentParentStmt: %w", cerr)
@@ -136,6 +163,11 @@ func (q *Queries) Close() error {
 	if q.getPostStmt != nil {
 		if cerr := q.getPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostStmt: %w", cerr)
+		}
+	}
+	if q.getPostsPageByClusterAliasStmt != nil {
+		if cerr := q.getPostsPageByClusterAliasStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsPageByClusterAliasStmt: %w", cerr)
 		}
 	}
 	if q.getPostsPageWithLabelStmt != nil {
@@ -200,47 +232,55 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                         DBTX
-	tx                         *sql.Tx
-	addAuthorStmt              *sql.Stmt
-	addImageStmt               *sql.Stmt
-	addPostStmt                *sql.Stmt
-	addPostLabelStmt           *sql.Stmt
-	getAuthorStmt              *sql.Stmt
-	getAuthorStatsStmt         *sql.Stmt
-	getAuthorsByHandleStmt     *sql.Stmt
-	getImageStmt               *sql.Stmt
-	getImagesForAuthorDIDStmt  *sql.Stmt
-	getImagesForPostStmt       *sql.Stmt
-	getOldestPresentParentStmt *sql.Stmt
-	getPostStmt                *sql.Stmt
-	getPostsPageWithLabelStmt  *sql.Stmt
-	getThreadViewStmt          *sql.Stmt
-	getTopPostersStmt          *sql.Stmt
-	getUnprocessedImagesStmt   *sql.Stmt
-	updateImageStmt            *sql.Stmt
+	db                             DBTX
+	tx                             *sql.Tx
+	addAuthorStmt                  *sql.Stmt
+	addAuthorToClusterStmt         *sql.Stmt
+	addClusterStmt                 *sql.Stmt
+	addImageStmt                   *sql.Stmt
+	addPostStmt                    *sql.Stmt
+	addPostLabelStmt               *sql.Stmt
+	getAuthorStmt                  *sql.Stmt
+	getAuthorStatsStmt             *sql.Stmt
+	getAuthorsByHandleStmt         *sql.Stmt
+	getImageStmt                   *sql.Stmt
+	getImagesForAuthorDIDStmt      *sql.Stmt
+	getImagesForPostStmt           *sql.Stmt
+	getMembersOfClusterStmt        *sql.Stmt
+	getOldestPresentParentStmt     *sql.Stmt
+	getPostStmt                    *sql.Stmt
+	getPostsPageByClusterAliasStmt *sql.Stmt
+	getPostsPageWithLabelStmt      *sql.Stmt
+	getThreadViewStmt              *sql.Stmt
+	getTopPostersStmt              *sql.Stmt
+	getUnprocessedImagesStmt       *sql.Stmt
+	updateImageStmt                *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                         tx,
-		tx:                         tx,
-		addAuthorStmt:              q.addAuthorStmt,
-		addImageStmt:               q.addImageStmt,
-		addPostStmt:                q.addPostStmt,
-		addPostLabelStmt:           q.addPostLabelStmt,
-		getAuthorStmt:              q.getAuthorStmt,
-		getAuthorStatsStmt:         q.getAuthorStatsStmt,
-		getAuthorsByHandleStmt:     q.getAuthorsByHandleStmt,
-		getImageStmt:               q.getImageStmt,
-		getImagesForAuthorDIDStmt:  q.getImagesForAuthorDIDStmt,
-		getImagesForPostStmt:       q.getImagesForPostStmt,
-		getOldestPresentParentStmt: q.getOldestPresentParentStmt,
-		getPostStmt:                q.getPostStmt,
-		getPostsPageWithLabelStmt:  q.getPostsPageWithLabelStmt,
-		getThreadViewStmt:          q.getThreadViewStmt,
-		getTopPostersStmt:          q.getTopPostersStmt,
-		getUnprocessedImagesStmt:   q.getUnprocessedImagesStmt,
-		updateImageStmt:            q.updateImageStmt,
+		db:                             tx,
+		tx:                             tx,
+		addAuthorStmt:                  q.addAuthorStmt,
+		addAuthorToClusterStmt:         q.addAuthorToClusterStmt,
+		addClusterStmt:                 q.addClusterStmt,
+		addImageStmt:                   q.addImageStmt,
+		addPostStmt:                    q.addPostStmt,
+		addPostLabelStmt:               q.addPostLabelStmt,
+		getAuthorStmt:                  q.getAuthorStmt,
+		getAuthorStatsStmt:             q.getAuthorStatsStmt,
+		getAuthorsByHandleStmt:         q.getAuthorsByHandleStmt,
+		getImageStmt:                   q.getImageStmt,
+		getImagesForAuthorDIDStmt:      q.getImagesForAuthorDIDStmt,
+		getImagesForPostStmt:           q.getImagesForPostStmt,
+		getMembersOfClusterStmt:        q.getMembersOfClusterStmt,
+		getOldestPresentParentStmt:     q.getOldestPresentParentStmt,
+		getPostStmt:                    q.getPostStmt,
+		getPostsPageByClusterAliasStmt: q.getPostsPageByClusterAliasStmt,
+		getPostsPageWithLabelStmt:      q.getPostsPageWithLabelStmt,
+		getThreadViewStmt:              q.getThreadViewStmt,
+		getTopPostersStmt:              q.getTopPostersStmt,
+		getUnprocessedImagesStmt:       q.getUnprocessedImagesStmt,
+		updateImageStmt:                q.updateImageStmt,
 	}
 }

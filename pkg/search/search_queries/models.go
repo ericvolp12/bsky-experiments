@@ -14,6 +14,17 @@ type Author struct {
 	Handle string `json:"handle"`
 }
 
+type AuthorCluster struct {
+	AuthorDid string `json:"author_did"`
+	ClusterID int32  `json:"cluster_id"`
+}
+
+type Cluster struct {
+	ID          int32  `json:"id"`
+	LookupAlias string `json:"lookup_alias"`
+	Name        string `json:"name"`
+}
+
 type Image struct {
 	Cid          string                `json:"cid"`
 	PostID       string                `json:"post_id"`

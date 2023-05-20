@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/bluesky-social/indigo/xrpc"
@@ -14,9 +16,11 @@ import (
 )
 
 type FeedGenerator struct {
-	PostRegistry   *search.PostRegistry
-	Client         *xrpc.Client
-	ClusterManager *clusters.ClusterManager
+	PostRegistry    *search.PostRegistry
+	Client          *xrpc.Client
+	ClusterManager  *clusters.ClusterManager
+	LegacyFeedNames map[string]string
+	DefaultLookback int32
 }
 
 type FeedPostItem struct {
@@ -41,11 +45,66 @@ func NewFeedGenerator(
 		return nil, fmt.Errorf("failed to create cluster manager: %w", err)
 	}
 
+	legacyFeedNames := map[string]string{
+		"positivifeed": "sentiment:pos",
+		"negativifeed": "sentiment:neg",
+	}
+
 	return &FeedGenerator{
-		PostRegistry:   postRegistry,
-		Client:         client,
-		ClusterManager: clusterManager,
+		PostRegistry:    postRegistry,
+		Client:          client,
+		ClusterManager:  clusterManager,
+		LegacyFeedNames: legacyFeedNames,
+		DefaultLookback: 12, // hours
 	}, nil
+}
+
+func (fg *FeedGenerator) GetWellKnownDID(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"@context": []string{"https://www.w3.org/ns/did/v1"},
+		"id":       "did:web:feedsky.jazco.io",
+		"service": []gin.H{
+			{
+				"id":              "#bsky_fg",
+				"type":            "BskyFeedGenerator",
+				"serviceEndpoint": "https://feedsky.jazco.io",
+			},
+		},
+	})
+}
+
+func (fg *FeedGenerator) UpdateClusterAssignments(c *gin.Context) {
+	log.Println("Updating cluster assignments...")
+	// Iterate over all authors in the Manager and update them in the registry
+	errs := make([]error, 0)
+
+	count := 0
+	for _, author := range fg.ClusterManager.DIDClusterMap {
+		if count%1000 == 0 {
+			log.Printf("Updated %d/%d authors", count, len(fg.ClusterManager.DIDClusterMap))
+		}
+
+		count++
+
+		clusterID, err := strconv.ParseInt(author.ClusterID, 10, 64)
+		if err != nil {
+			newErr := fmt.Errorf("failed to parse cluster ID %s: %w", author.ClusterID, err)
+			errs = append(errs, newErr)
+			log.Println(newErr.Error())
+			continue
+		}
+		err = fg.PostRegistry.AssignAuthorToCluster(c.Request.Context(), author.UserDID, int32(clusterID))
+		if err != nil {
+			newErr := fmt.Errorf("failed to assign author %s to cluster %d: %w", author.UserDID, clusterID, err)
+			errs = append(errs, newErr)
+			log.Println(newErr.Error())
+			continue
+		}
+	}
+
+	log.Println("Finished updating cluster assignments")
+
+	c.JSON(http.StatusOK, gin.H{"message": "cluster assignments updated", "errors": errs})
 }
 
 func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
@@ -71,6 +130,19 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 		return
 	}
 
+	// Check if this is a legacy feed name
+	if fg.LegacyFeedNames[feedName] != "" {
+		feedName = fg.LegacyFeedNames[feedName]
+	}
+
+	var cluster *string
+
+	// Check if the feed is a "cluster-{alias}" feed
+	if strings.HasPrefix(feedName, "cluster-") {
+		clusterAlias := strings.TrimPrefix(feedName, "cluster-")
+		cluster = &clusterAlias
+	}
+
 	// Get the limit from the query, default to 50, maximum of 250
 	limit := int32(50)
 	limitQuery := c.Query("limit")
@@ -84,15 +156,31 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	// Get the cursor from the query
 	cursor := c.Query("cursor")
 
-	posts, err := fg.PostRegistry.GetPostsPageForLabel(c.Request.Context(), feedName, limit, cursor)
-	if err != nil {
-		if errors.As(err, &search.NotFoundError{}) {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
+	var posts []*search.Post
+
+	// Get cluster posts if a cluster is specified
+	if cluster != nil {
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForCluster(c.Request.Context(), *cluster, fg.DefaultLookback, limit, cursor)
+		if err != nil {
+			if errors.As(err, &search.NotFoundError{}) {
+				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				return
+			}
 		}
 
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		posts = postsFromRegistry
+	} else { // Otherwise lookup labels
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabel(c.Request.Context(), feedName, fg.DefaultLookback, limit, cursor)
+		if err != nil {
+			if errors.As(err, &search.NotFoundError{}) {
+				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		posts = postsFromRegistry
 	}
 
 	feedItems := make([]FeedPostItem, len(posts))
