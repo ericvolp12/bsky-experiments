@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel
+from PIL import Image
 
 
 class ImageMeta(BaseModel):
@@ -8,6 +9,7 @@ class ImageMeta(BaseModel):
     url: str
     mime_type: str
     created_at: datetime
+    image_pil: Optional[Image.Image] = None
 
 
 class DetectionResult(BaseModel):

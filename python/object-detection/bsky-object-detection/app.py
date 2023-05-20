@@ -102,30 +102,31 @@ images_submitted = Counter("images_submitted", "Number of images submitted")
 async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     images_submitted.inc(len(image_metas))
     image_results: List[ImageResult] = []
+
+    # Grab all the images first and convert them to PIL images
     async with aiohttp.ClientSession() as session:
         for image_meta in image_metas:
             # Download the image from the URL in the payload
             async with session.get(image_meta.url) as resp:
+                image_results.append(ImageResult(meta=image_meta, results=[]))
                 # If the response is not 200, log an error and continue to the next image
                 if resp.status != 200:
                     logging.error(
                         f"Error fetching image from {image_meta.url} - {resp.status}"
                     )
-                    image_results.append(ImageResult(meta=image_meta, results=[]))
                     continue
                 imageData = await resp.read()
                 pilImage = Image.open(io.BytesIO(imageData))
-
-                # Run the object detection model
-                try:
-                    detection_results = detect_objects(pilImage)
-                except Exception as e:
-                    logging.error(f"Error running object detection model: {e}")
-                    image_results.append(ImageResult(meta=image_meta, results=[]))
-                    images_failed.inc()
-                    continue
-                images_processed_successfully.inc()
-                image_results.append(
-                    ImageResult(meta=image_meta, results=detection_results)
-                )
-        return image_results
+                image_meta.image_pil = pilImage
+    for image_meta, idx in enumerate(image_metas):
+        # Run the object detection model
+        try:
+            detection_results = detect_objects(image_meta.image_pil)
+        except Exception as e:
+            logging.error(f"Error running object detection model: {e}")
+            image_results.append(ImageResult(meta=image_meta, results=[]))
+            images_failed.inc()
+            continue
+        images_processed_successfully.inc()
+        image_results[idx].results = detection_results
+    return image_results
