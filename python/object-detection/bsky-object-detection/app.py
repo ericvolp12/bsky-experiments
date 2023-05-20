@@ -118,7 +118,7 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
                 imageData = await resp.read()
                 pilImage = Image.open(io.BytesIO(imageData))
                 image_meta.image_pil = pilImage
-    for image_meta, idx in enumerate(image_metas):
+    for idx, image_meta in enumerate(image_metas):
         # Run the object detection model
         try:
             detection_results = detect_objects(image_meta.image_pil)
