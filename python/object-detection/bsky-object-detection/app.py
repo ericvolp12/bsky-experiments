@@ -44,12 +44,6 @@ for _log in ["uvicorn", "uvicorn.error"]:
 logging.getLogger("uvicorn.access").handlers.clear()
 logging.getLogger("uvicorn.access").propagate = False
 
-images_processed_successfully = Counter(
-    "images_processed_successfully", "Number of images processed successfully"
-)
-images_failed = Counter("images_failed", "Number of images failed")
-images_submitted = Counter("images_submitted", "Number of images submitted")
-
 
 class LoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -96,6 +90,12 @@ Instrumentator().instrument(
 
 # Add logging middleware
 app.add_middleware(LoggingMiddleware)
+
+images_processed_successfully = Counter(
+    "images_processed_successfully", "Number of images processed successfully"
+)
+images_failed = Counter("images_failed", "Number of images failed")
+images_submitted = Counter("images_submitted", "Number of images submitted")
 
 
 @app.post("/detect_objects", response_model=List[ImageResult])
