@@ -47,7 +47,7 @@ def detect_objects(image: Image.Image) -> List[DetectionResult]:
 
         detection_results: List[DetectionResult] = []
 
-        logger.info(f"Detection results: {model_results}")
+        logger.debug(f"Detection results: {model_results}")
 
         for score, label, box in zip(
             model_results["scores"], model_results["labels"], model_results["boxes"]
