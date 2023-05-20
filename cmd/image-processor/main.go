@@ -143,7 +143,7 @@ func main() {
 
 		log.Infow("Finished processing images...",
 			"batch_size", len(unprocessedImages),
-			"successfuly_processed_image_count", successCount,
+			"successfully_processed_image_count", successCount,
 			"processing_time", time.Since(start),
 		)
 		select {
