@@ -120,7 +120,7 @@ async def download_image(
                         "error.message", f"Error fetching image: {resp.status}"
                     )
                     return None
-                span.add_event("Read image data)
+                span.add_event("Read image data")
                 imageData = await resp.read()
                 return Image.open(io.BytesIO(imageData))
 
@@ -137,7 +137,9 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
 
     # Grab all the images first and convert them to PIL images
     async with aiohttp.ClientSession() as session:
-        tasks = [download_image(session, semaphore, image_meta) for image_meta in image_metas]
+        tasks = [
+            download_image(session, semaphore, image_meta) for image_meta in image_metas
+        ]
         pil_images = await asyncio.gather(*tasks)
 
     for idx, image_meta in enumerate(image_metas):
