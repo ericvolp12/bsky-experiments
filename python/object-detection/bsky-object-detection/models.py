@@ -9,6 +9,14 @@ class ImageMeta(BaseModel):
     url: str
     mime_type: str
     created_at: datetime
+    image_pil: Optional[Image.Image] = None
+
+
+class ImageMetaFromRequest(BaseModel):
+    cid: str
+    url: str
+    mime_type: str
+    created_at: datetime
 
 
 class DetectionResult(BaseModel):

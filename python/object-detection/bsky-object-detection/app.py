@@ -18,7 +18,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger import jsonlogger
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .models import ImageMeta, ImageResult
+from .models import ImageMeta, ImageMetaFromRequest, ImageResult
 from .object_detection import detect_objects
 
 # Set up JSON logging
@@ -99,9 +99,13 @@ images_submitted = Counter("images_submitted", "Number of images submitted")
 
 
 @app.post("/detect_objects", response_model=List[ImageResult])
-async def detect_objects_endpoint(image_metas: List[ImageMeta]):
-    images_submitted.inc(len(image_metas))
+async def detect_objects_endpoint(image_metas_from_request: List[ImageMetaFromRequest]):
+    images_submitted.inc(len(image_metas_from_request))
     image_results: List[ImageResult] = []
+
+    image_metas: List[ImageMeta] = [
+        ImageMeta(**image_meta.dict()) for image_meta in image_metas_from_request
+    ]
 
     # Grab all the images first and convert them to PIL images
     async with aiohttp.ClientSession() as session:
