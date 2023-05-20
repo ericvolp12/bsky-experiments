@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 import os
@@ -98,6 +99,32 @@ images_failed = Counter("images_failed", "Number of images failed")
 images_submitted = Counter("images_submitted", "Number of images submitted")
 
 
+# Async function to download an image
+async def download_image(
+    session: aiohttp.ClientSession, semaphore: asyncio.Semaphore, image_meta: ImageMeta
+) -> Image.Image:
+    tracer = trace.get_tracer("bsky-object-detection")
+    with tracer.start_as_current_span("download_image") as span:
+        span.add_event("Wait for semaphore")
+        async with semaphore:
+            span.add_event("Acquired semaphore")
+            span.add_event("Download image")
+            async with session.get(image_meta.url) as resp:
+                # If the response is not 200, log an error and continue to the next image
+                if resp.status != 200:
+                    logging.error(
+                        f"Error fetching image from {image_meta.url} - {resp.status}"
+                    )
+                    span.set_attribute("error", True)
+                    span.set_attribute(
+                        "error.message", f"Error fetching image: {resp.status}"
+                    )
+                    return None
+                span.add_event("Read image data)
+                imageData = await resp.read()
+                return Image.open(io.BytesIO(imageData))
+
+
 @app.post("/detect_objects", response_model=List[ImageResult])
 async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     images_submitted.inc(len(image_metas))
@@ -105,21 +132,14 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
 
     pil_images: List[Optional[Image.Image]] = []
 
+    # Create a semaphore with a limit of 10 concurrent tasks
+    semaphore = asyncio.Semaphore(10)
+
     # Grab all the images first and convert them to PIL images
     async with aiohttp.ClientSession() as session:
-        for image_meta in image_metas:
-            # Download the image from the URL in the payload
-            async with session.get(image_meta.url) as resp:
-                # If the response is not 200, log an error and continue to the next image
-                if resp.status != 200:
-                    logging.error(
-                        f"Error fetching image from {image_meta.url} - {resp.status}"
-                    )
-                    pil_images.append(None)
-                    continue
-                imageData = await resp.read()
-                pilImage = Image.open(io.BytesIO(imageData))
-                pil_images.append(pilImage)
+        tasks = [download_image(session, semaphore, image_meta) for image_meta in image_metas]
+        pil_images = await asyncio.gather(*tasks)
+
     for idx, image_meta in enumerate(image_metas):
         # Run the object detection model
         if pil_images[idx] is None:
