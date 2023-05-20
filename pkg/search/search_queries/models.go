@@ -40,3 +40,8 @@ type Post struct {
 	Sentiment           sql.NullString  `json:"sentiment"`
 	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
 }
+
+type PostLabel struct {
+	PostID string `json:"post_id"`
+	Label  string `json:"label"`
+}

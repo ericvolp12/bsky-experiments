@@ -155,7 +155,7 @@ func main() {
 	p := ginprometheus.NewPrometheus("gin", nil)
 	p.Use(router)
 
-	router.GET("/thread", api.ProcessThreadRequest)
+	router.GET("/xrpc/app.bsky.feed.getFeedSkeleton", feedGenerator.GetFeedSkeleton)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -185,7 +185,7 @@ func newTraceProvider(exp sdktrace.SpanExporter) *sdktrace.TracerProvider {
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceName("BSkySearchAPI"),
+			semconv.ServiceName("BSky-Feed-Generator-Go"),
 		),
 	)
 

@@ -139,6 +139,22 @@ func main() {
 				log.Errorf("Failed to update image: %v", err)
 				continue
 			}
+
+			imageLabels := []string{}
+			for _, class := range result.Results {
+				if class.Confidence >= 0.65 {
+					imageLabels = append(imageLabels, class.Label)
+				}
+			}
+
+			for _, label := range imageLabels {
+				postLabel := fmt.Sprintf("%s:%s", "cv", label)
+				err = postRegistry.AddPostLabel(ctx, unprocessedImages[idx].PostID, postLabel)
+				if err != nil {
+					log.Errorf("Failed to add label to post: %v", err)
+					continue
+				}
+			}
 		}
 
 		log.Infow("Finished processing images...",

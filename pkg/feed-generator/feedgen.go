@@ -2,6 +2,7 @@ package feedgenerator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,6 +17,15 @@ type FeedGenerator struct {
 	PostRegistry   *search.PostRegistry
 	Client         *xrpc.Client
 	ClusterManager *clusters.ClusterManager
+}
+
+type FeedPostItem struct {
+	Post string `json:"post"`
+}
+
+type FeedSkeleton struct {
+	Feed   []FeedPostItem `json:"feed"`
+	Cursor *string        `json:"cursor,omitempty"`
 }
 
 // NewFeedGenerator returns a new FeedGenerator
@@ -62,10 +72,10 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	}
 
 	// Get the limit from the query, default to 50, maximum of 250
-	limit := 50
+	limit := int32(50)
 	limitQuery := c.Query("limit")
 	if limitQuery != "" {
-		limit = c.GetInt("limit")
+		limit = int32(c.GetInt("limit"))
 		if limit > 250 {
 			limit = 250
 		}
@@ -74,4 +84,30 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	// Get the cursor from the query
 	cursor := c.Query("cursor")
 
+	posts, err := fg.PostRegistry.GetPostsPageForLabel(c.Request.Context(), feedName, limit, cursor)
+	if err != nil {
+		if errors.As(err, &search.NotFoundError{}) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	feedItems := make([]FeedPostItem, len(posts))
+	for i, post := range posts {
+		postAtURL := fmt.Sprintf("at://%s/app.bsky.feed.post/%s", post.AuthorDID, post.ID)
+		feedItems[i] = FeedPostItem{Post: postAtURL}
+	}
+
+	feedSkeleton := FeedSkeleton{
+		Feed: feedItems,
+	}
+
+	if len(posts) > 0 {
+		feedSkeleton.Cursor = &posts[len(posts)-1].ID
+	}
+
+	c.JSON(http.StatusOK, feedSkeleton)
 }

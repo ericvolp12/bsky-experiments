@@ -171,7 +171,7 @@ func (pr *PostRegistry) initializeDB() error {
 }
 
 func (pr *PostRegistry) AddPost(ctx context.Context, post *Post) error {
-	tracer := otel.Tracer("graph-builder")
+	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AddPost")
 	defer span.End()
 
@@ -481,7 +481,7 @@ func (pr *PostRegistry) GetUnprocessedImages(ctx context.Context, limit int32) (
 }
 
 func (pr *PostRegistry) AddAuthor(ctx context.Context, author *Author) error {
-	tracer := otel.Tracer("graph-builder")
+	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AddAuthor")
 	defer span.End()
 
@@ -492,8 +492,82 @@ func (pr *PostRegistry) AddAuthor(ctx context.Context, author *Author) error {
 	return err
 }
 
+func (pr *PostRegistry) AddPostLabel(ctx context.Context, postID string, label string) error {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:AddPostLabel")
+	defer span.End()
+
+	err := pr.queries.AddPostLabel(ctx, search_queries.AddPostLabelParams{
+		PostID: postID,
+		Label:  label,
+	})
+	return err
+}
+
+func (pr *PostRegistry) GetPostsPageForLabel(ctx context.Context, label string, limit int32, cursor string) ([]*Post, error) {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetPostsPageForLabel")
+	defer span.End()
+
+	posts, err := pr.queries.GetPostsPageWithLabel(ctx, search_queries.GetPostsPageWithLabelParams{
+		Label:  label,
+		Limit:  limit,
+		Cursor: cursor,
+	})
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, NotFoundError{fmt.Errorf("posts not found")}
+		}
+		return nil, err
+	}
+
+	retPosts := make([]*Post, len(posts))
+	for i, p := range posts {
+		var parentPostIDPtr *string
+		if p.ParentPostID.Valid {
+			parentPostIDPtr = &p.ParentPostID.String
+		}
+
+		var rootPostIDPtr *string
+		if p.RootPostID.Valid {
+			rootPostIDPtr = &p.RootPostID.String
+		}
+
+		var parentRelationshipPtr *string
+		if p.ParentRelationship.Valid {
+			parentRelationshipPtr = &p.ParentRelationship.String
+		}
+
+		var sentiment *string
+		if p.Sentiment.Valid {
+			sentiment = &p.Sentiment.String
+		}
+
+		var sentimentConfidence *float64
+		if p.SentimentConfidence.Valid {
+			sentimentConfidence = &p.SentimentConfidence.Float64
+		}
+
+		retPosts[i] = &Post{
+			ID:                  p.ID,
+			Text:                p.Text,
+			ParentPostID:        parentPostIDPtr,
+			RootPostID:          rootPostIDPtr,
+			AuthorDID:           p.AuthorDid,
+			CreatedAt:           p.CreatedAt,
+			HasEmbeddedMedia:    p.HasEmbeddedMedia,
+			ParentRelationship:  parentRelationshipPtr,
+			Sentiment:           sentiment,
+			SentimentConfidence: sentimentConfidence,
+		}
+
+	}
+
+	return retPosts, nil
+}
+
 func (pr *PostRegistry) GetPost(ctx context.Context, postID string) (*Post, error) {
-	tracer := otel.Tracer("graph-builder")
+	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetPost")
 	defer span.End()
 	post, err := pr.queries.GetPost(ctx, postID)
@@ -510,7 +584,7 @@ func (pr *PostRegistry) GetPost(ctx context.Context, postID string) (*Post, erro
 }
 
 func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error) {
-	tracer := otel.Tracer("graph-builder")
+	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetAuthorStats")
 	defer span.End()
 	authorStats, err := pr.queries.GetAuthorStats(ctx)
@@ -581,7 +655,7 @@ func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error
 }
 
 func (pr *PostRegistry) GetTopPosters(ctx context.Context, count int32) ([]search_queries.GetTopPostersRow, error) {
-	tracer := otel.Tracer("search")
+	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetTopPosters")
 	defer span.End()
 
@@ -594,7 +668,7 @@ func (pr *PostRegistry) GetTopPosters(ctx context.Context, count int32) ([]searc
 }
 
 func (pr *PostRegistry) GetAuthor(ctx context.Context, did string) (*Author, error) {
-	tracer := otel.Tracer("graph-builder")
+	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetAuthor")
 	defer span.End()
 	author, err := pr.queries.GetAuthor(ctx, did)
@@ -608,7 +682,7 @@ func (pr *PostRegistry) GetAuthor(ctx context.Context, did string) (*Author, err
 }
 
 func (pr *PostRegistry) GetAuthorsByHandle(ctx context.Context, handle string) ([]*Author, error) {
-	tracer := otel.Tracer("graph-builder")
+	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetAuthorsByHandle")
 	defer span.End()
 
@@ -629,7 +703,7 @@ func (pr *PostRegistry) GetAuthorsByHandle(ctx context.Context, handle string) (
 }
 
 func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID string) ([]PostView, error) {
-	tracer := otel.Tracer("graph-builder")
+	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetThreadView")
 	defer span.End()
 	threadViews, err := pr.queries.GetThreadView(ctx, search_queries.GetThreadViewParams{ID: postID, AuthorDid: authorID})
@@ -687,7 +761,7 @@ func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID stri
 }
 
 func (pr *PostRegistry) GetOldestPresentParent(ctx context.Context, postID string) (*Post, error) {
-	tracer := otel.Tracer("graph-builder")
+	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetOldestPresentParent")
 	defer span.End()
 	postView, err := pr.queries.GetOldestPresentParent(ctx, postID)

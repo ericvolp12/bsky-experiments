@@ -31,6 +31,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addPostStmt, err = db.PrepareContext(ctx, addPost); err != nil {
 		return nil, fmt.Errorf("error preparing query AddPost: %w", err)
 	}
+	if q.addPostLabelStmt, err = db.PrepareContext(ctx, addPostLabel); err != nil {
+		return nil, fmt.Errorf("error preparing query AddPostLabel: %w", err)
+	}
 	if q.getAuthorStmt, err = db.PrepareContext(ctx, getAuthor); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuthor: %w", err)
 	}
@@ -54,6 +57,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getPostStmt, err = db.PrepareContext(ctx, getPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPost: %w", err)
+	}
+	if q.getPostsPageWithLabelStmt, err = db.PrepareContext(ctx, getPostsPageWithLabel); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsPageWithLabel: %w", err)
 	}
 	if q.getThreadViewStmt, err = db.PrepareContext(ctx, getThreadView); err != nil {
 		return nil, fmt.Errorf("error preparing query GetThreadView: %w", err)
@@ -85,6 +91,11 @@ func (q *Queries) Close() error {
 	if q.addPostStmt != nil {
 		if cerr := q.addPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addPostStmt: %w", cerr)
+		}
+	}
+	if q.addPostLabelStmt != nil {
+		if cerr := q.addPostLabelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addPostLabelStmt: %w", cerr)
 		}
 	}
 	if q.getAuthorStmt != nil {
@@ -125,6 +136,11 @@ func (q *Queries) Close() error {
 	if q.getPostStmt != nil {
 		if cerr := q.getPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostStmt: %w", cerr)
+		}
+	}
+	if q.getPostsPageWithLabelStmt != nil {
+		if cerr := q.getPostsPageWithLabelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsPageWithLabelStmt: %w", cerr)
 		}
 	}
 	if q.getThreadViewStmt != nil {
@@ -189,6 +205,7 @@ type Queries struct {
 	addAuthorStmt              *sql.Stmt
 	addImageStmt               *sql.Stmt
 	addPostStmt                *sql.Stmt
+	addPostLabelStmt           *sql.Stmt
 	getAuthorStmt              *sql.Stmt
 	getAuthorStatsStmt         *sql.Stmt
 	getAuthorsByHandleStmt     *sql.Stmt
@@ -197,6 +214,7 @@ type Queries struct {
 	getImagesForPostStmt       *sql.Stmt
 	getOldestPresentParentStmt *sql.Stmt
 	getPostStmt                *sql.Stmt
+	getPostsPageWithLabelStmt  *sql.Stmt
 	getThreadViewStmt          *sql.Stmt
 	getTopPostersStmt          *sql.Stmt
 	getUnprocessedImagesStmt   *sql.Stmt
@@ -210,6 +228,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addAuthorStmt:              q.addAuthorStmt,
 		addImageStmt:               q.addImageStmt,
 		addPostStmt:                q.addPostStmt,
+		addPostLabelStmt:           q.addPostLabelStmt,
 		getAuthorStmt:              q.getAuthorStmt,
 		getAuthorStatsStmt:         q.getAuthorStatsStmt,
 		getAuthorsByHandleStmt:     q.getAuthorsByHandleStmt,
@@ -218,6 +237,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getImagesForPostStmt:       q.getImagesForPostStmt,
 		getOldestPresentParentStmt: q.getOldestPresentParentStmt,
 		getPostStmt:                q.getPostStmt,
+		getPostsPageWithLabelStmt:  q.getPostsPageWithLabelStmt,
 		getThreadViewStmt:          q.getThreadViewStmt,
 		getTopPostersStmt:          q.getTopPostersStmt,
 		getUnprocessedImagesStmt:   q.getUnprocessedImagesStmt,

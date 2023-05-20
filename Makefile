@@ -89,9 +89,18 @@ image-processor-up:
 	@echo "Starting Image Processor..."
 	docker-compose -f build/image-processor/docker-compose.yml up --build -d
 
+# Build the Feedgen Go binary
+build-feedgen-go:
+	@echo "Building Feed Generator Go binary..."
+	$(GO_CMD) build -o feedgen cmd/feed-generator/*.go
+
+feedgen-go-up:
+	@echo "Starting Go Feed Generator..."
+	docker-compose -f build/feedgen-go/docker-compose.yml up --build -d
+
 # Generate SQLC Code
 sqlc:
 	@echo "Generating SQLC code..."
 	sqlc generate -f pkg/search/sqlc.yaml
 
-.PHONY: build-graph-builder docker-build-graph-builder build-search docker-build-search sqlc graph-builder-up search-up graph-builder-restart search-restart
+.PHONY: build-graph-builder docker-build-graph-builder build-search docker-build-search sqlc graph-builder-up search-up graph-builder-restart search-restart layout-up ts-layout-up sentiment-up sentiment-gpu-up feedgen-up object-detection-up object-detection-gpu-up build-image-processor image-processor-up build-feedgen-go feedgen-go-up
