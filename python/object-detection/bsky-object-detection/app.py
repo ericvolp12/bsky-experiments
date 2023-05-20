@@ -130,8 +130,6 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     images_submitted.inc(len(image_metas))
     image_results: List[ImageResult] = []
 
-    pil_images: List[Optional[Image.Image]] = []
-
     # Create a semaphore with a limit of 10 concurrent tasks
     semaphore = asyncio.Semaphore(10)
 
@@ -142,19 +140,34 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
         ]
         pil_images = await asyncio.gather(*tasks)
 
-    for idx, image_meta in enumerate(image_metas):
-        # Run the object detection model
-        if pil_images[idx] is None:
-            image_results.append(ImageResult(meta=image_meta, results=[]))
-            images_failed.inc()
-            continue
+    # Separate successfully downloaded images and failed ones
+    successful_images = [img for img in pil_images if img is not None]
+    failed_indices = [i for i, img in enumerate(pil_images) if img is None]
+
+    # Run the object detection model on successful images
+    all_batch_detection_results = []
+    for i in range(0, len(successful_images), 10):
+        image_batch = successful_images[i : i + 10]
         try:
-            detection_results = detect_objects(pil_images[idx])
+            batch_detection_results = detect_objects(image_batch)
         except Exception as e:
             logging.error(f"Error running object detection model: {e}")
+            batch_detection_results = [[] for _ in image_batch]  # Create empty results
+        all_batch_detection_results.extend(batch_detection_results)
+
+    # Populate the image results
+    succ_idx = 0
+    for idx, image_meta in enumerate(image_metas):
+        if idx in failed_indices:
             image_results.append(ImageResult(meta=image_meta, results=[]))
             images_failed.inc()
-            continue
-        images_processed_successfully.inc()
-        image_results.append(ImageResult(meta=image_meta, results=detection_results))
+        else:
+            image_results.append(
+                ImageResult(
+                    meta=image_meta, results=all_batch_detection_results[succ_idx]
+                )
+            )
+            succ_idx += 1
+            images_processed_successfully.inc()
+
     return image_results
