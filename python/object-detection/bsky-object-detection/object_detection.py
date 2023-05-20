@@ -29,7 +29,7 @@ def detect_objects(image: Image.Image) -> List[DetectionResult]:
 
         inputs = processor(images=[image], return_tensors="pt").to(device)
         with tracer.start_as_current_span("model_inference"):
-            outputs = model(**inputs).cpu()
+            outputs = model(**inputs)
 
         # convert outputs (bounding boxes and class logits) to COCO API
         # let's only keep detections with score > 0.75
