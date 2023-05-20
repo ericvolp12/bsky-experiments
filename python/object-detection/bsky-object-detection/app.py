@@ -2,7 +2,7 @@ import io
 import logging
 import os
 from time import time
-from typing import List
+from typing import List, Optional
 
 import aiohttp
 from fastapi import FastAPI, Request
@@ -99,38 +99,40 @@ images_submitted = Counter("images_submitted", "Number of images submitted")
 
 
 @app.post("/detect_objects", response_model=List[ImageResult])
-async def detect_objects_endpoint(image_metas_from_request: List[ImageMetaFromRequest]):
-    images_submitted.inc(len(image_metas_from_request))
+async def detect_objects_endpoint(image_metas: List[ImageMeta]):
+    images_submitted.inc(len(image_metas))
     image_results: List[ImageResult] = []
 
-    image_metas: List[ImageMeta] = [
-        ImageMeta(**image_meta.dict()) for image_meta in image_metas_from_request
-    ]
+    pil_images: List[Optional[Image.Image]] = []
 
     # Grab all the images first and convert them to PIL images
     async with aiohttp.ClientSession() as session:
         for image_meta in image_metas:
             # Download the image from the URL in the payload
             async with session.get(image_meta.url) as resp:
-                image_results.append(ImageResult(meta=image_meta, results=[]))
                 # If the response is not 200, log an error and continue to the next image
                 if resp.status != 200:
                     logging.error(
                         f"Error fetching image from {image_meta.url} - {resp.status}"
                     )
+                    pil_images.append(None)
                     continue
                 imageData = await resp.read()
                 pilImage = Image.open(io.BytesIO(imageData))
-                image_meta._image_pil = pilImage
+                pil_images.append(pilImage)
     for idx, image_meta in enumerate(image_metas):
         # Run the object detection model
+        if pil_images[idx] is None:
+            image_results.append(ImageResult(meta=image_meta, results=[]))
+            images_failed.inc()
+            continue
         try:
-            detection_results = detect_objects(image_meta._image_pil)
+            detection_results = detect_objects(pil_images[idx])
         except Exception as e:
             logging.error(f"Error running object detection model: {e}")
             image_results.append(ImageResult(meta=image_meta, results=[]))
             images_failed.inc()
             continue
         images_processed_successfully.inc()
-        image_results[idx].results = detection_results
+        image_results.append(ImageResult(meta=image_meta, results=detection_results))
     return image_results

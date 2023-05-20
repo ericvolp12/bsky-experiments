@@ -1,18 +1,9 @@
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel
-from PIL import Image
 
 
 class ImageMeta(BaseModel):
-    cid: str
-    url: str
-    mime_type: str
-    created_at: datetime
-    _image_pil: Optional[Image.Image] = None
-
-
-class ImageMetaFromRequest(BaseModel):
     cid: str
     url: str
     mime_type: str
