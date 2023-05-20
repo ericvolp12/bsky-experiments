@@ -22,39 +22,43 @@ model = DetrForObjectDetection.from_pretrained(MODEL).to(device)
 model.save_pretrained(f"{os.getcwd()}/{MODEL}")
 
 
-def detect_objects(image: Image.Image) -> List[DetectionResult]:
+def detect_objects(images: List[Image.Image]) -> List[List[DetectionResult]]:
     tracer = trace.get_tracer("bsky-object-detection")
     with tracer.start_as_current_span("detect_objects") as span:
         start = time.time()
 
-        inputs = processor(images=[image], return_tensors="pt").to(device)
+        inputs = processor(images=images, return_tensors="pt").to(device)
         with tracer.start_as_current_span("model_inference"):
             outputs = model(**inputs)
 
         # convert outputs (bounding boxes and class logits) to COCO API
         # let's only keep detections with score > 0.5
-        target_sizes = torch.tensor([image.size[::-1]])
+        target_sizes = torch.tensor([img.size[::-1] for img in images])
         model_results = processor.post_process_object_detection(
             outputs, target_sizes=target_sizes, threshold=0.5
-        )[0]
+        )
 
         processing_time = time.time() - start
         span.set_attribute("processing_time", processing_time)
 
-        detection_results: List[DetectionResult] = []
+        batch_detection_results: List[List[DetectionResult]] = []
 
-        logger.debug(f"Detection results: {model_results}")
+        for idx, result in enumerate(model_results):
+            detection_results: List[DetectionResult] = []
+            logger.debug(f"Detection results: {result}")
 
-        for score, label, box in zip(
-            model_results["scores"], model_results["labels"], model_results["boxes"]
-        ):
-            box = [round(i, 2) for i in box.tolist()]
-            detection_results.append(
-                DetectionResult(
-                    label=model.config.id2label[label.item()],
-                    confidence=round(score.item(), 5),
-                    box=box,
+            for score, label, box in zip(
+                result["scores"], result["labels"], result["boxes"]
+            ):
+                box = [round(i, 2) for i in box.tolist()]
+                detection_results.append(
+                    DetectionResult(
+                        label=model.config.id2label[label.item()],
+                        confidence=round(score.item(), 5),
+                        box=box,
+                    )
                 )
-            )
 
-        return detection_results
+            batch_detection_results.append(detection_results)
+
+        return batch_detection_results
