@@ -4,7 +4,7 @@ import { AppContext } from './config'
 import { ClusterMap } from './util/clusters'
 import { validateAuth } from './auth'
 
-const availableFeeds = ['hellthread', 'positivifeed', 'cluster']
+const availableFeeds = ['hellthread', 'positivifeed', 'cluster', 'images-cat']
 
 export default function (server: Server, ctx: AppContext) {
   server.app.bsky.feed.getFeedSkeleton(async ({ params, req }) => {

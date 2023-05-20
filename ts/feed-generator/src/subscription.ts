@@ -21,36 +21,38 @@ async function getClusterAssignmentForDID(did: string) {
   return res.data
 }
 
-async function shouldIncludePost(create: any): Promise<boolean> {
-  // lookup post ID at https://bsky-search.jazco.io/post?id={}
-  // Wait for 1 second to make sure the post is indexed
-  const postID = create.uri.split('/').pop()
-  if (postID === undefined) {
-    return false
-  }
+interface CVClass {
+  box: number[]
+  label: string
+  confidence: number
+}
 
-  await new Promise((resolve) => setTimeout(resolve, 1000))
+interface Image {
+  cid: string
+  post_id: string
+  author_did: string
+  alt_text?: string
+  mime_type: string
+  fullsize_url: string
+  thumbnail_url: string
+  created_at: string // or Date if you prefer
+  cv_completed: boolean
+  cv_run_at?: string // or Date if you prefer
+  cv_classes?: CVClass[]
+}
 
-  try {
-    const post = await fetchPost(postID)
-    if (
-      post !== null &&
-      post.sentiment !== null &&
-      post.sentiment !== undefined &&
-      post.sentiment_confidence !== null &&
-      post.sentiment_confidence !== undefined
-    ) {
-      if (post.sentiment.includes('p') && post.sentiment_confidence > 0.65) {
-        console.log(`Including post: ${create.uri}`)
-        return true
-      }
-    }
-  } catch (e) {
-    console.log(
-      `Error fetching post ${create.uri}: ${e.response.status} - ${e?.response.data?.error}`,
-    )
-  }
-  return false
+interface Post {
+  id: string
+  text: string
+  parent_post_id?: string
+  root_post_id?: string
+  author_did: string
+  created_at: string // or Date if you prefer
+  has_embedded_media: boolean
+  parent_relationship?: string // 'r' or 'q' or null
+  sentiment?: string
+  sentiment_confidence?: number
+  images?: Image[]
 }
 
 export class FirehoseSubscription extends FirehoseSubscriptionBase {
@@ -67,87 +69,161 @@ export class FirehoseSubscription extends FirehoseSubscriptionBase {
 
     const postsToDelete = ops.posts.deletes.map((del) => del.uri)
 
-    const positiveFilterMask = await Promise.all(
-      ops.posts.creates.map((create) => shouldIncludePost(create)),
+    const enrichedPosts = await Promise.all(
+      ops.posts.creates.map(async (create) => {
+        let post: Post
+        try {
+          // Wait for 2.5 seconds to allow images to be processed
+          await new Promise((resolve) => setTimeout(resolve, 2500))
+          post = await fetchPost(create.uri.split('/').pop()!)
+        } catch (e) {
+          console.log(
+            `Error fetching post ${create.uri}: ${e.response.status} - ${e?.response.data?.error}`,
+          )
+          return undefined
+        }
+        try {
+          const cluster_assignment = await getClusterAssignmentForDID(
+            post.author_did,
+          )
+
+          return {
+            ...create,
+            post,
+            cluster: cluster_assignment.cluster_id,
+          }
+        } catch (e) {
+          console.log(
+            `Error fetching cluster assignment for ${post.author_did}: ${e.response.status} - ${e?.response.data?.error}`,
+          )
+          return {
+            ...create,
+            cluster: undefined,
+            post,
+          }
+        }
+      }),
     )
 
-    const positivePosts = ops.posts.creates.filter(
-      (_, i) => positiveFilterMask[i],
-    )
+    const positivePosts = enrichedPosts.filter((create) => {
+      if (create === undefined) {
+        return false
+      }
 
-    const hellthreadPosts = ops.posts.creates.filter(
+      const post = create.post as Post
+      return (
+        post.sentiment?.includes('p') &&
+        post.sentiment_confidence !== undefined &&
+        post?.sentiment_confidence > 0.65
+      )
+    })
+
+    const hellthreadPosts = enrichedPosts.filter(
       (create) =>
+        create !== undefined &&
         create.record.reply?.root.uri?.split('/').pop() === '3juzlwllznd24',
     )
 
-    const clusterAssignments = await Promise.all(
-      ops.posts.creates.map(async (create) => {
-        try {
-          const clusterAssignment = await getClusterAssignmentForDID(
-            create.author,
-          )
-          return clusterAssignment
-        } catch (e) {
-          if (e.response.status === 404) {
-            return undefined
-          }
-          console.log(
-            `Error fetching cluster assignment for ${create.author}: ${e.response.status} - ${e?.response.data?.error}`,
-          )
-        }
-      }),
-    )
-
-    const clusterEnrichedPosts = ops.posts.creates
-      .map((create, i) => {
-        if (clusterAssignments[i] === undefined) {
-          return {
-            ...create,
-            cluster: null,
-          }
-        }
-        return {
-          ...create,
-          cluster: clusterAssignments[i].cluster_id,
-        }
-      })
-      .filter((create) => create.cluster !== null)
-
-    const postsToCreate = positivePosts.map((create) => {
-      return {
-        uri: create.uri,
-        cid: create.cid,
-        replyParent: create.record?.reply?.parent.uri ?? null,
-        replyRoot: create.record?.reply?.root.uri ?? null,
-        feed: 'positivifeed',
-        indexedAt: new Date().toISOString(),
-      }
-    })
+    const postsToCreate: any = []
 
     postsToCreate.push(
-      ...hellthreadPosts.map((create) => {
-        return {
-          uri: create.uri,
-          cid: create.cid,
-          replyParent: create.record?.reply?.parent.uri ?? null,
-          replyRoot: create.record?.reply?.root.uri ?? null,
-          feed: 'hellthread',
-          indexedAt: new Date().toISOString(),
+      ...positivePosts.reduce((acc, create) => {
+        if (create === undefined) {
+          return acc
         }
-      }),
+        return [
+          ...acc,
+          {
+            uri: create.uri,
+            cid: create.cid,
+            replyParent: create.record?.reply?.parent.uri ?? null,
+            replyRoot: create.record?.reply?.root.uri ?? null,
+            feed: 'positivifeed',
+            indexedAt: new Date().toISOString(),
+          },
+        ]
+      }, []),
     )
 
     postsToCreate.push(
-      ...clusterEnrichedPosts.map((create) => {
-        return {
-          uri: create.uri,
-          cid: create.cid,
-          replyParent: create.record?.reply?.parent.uri ?? null,
-          replyRoot: create.record?.reply?.root.uri ?? null,
-          feed: `cluster-${create.cluster}`,
-          indexedAt: new Date().toISOString(),
+      ...hellthreadPosts.reduce((acc, create) => {
+        if (create === undefined) {
+          return acc
         }
-      }),
+        return [
+          ...acc,
+          {
+            uri: create.uri,
+            cid: create.cid,
+            replyParent: create.record?.reply?.parent.uri ?? null,
+            replyRoot: create.record?.reply?.root.uri ?? null,
+            feed: 'hellthread',
+            indexedAt: new Date().toISOString(),
+          },
+        ]
+      }, []),
+    )
+
+    postsToCreate.push(
+      ...enrichedPosts.reduce((acc, create) => {
+        if (create === undefined) {
+          return acc
+        }
+        if (create.cluster) {
+          return [
+            ...acc,
+            {
+              uri: create.uri,
+              cid: create.cid,
+              replyParent: create.record?.reply?.parent.uri ?? null,
+              replyRoot: create.record?.reply?.root.uri ?? null,
+              feed: `cluster-${create.cluster}`,
+              indexedAt: new Date().toISOString(),
+            },
+          ]
+        }
+        return acc
+      }, []),
+    )
+
+    // Add cat image posts
+    postsToCreate.push(
+      ...enrichedPosts.reduce((acc, create) => {
+        if (create === undefined) {
+          return acc
+        }
+        if (create.post.author_did === 'did:plc:o7eggiasag3efvoc3o7qo3i3') {
+          console.log(JSON.stringify(create.post, null, 2))
+        }
+        if (create.post.images !== undefined && create.post.images.length > 0) {
+          let hasCat = false
+          for (const image of create.post.images) {
+            if (image.cv_classes !== undefined) {
+              for (const cv_class of image.cv_classes) {
+                if (cv_class.label === 'cat' && cv_class.confidence > 0.5) {
+                  hasCat = true
+                  break
+                }
+              }
+            }
+          }
+          if (hasCat) {
+            console.log(`Found cat image post: ${create.uri}`)
+            return [
+              ...acc,
+              {
+                uri: create.uri,
+                cid: create.cid,
+                replyParent: create.record?.reply?.parent.uri ?? null,
+                replyRoot: create.record?.reply?.root.uri ?? null,
+                feed: 'images-cat',
+                indexedAt: new Date().toISOString(),
+              },
+            ]
+          }
+        }
+        return acc
+      }, []),
     )
 
     if (postsToDelete.length > 0) {
