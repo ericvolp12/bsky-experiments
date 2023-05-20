@@ -98,18 +98,23 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
         for image_meta in image_metas:
             # Download the image from the URL in the payload
             async with session.get(image_meta.url) as resp:
+                # If the response is not 200, log an error and continue to the next image
                 if resp.status != 200:
                     logging.error(
                         f"Error fetching image from {image_meta.url} - {resp.status}"
                     )
-                    raise Exception(
-                        f"Error fetching image from {image_meta.url} - {resp.status}"
-                    )
+                    image_results.append(ImageResult(meta=image_meta, results=[]))
+                    continue
                 imageData = await resp.read()
                 pilImage = Image.open(io.BytesIO(imageData))
 
                 # Run the object detection model
-                detection_results = detect_objects(pilImage)
+                try:
+                    detection_results = detect_objects(pilImage)
+                except Exception as e:
+                    logging.error(f"Error running object detection model: {e}")
+                    image_results.append(ImageResult(meta=image_meta, results=[]))
+                    continue
                 image_results.append(
                     ImageResult(meta=image_meta, results=detection_results)
                 )
