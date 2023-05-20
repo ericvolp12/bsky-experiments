@@ -117,7 +117,7 @@ func main() {
 
 		successCount := 0
 
-		for _, result := range results {
+		for idx, result := range results {
 			if len(result.Results) > 0 {
 				successCount++
 			}
@@ -128,7 +128,13 @@ func main() {
 				continue
 			}
 
-			err = postRegistry.AddCVDataToImage(ctx, result.Meta.CID, executionTime, cvClasses)
+			err = postRegistry.AddCVDataToImage(
+				ctx,
+				result.Meta.CID,
+				unprocessedImages[idx].PostID,
+				executionTime,
+				cvClasses,
+			)
 			if err != nil {
 				log.Errorf("Failed to update image: %v", err)
 				continue

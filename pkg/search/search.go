@@ -287,12 +287,15 @@ func (pr *PostRegistry) AddImage(ctx context.Context, image *Image) error {
 	return err
 }
 
-func (pr *PostRegistry) AddCVDataToImage(ctx context.Context, cid string, cvRunAt time.Time, cvClasses json.RawMessage) error {
+func (pr *PostRegistry) AddCVDataToImage(ctx context.Context, cid string, postID string, cvRunAt time.Time, cvClasses json.RawMessage) error {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AddCVDataToImage")
 	defer span.End()
 
-	image, err := pr.queries.GetImage(ctx, cid)
+	image, err := pr.queries.GetImage(ctx, search_queries.GetImageParams{
+		Cid:    cid,
+		PostID: postID,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to get image for update: %w", err)
 	}
@@ -324,12 +327,15 @@ func (pr *PostRegistry) AddCVDataToImage(ctx context.Context, cid string, cvRunA
 	return err
 }
 
-func (pr *PostRegistry) GetImage(ctx context.Context, imageCID string) (*Image, error) {
+func (pr *PostRegistry) GetImage(ctx context.Context, imageCID string, postID string) (*Image, error) {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetImage")
 	defer span.End()
 
-	image, err := pr.queries.GetImage(ctx, imageCID)
+	image, err := pr.queries.GetImage(ctx, search_queries.GetImageParams{
+		Cid:    imageCID,
+		PostID: postID,
+	})
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, NotFoundError{fmt.Errorf("image not found")}

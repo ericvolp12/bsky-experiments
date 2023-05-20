@@ -10,11 +10,16 @@ import (
 const getImage = `-- name: GetImage :one
 SELECT cid, post_id, author_did, alt_text, mime_type, fullsize_url, thumbnail_url, created_at, cv_completed, cv_run_at, cv_classes
 FROM images
-WHERE cid = $1
+WHERE cid = $1 AND post_id = $2
 `
 
-func (q *Queries) GetImage(ctx context.Context, cid string) (Image, error) {
-	row := q.queryRow(ctx, q.getImageStmt, getImage, cid)
+type GetImageParams struct {
+	Cid    string `json:"cid"`
+	PostID string `json:"post_id"`
+}
+
+func (q *Queries) GetImage(ctx context.Context, arg GetImageParams) (Image, error) {
+	row := q.queryRow(ctx, q.getImageStmt, getImage, arg.Cid, arg.PostID)
 	var i Image
 	err := row.Scan(
 		&i.Cid,
