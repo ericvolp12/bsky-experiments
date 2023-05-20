@@ -9,7 +9,7 @@ class ImageMeta(BaseModel):
     url: str
     mime_type: str
     created_at: datetime
-    image_pil: Optional[Image.Image] = None
+    _image_pil: Optional[Image.Image] = None
 
 
 class ImageMetaFromRequest(BaseModel):

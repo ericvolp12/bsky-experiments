@@ -121,11 +121,11 @@ async def detect_objects_endpoint(image_metas_from_request: List[ImageMetaFromRe
                     continue
                 imageData = await resp.read()
                 pilImage = Image.open(io.BytesIO(imageData))
-                image_meta.image_pil = pilImage
+                image_meta._image_pil = pilImage
     for idx, image_meta in enumerate(image_metas):
         # Run the object detection model
         try:
-            detection_results = detect_objects(image_meta.image_pil)
+            detection_results = detect_objects(image_meta._image_pil)
         except Exception as e:
             logging.error(f"Error running object detection model: {e}")
             image_results.append(ImageResult(meta=image_meta, results=[]))
