@@ -13,6 +13,7 @@ from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from PIL import Image
+from prometheus_client import Counter
 from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger import jsonlogger
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -42,6 +43,12 @@ for _log in ["uvicorn", "uvicorn.error"]:
 # a logger higher up in the hierarchy (effectively rendering them silent).
 logging.getLogger("uvicorn.access").handlers.clear()
 logging.getLogger("uvicorn.access").propagate = False
+
+images_processed_successfully = Counter(
+    "images_processed_successfully", "Number of images processed successfully"
+)
+images_failed = Counter("images_failed", "Number of images failed")
+images_submitted = Counter("images_submitted", "Number of images submitted")
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):
@@ -93,6 +100,7 @@ app.add_middleware(LoggingMiddleware)
 
 @app.post("/detect_objects", response_model=List[ImageResult])
 async def detect_objects_endpoint(image_metas: List[ImageMeta]):
+    images_submitted.inc(len(image_metas))
     image_results: List[ImageResult] = []
     async with aiohttp.ClientSession() as session:
         for image_meta in image_metas:
@@ -114,7 +122,9 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
                 except Exception as e:
                     logging.error(f"Error running object detection model: {e}")
                     image_results.append(ImageResult(meta=image_meta, results=[]))
+                    images_failed.inc()
                     continue
+                images_processed_successfully.inc()
                 image_results.append(
                     ImageResult(meta=image_meta, results=detection_results)
                 )

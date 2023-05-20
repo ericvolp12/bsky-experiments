@@ -87,54 +87,67 @@ func main() {
 	ticker := time.NewTicker(10 * time.Second)
 
 	for {
+		log.Info("Processing images...")
+		start := time.Now()
+		unprocessedImages, err := postRegistry.GetUnprocessedImages(ctx, 50)
+		if err != nil {
+			if errors.As(err, &search.NotFoundError{}) {
+				log.Info("No unprocessed images found, skipping process cycle...")
+				continue
+			}
+			log.Errorf("Failed to get unprocessed images, skipping process cycle: %v", err)
+			continue
+		}
+
+		imageMetas := make([]*objectdetection.ImageMeta, len(unprocessedImages))
+		for i, image := range unprocessedImages {
+			imageMetas[i] = &objectdetection.ImageMeta{
+				CID:       image.CID,
+				URL:       image.FullsizeURL,
+				MimeType:  image.MimeType,
+				CreatedAt: image.CreatedAt,
+			}
+		}
+
+		results, err := detection.ProcessImages(ctx, imageMetas)
+		if err != nil {
+			log.Errorf("Failed to process images: %v", err)
+			continue
+		}
+
+		executionTime := time.Now()
+
+		successCount := 0
+
+		for _, result := range results {
+			if len(result.Results) > 0 {
+				successCount++
+			}
+
+			cvClasses, err := json.Marshal(result.Results)
+			if err != nil {
+				log.Errorf("Failed to marshal classes: %v", err)
+				continue
+			}
+
+			err = postRegistry.AddCVDataToImage(ctx, result.Meta.CID, executionTime, cvClasses)
+			if err != nil {
+				log.Errorf("Failed to update image: %v", err)
+				continue
+			}
+		}
+
+		log.Infow("Finished processing images...",
+			"batch_size", len(unprocessedImages),
+			"successfuly_processed_image_count", successCount,
+			"processing_time", time.Since(start),
+		)
 		select {
 		case <-ctx.Done():
 			log.Info("Context cancelled, exiting...")
 			return
 		case <-ticker.C:
-			log.Info("Processing images...")
-			unprocessedImages, err := postRegistry.GetUnprocessedImages(ctx, 50)
-			if err != nil {
-				if errors.As(err, &search.NotFoundError{}) {
-					log.Info("No unprocessed images found, exiting...")
-					continue
-				}
-				log.Errorf("Failed to get unprocessed images: %v", err)
-				continue
-			}
-
-			imageMetas := make([]*objectdetection.ImageMeta, len(unprocessedImages))
-			for i, image := range unprocessedImages {
-				imageMetas[i] = &objectdetection.ImageMeta{
-					CID:       image.CID,
-					URL:       image.FullsizeURL,
-					MimeType:  image.MimeType,
-					CreatedAt: image.CreatedAt,
-				}
-			}
-
-			results, err := detection.ProcessImages(ctx, imageMetas)
-			if err != nil {
-				log.Errorf("Failed to process images: %v", err)
-				continue
-			}
-
-			executionTime := time.Now()
-
-			for _, result := range results {
-
-				cvClasses, err := json.Marshal(result.Results)
-				if err != nil {
-					log.Errorf("Failed to marshal classes: %v", err)
-					continue
-				}
-
-				err = postRegistry.AddCVDataToImage(ctx, result.Meta.CID, executionTime, cvClasses)
-				if err != nil {
-					log.Errorf("Failed to update image: %v", err)
-					continue
-				}
-			}
+			continue
 		}
 	}
 }
