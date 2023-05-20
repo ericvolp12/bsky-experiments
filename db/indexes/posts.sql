@@ -5,3 +5,6 @@ create index parent_post_id
 
 create index text_tgm_idx
     on posts using gist (text gist_trgm_ops);
+
+create index posts_created_at_index
+    on posts (created_at);

@@ -147,9 +147,14 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	limit := int32(50)
 	limitQuery := c.Query("limit")
 	if limitQuery != "" {
-		limit = int32(c.GetInt("limit"))
-		if limit > 250 {
-			limit = 250
+		parsedLimit, err := strconv.ParseInt(limitQuery, 10, 32)
+		if err != nil {
+			limit = 50
+		} else {
+			limit = int32(parsedLimit)
+			if limit > 250 {
+				limit = 250
+			}
 		}
 	}
 
