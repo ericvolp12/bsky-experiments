@@ -58,6 +58,12 @@ type Image struct {
 	CVClasses    *json.RawMessage `json:"cv_classes"`
 }
 
+type Cluster struct {
+	ID          int32  `json:"id"`
+	LookupAlias string `json:"lookup_alias"`
+	Name        string `json:"name"`
+}
+
 type Percentile struct {
 	Percentile float64 `json:"percentile"`
 	Count      int64   `json:"count"`
@@ -515,6 +521,47 @@ func (pr *PostRegistry) AssignAuthorToCluster(ctx context.Context, authorDID str
 	})
 
 	return err
+}
+
+func (pr *PostRegistry) GetClusters(ctx context.Context) ([]*Cluster, error) {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetClusters")
+	defer span.End()
+
+	clusters, err := pr.queries.GetClusters(ctx)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, NotFoundError{fmt.Errorf("clusters not found")}
+		}
+		return nil, err
+	}
+
+	retClusters := make([]*Cluster, len(clusters))
+	for i, cluster := range clusters {
+		retClusters[i] = &Cluster{
+			ID:          cluster.ID,
+			LookupAlias: cluster.LookupAlias,
+			Name:        cluster.Name,
+		}
+	}
+
+	return retClusters, nil
+}
+
+func (pr *PostRegistry) GetUniqueLabels(ctx context.Context) ([]string, error) {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetUniqueLabels")
+	defer span.End()
+
+	labels, err := pr.queries.GetAllUniqueLabels(ctx)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, NotFoundError{fmt.Errorf("labels not found")}
+		}
+		return nil, err
+	}
+
+	return labels, nil
 }
 
 func (pr *PostRegistry) GetPostsPageForLabel(

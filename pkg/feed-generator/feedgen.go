@@ -8,12 +8,26 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/clusters"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
+
+var feedRequestCounter = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "feed_request_count",
+	Help: "The total number of feed requests",
+}, []string{"feed_name"})
+
+var feedRequestLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name:    "feed_request_latency",
+	Help:    "The latency of feed requests",
+	Buckets: []float64{.01, .05, .1, .25, .5, 1, 2.5, 5, 10},
+}, []string{"feed_name"})
 
 type FeedGenerator struct {
 	PostRegistry    *search.PostRegistry
@@ -30,6 +44,15 @@ type FeedPostItem struct {
 type FeedSkeleton struct {
 	Feed   []FeedPostItem `json:"feed"`
 	Cursor *string        `json:"cursor,omitempty"`
+}
+
+type FeedDescription struct {
+	URI string `json:"uri"`
+}
+
+type FeedGeneratorDescription struct {
+	DID   string            `json:"did"`
+	Feeds []FeedDescription `json:"feeds"`
 }
 
 // NewFeedGenerator returns a new FeedGenerator
@@ -73,6 +96,48 @@ func (fg *FeedGenerator) GetWellKnownDID(c *gin.Context) {
 	})
 }
 
+func (fg *FeedGenerator) DescribeFeedGenerator(c *gin.Context) {
+	clusterAliases := []string{}
+	clusters, err := fg.PostRegistry.GetClusters(c.Request.Context())
+	if err != nil {
+		log.Printf("failed to get clusters: %s", err.Error())
+	} else {
+		for _, cluster := range clusters {
+			clusterAliases = append(clusterAliases, cluster.LookupAlias)
+		}
+	}
+
+	labels := []string{}
+	uniqueLabels, err := fg.PostRegistry.GetUniqueLabels(c.Request.Context())
+	if err != nil {
+		log.Printf("failed to get unique labels: %s", err.Error())
+	} else {
+		labels = append(labels, uniqueLabels...)
+	}
+
+	feedPrefix := "at://did:web:feedsky.jazco.io/app.bsky.feed.generator/"
+
+	feedDescriptions := []FeedDescription{}
+	for _, feedName := range fg.LegacyFeedNames {
+		feedDescriptions = append(feedDescriptions, FeedDescription{URI: feedPrefix + feedName})
+	}
+
+	for _, clusterAlias := range clusterAliases {
+		feedDescriptions = append(feedDescriptions, FeedDescription{URI: feedPrefix + "cluster-" + clusterAlias})
+	}
+
+	for _, label := range labels {
+		feedDescriptions = append(feedDescriptions, FeedDescription{URI: feedPrefix + label})
+	}
+
+	feedGeneratorDescription := FeedGeneratorDescription{
+		DID:   "did:web:feedsky.jazco.io",
+		Feeds: feedDescriptions,
+	}
+
+	c.JSON(http.StatusOK, feedGeneratorDescription)
+}
+
 func (fg *FeedGenerator) UpdateClusterAssignments(c *gin.Context) {
 	log.Println("Updating cluster assignments...")
 	// Iterate over all authors in the Manager and update them in the registry
@@ -111,6 +176,7 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	// Incoming requests should have a query parameter "feed" that looks like: at://did:web:feedsky.jazco.io/app.bsky.feed.generator/feed-name
 	// Also a query parameter "limit" that looks like: 50
 	// Also a query parameter "cursor" that contains the last post ID from the previous page of results
+	start := time.Now()
 	feedQuery := c.Query("feed")
 	if feedQuery == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "feed query parameter is required"})
@@ -142,6 +208,8 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 		clusterAlias := strings.TrimPrefix(feedName, "cluster-")
 		cluster = &clusterAlias
 	}
+
+	feedRequestCounter.WithLabelValues(feedName).Inc()
 
 	// Get the limit from the query, default to 50, maximum of 250
 	limit := int32(50)
@@ -201,6 +269,8 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	if len(posts) > 0 {
 		feedSkeleton.Cursor = &posts[len(posts)-1].ID
 	}
+
+	feedRequestLatency.WithLabelValues(feedName).Observe(time.Since(start).Seconds())
 
 	c.JSON(http.StatusOK, feedSkeleton)
 }

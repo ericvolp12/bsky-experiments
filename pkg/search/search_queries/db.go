@@ -40,6 +40,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addPostLabelStmt, err = db.PrepareContext(ctx, addPostLabel); err != nil {
 		return nil, fmt.Errorf("error preparing query AddPostLabel: %w", err)
 	}
+	if q.getAllUniqueLabelsStmt, err = db.PrepareContext(ctx, getAllUniqueLabels); err != nil {
+		return nil, fmt.Errorf("error preparing query GetAllUniqueLabels: %w", err)
+	}
 	if q.getAuthorStmt, err = db.PrepareContext(ctx, getAuthor); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuthor: %w", err)
 	}
@@ -48,6 +51,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getAuthorsByHandleStmt, err = db.PrepareContext(ctx, getAuthorsByHandle); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuthorsByHandle: %w", err)
+	}
+	if q.getClustersStmt, err = db.PrepareContext(ctx, getClusters); err != nil {
+		return nil, fmt.Errorf("error preparing query GetClusters: %w", err)
 	}
 	if q.getImageStmt, err = db.PrepareContext(ctx, getImage); err != nil {
 		return nil, fmt.Errorf("error preparing query GetImage: %w", err)
@@ -120,6 +126,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing addPostLabelStmt: %w", cerr)
 		}
 	}
+	if q.getAllUniqueLabelsStmt != nil {
+		if cerr := q.getAllUniqueLabelsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getAllUniqueLabelsStmt: %w", cerr)
+		}
+	}
 	if q.getAuthorStmt != nil {
 		if cerr := q.getAuthorStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getAuthorStmt: %w", cerr)
@@ -133,6 +144,11 @@ func (q *Queries) Close() error {
 	if q.getAuthorsByHandleStmt != nil {
 		if cerr := q.getAuthorsByHandleStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getAuthorsByHandleStmt: %w", cerr)
+		}
+	}
+	if q.getClustersStmt != nil {
+		if cerr := q.getClustersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getClustersStmt: %w", cerr)
 		}
 	}
 	if q.getImageStmt != nil {
@@ -240,9 +256,11 @@ type Queries struct {
 	addImageStmt                   *sql.Stmt
 	addPostStmt                    *sql.Stmt
 	addPostLabelStmt               *sql.Stmt
+	getAllUniqueLabelsStmt         *sql.Stmt
 	getAuthorStmt                  *sql.Stmt
 	getAuthorStatsStmt             *sql.Stmt
 	getAuthorsByHandleStmt         *sql.Stmt
+	getClustersStmt                *sql.Stmt
 	getImageStmt                   *sql.Stmt
 	getImagesForAuthorDIDStmt      *sql.Stmt
 	getImagesForPostStmt           *sql.Stmt
@@ -267,9 +285,11 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addImageStmt:                   q.addImageStmt,
 		addPostStmt:                    q.addPostStmt,
 		addPostLabelStmt:               q.addPostLabelStmt,
+		getAllUniqueLabelsStmt:         q.getAllUniqueLabelsStmt,
 		getAuthorStmt:                  q.getAuthorStmt,
 		getAuthorStatsStmt:             q.getAuthorStatsStmt,
 		getAuthorsByHandleStmt:         q.getAuthorsByHandleStmt,
+		getClustersStmt:                q.getClustersStmt,
 		getImageStmt:                   q.getImageStmt,
 		getImagesForAuthorDIDStmt:      q.getImagesForAuthorDIDStmt,
 		getImagesForPostStmt:           q.getImagesForPostStmt,

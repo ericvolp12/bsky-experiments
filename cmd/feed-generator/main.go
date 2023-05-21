@@ -156,8 +156,10 @@ func main() {
 	p.Use(router)
 
 	router.GET("/update_cluster_assignments", feedGenerator.UpdateClusterAssignments)
-	router.GET("/xrpc/app.bsky.feed.getFeedSkeleton", feedGenerator.GetFeedSkeleton)
 	router.GET("/.well-known/did.json", feedGenerator.GetWellKnownDID)
+
+	router.GET("/xrpc/app.bsky.feed.getFeedSkeleton", feedGenerator.GetFeedSkeleton)
+	router.GET("/xrpc/app.bsky.feed.describeFeedGenerator", feedGenerator.DescribeFeedGenerator)
 
 	port := os.Getenv("PORT")
 	if port == "" {
