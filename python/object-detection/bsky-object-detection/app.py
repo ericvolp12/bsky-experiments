@@ -18,6 +18,7 @@ from prometheus_client import Counter
 from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger import jsonlogger
 from starlette.middleware.base import BaseHTTPMiddleware
+from pyroscope import agent
 
 from .models import ImageMeta, ImageResult
 from .object_detection import detect_objects
@@ -75,6 +76,14 @@ if otel_endpoint:
                 endpoint=otel_endpoint + "v1/traces",
             )
         )
+    )
+
+# Set up Pyroscope Continuous Profiler
+pyroscope_endpoint = os.getenv("PYROSCOPE_SERVER_ADDRESS")
+if pyroscope_endpoint:
+    agent.start(
+        server_address=pyroscope_endpoint,  # pyroscope server url
+        app_name="bsky-object-detection",  # name of your application
     )
 
 app = FastAPI()

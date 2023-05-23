@@ -98,6 +98,11 @@ feedgen-go-up:
 	@echo "Starting Go Feed Generator..."
 	docker-compose -f build/feedgen-go/docker-compose.yml up --build -d
 
+# Start up the Pyroscope Continuous Profiler Backend
+pyroscope-up:
+	@echo "Starting Pyroscope..."
+	docker-compose -f build/pyroscope/docker-compose.yml up --build -d
+
 # Generate SQLC Code
 sqlc:
 	@echo "Generating SQLC code..."
