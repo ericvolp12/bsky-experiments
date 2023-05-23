@@ -3,9 +3,10 @@ import io
 import logging
 import os
 from time import time
-from typing import List, Optional
+from typing import List
 
 import aiohttp
+import pyroscope
 from fastapi import FastAPI, Request
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -18,7 +19,6 @@ from prometheus_client import Counter
 from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger import jsonlogger
 from starlette.middleware.base import BaseHTTPMiddleware
-from pyroscope import agent
 
 from .models import ImageMeta, ImageResult
 from .object_detection import detect_objects
@@ -81,10 +81,11 @@ if otel_endpoint:
 # Set up Pyroscope Continuous Profiler
 pyroscope_endpoint = os.getenv("PYROSCOPE_SERVER_ADDRESS")
 if pyroscope_endpoint:
-    agent.start(
+    pyroscope.configure(
         server_address=pyroscope_endpoint,  # pyroscope server url
-        app_name="bsky-object-detection",  # name of your application
+        application_name="bsky-object-detection",  # name of your application
     )
+
 
 app = FastAPI()
 
