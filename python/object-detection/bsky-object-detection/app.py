@@ -6,7 +6,8 @@ from time import time
 from typing import List
 
 import aiohttp
-import pyroscope
+
+# import pyroscope
 from fastapi import FastAPI, Request
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -78,13 +79,13 @@ if otel_endpoint:
         )
     )
 
-# Set up Pyroscope Continuous Profiler
-pyroscope_endpoint = os.getenv("PYROSCOPE_SERVER_ADDRESS")
-if pyroscope_endpoint:
-    pyroscope.configure(
-        server_address=pyroscope_endpoint,  # pyroscope server url
-        application_name="bsky-object-detection",  # name of your application
-    )
+# Set up Pyroscope Continuous Profiler (Disabling for now because of big spike in CPU usage when running)
+# pyroscope_endpoint = os.getenv("PYROSCOPE_SERVER_ADDRESS")
+# if pyroscope_endpoint:
+#     pyroscope.configure(
+#         server_address=pyroscope_endpoint,  # pyroscope server url
+#         application_name="bsky-object-detection",  # name of your application
+#     )
 
 
 app = FastAPI()
