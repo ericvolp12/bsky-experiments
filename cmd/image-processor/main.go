@@ -97,9 +97,17 @@ func main() {
 			if err != nil {
 				if errors.As(err, &search.NotFoundError{}) {
 					log.Info("No unprocessed images found, skipping process cycle...")
-					continue
+
+				} else {
+					log.Errorf("Failed to get unprocessed images, skipping process cycle: %v", err)
 				}
-				log.Errorf("Failed to get unprocessed images, skipping process cycle: %v", err)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+
+			if len(unprocessedImages) == 0 {
+				log.Info("No unprocessed images found, skipping process cycle...")
+				time.Sleep(5 * time.Second)
 				continue
 			}
 
@@ -116,6 +124,7 @@ func main() {
 			results, err := detection.ProcessImages(ctx, imageMetas)
 			if err != nil {
 				log.Errorf("Failed to process images: %v", err)
+				time.Sleep(5 * time.Second)
 				continue
 			}
 
