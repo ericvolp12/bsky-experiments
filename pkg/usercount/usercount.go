@@ -83,6 +83,8 @@ func (uc *UserCount) GetUserCount(ctx context.Context) (int, error) {
 		repoOutput, err := comatproto.SyncListRepos(ctx, uc.Client, uc.LastCursor, 1000)
 		if err != nil {
 			fmt.Printf("error listing repos: %s\n", err)
+			span.AddEvent("ReleaseClientRLock")
+			uc.ClientMux.RUnlock()
 			return -1, fmt.Errorf("error listing repos: %w", err)
 		}
 		span.AddEvent("ReleaseClientRLock")
