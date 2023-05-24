@@ -74,6 +74,16 @@ func NewFeedGenerator(
 	legacyFeedNames := map[string]string{
 		"positivifeed": "sentiment:pos",
 		"negativifeed": "sentiment:neg",
+		"cl-web3":      "cluster-web3",
+		"cl-tqsp":      "cluster-tq-shitposters",
+		"cl-eng":       "cluster-eng",
+		"cl-wrestling": "cluster-wrestling",
+		"cl-turkish":   "cluster-turkish",
+		"cl-japanese":  "cluster-japanese",
+		"cl-brasil":    "cluster-brasil",
+		"cl-korean":    "cluster-korean",
+		"cl-tpot":      "cluster-tpot",
+		"cl-persian":   "cluster-persian",
 	}
 
 	acceptableURIPrefixes := []string{
@@ -143,6 +153,10 @@ func (fg *FeedGenerator) DescribeFeedGenerator(c *gin.Context) {
 
 	for _, clusterAlias := range clusterAliases {
 		feedDescriptions = append(feedDescriptions, FeedDescription{URI: feedPrefix + "cluster-" + clusterAlias})
+	}
+
+	for legacyFeed, _ := range fg.LegacyFeedNames {
+		feedDescriptions = append(feedDescriptions, FeedDescription{URI: feedPrefix + legacyFeed})
 	}
 
 	for _, label := range labels {
