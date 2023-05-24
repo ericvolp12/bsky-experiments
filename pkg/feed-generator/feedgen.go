@@ -32,11 +32,12 @@ var feedRequestLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 }, []string{"feed_name"})
 
 type FeedGenerator struct {
-	PostRegistry    *search.PostRegistry
-	Client          *xrpc.Client
-	ClusterManager  *clusters.ClusterManager
-	LegacyFeedNames map[string]string
-	DefaultLookback int32
+	PostRegistry          *search.PostRegistry
+	Client                *xrpc.Client
+	ClusterManager        *clusters.ClusterManager
+	LegacyFeedNames       map[string]string
+	DefaultLookback       int32
+	AcceptableURIPrefixes []string
 }
 
 type FeedPostItem struct {
@@ -75,12 +76,18 @@ func NewFeedGenerator(
 		"negativifeed": "sentiment:neg",
 	}
 
+	acceptableURIPrefixes := []string{
+		"at://did:web:feedsky.jazco.io/app.bsky.feed.generator/",
+		"at://did:plc:q6gjnaw2blty4crticxkmujt/app.bsky.feed.generator/",
+	}
+
 	return &FeedGenerator{
-		PostRegistry:    postRegistry,
-		Client:          client,
-		ClusterManager:  clusterManager,
-		LegacyFeedNames: legacyFeedNames,
-		DefaultLookback: 12, // hours
+		PostRegistry:          postRegistry,
+		Client:                client,
+		ClusterManager:        clusterManager,
+		LegacyFeedNames:       legacyFeedNames,
+		DefaultLookback:       12, // hours
+		AcceptableURIPrefixes: acceptableURIPrefixes,
 	}, nil
 }
 
@@ -215,14 +222,21 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 
 	span.SetAttributes(attribute.String("feed.query", feedQuery))
 
-	// Make sure the feed query is for our feed generator service
-	if !strings.HasPrefix(feedQuery, "at://did:web:feedsky.jazco.io/app.bsky.feed.generator/") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "feed requested is not provided by this generator"})
+	feedPrefix := ""
+	for _, acceptablePrefix := range fg.AcceptableURIPrefixes {
+		if strings.HasPrefix(feedQuery, acceptablePrefix) {
+			feedPrefix = acceptablePrefix
+			break
+		}
+	}
+
+	if feedPrefix == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "feed query parameter is not a valid feed URI"})
 		return
 	}
 
 	// Get the feed name from the query
-	feedName := strings.TrimPrefix(feedQuery, "at://did:web:feedsky.jazco.io/app.bsky.feed.generator/")
+	feedName := strings.TrimPrefix(feedQuery, feedPrefix)
 	if feedName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "feed name is required"})
 		return
