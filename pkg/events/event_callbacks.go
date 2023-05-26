@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	lru "github.com/hashicorp/golang-lru"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
@@ -176,6 +178,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 			ek := repomgr.EventKind(op.Action)
 			switch ek {
 			case repomgr.EvtKindCreateRecord, repomgr.EvtKindUpdateRecord:
+				span.SetAttributes(attribute.String("op.path", op.Path))
 				// Grab the record from the merkel tree
 				rc, rec, err := rr.GetRecord(ctx, op.Path)
 				if err != nil {
@@ -199,6 +202,22 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 				b, err := recordAsCAR.MarshalJSON()
 				if err != nil {
 					log.Errorf("failed to marshal record as CAR: %+v\n", err)
+					return nil
+				}
+
+				// If the record is a block, try to unmarshal it into a GraphBlock and log it
+				if strings.HasPrefix(op.Path, "app.bsky.graph.block") {
+					span.SetAttributes(attribute.String("repo.name", evt.Repo))
+					span.SetAttributes(attribute.String("event.type", "app.bsky.graph.block"))
+					// Unmarshal the JSON Byte Array into a Block
+					var block = appbsky.GraphBlock{}
+					err = json.Unmarshal(b, &block)
+					if err != nil {
+						log.Errorf("failed to unmarshal block into a GraphBlock: %+v\n", err)
+						return nil
+					}
+					span.SetAttributes(attribute.String("block.subject", block.Subject))
+					log.Infow("processed graph block", "target", block.Subject, "source", evt.Repo)
 					return nil
 				}
 

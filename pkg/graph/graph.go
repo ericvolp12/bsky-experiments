@@ -120,6 +120,27 @@ func (g *Graph) IncrementEdge(from, to Node, weight int) {
 	g.LastUpdate = time.Now()
 }
 
+// DeepCopy creates a new Graph that is a deep copy of the current graph.
+func (g *Graph) DeepCopy() *Graph {
+	newGraph := NewGraph()
+
+	for nodeID, node := range g.Nodes {
+		newGraph.Nodes[nodeID] = node
+	}
+
+	for from, edges := range g.Edges {
+		newGraph.Edges[from] = make(map[NodeID]int)
+		for to, weight := range edges {
+			newGraph.Edges[from][to] = weight
+		}
+	}
+
+	newGraph.LastUpdate = g.LastUpdate
+	newGraph.NextID = g.NextID
+
+	return &newGraph
+}
+
 // Write exports the graph structure to a Golang Writer interface
 // The method takes a Writer interface as an argument and writes the graph data to the writer.
 // Each line of the writer contains the source node, destination node, and weight of an edge.

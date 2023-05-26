@@ -227,23 +227,25 @@ func saveGraph(
 	span.AddEvent("saveGraph:AcquireGraphLock")
 	bsky.SocialGraphMux.RLock()
 	span.AddEvent("saveGraph:GraphLockAcquired")
+	// Copy the graph to a new memory buffer to save it without holding the lock
+	newGraph := bsky.SocialGraph.DeepCopy()
+
+	// Release the lock after we're done copying the graph
+	span.AddEvent("saveGraph:ReleaseGraphLock")
+	bsky.SocialGraphMux.RUnlock()
 
 	logMsg := fmt.Sprintf("writing social graph to binary file, last updated: %s",
 		bsky.SocialGraph.LastUpdate.Format("02.01.06 15:04:05"))
 
 	log.Infow(logMsg,
-		"graph_last_updated_at", bsky.SocialGraph.LastUpdate,
+		"graph_last_updated_at", newGraph.LastUpdate,
 	)
 
 	// Write the graph to a timestamped file
-	err := binReaderWriter.WriteGraph(bsky.SocialGraph, timestampedGraphFilePath)
+	err := binReaderWriter.WriteGraph(*newGraph, timestampedGraphFilePath)
 	if err != nil {
 		log.Errorf("error writing social graph to binary file: %s", err)
 	}
-
-	// Release the lock after we're done writing the inital file
-	span.AddEvent("saveGraph:ReleaseGraphLock")
-	bsky.SocialGraphMux.RUnlock()
 
 	// Copy the file to the "latest" path, we don't need to lock the graph for this
 	err = copyFile(timestampedGraphFilePath, graphFileFromEnv)
