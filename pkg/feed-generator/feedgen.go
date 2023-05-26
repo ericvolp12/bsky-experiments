@@ -38,6 +38,8 @@ type FeedGenerator struct {
 	LegacyFeedNames       map[string]string
 	DefaultLookback       int32
 	AcceptableURIPrefixes []string
+	FeedGeneratorCache    FeedGeneratorDescriptionCacheItem
+	FeedGeneratorCacheTTL time.Duration
 }
 
 type FeedPostItem struct {
@@ -47,6 +49,11 @@ type FeedPostItem struct {
 type FeedSkeleton struct {
 	Feed   []FeedPostItem `json:"feed"`
 	Cursor *string        `json:"cursor,omitempty"`
+}
+
+type FeedGeneratorDescriptionCacheItem struct {
+	FeedGeneratorDescription FeedGeneratorDescription
+	ExpiresAt                time.Time
 }
 
 type FeedDescription struct {
@@ -98,6 +105,8 @@ func NewFeedGenerator(
 		LegacyFeedNames:       legacyFeedNames,
 		DefaultLookback:       12, // hours
 		AcceptableURIPrefixes: acceptableURIPrefixes,
+		FeedGeneratorCache:    FeedGeneratorDescriptionCacheItem{},
+		FeedGeneratorCacheTTL: 5 * time.Minute,
 	}, nil
 }
 
@@ -119,6 +128,14 @@ func (fg *FeedGenerator) DescribeFeedGenerator(c *gin.Context) {
 	tracer := otel.Tracer("feed-generator")
 	ctx, span := tracer.Start(c.Request.Context(), "FeedGenerator:DescribeFeedGenerator")
 	defer span.End()
+
+	if fg.FeedGeneratorCache.ExpiresAt.After(time.Now()) {
+		span.SetAttributes(attribute.String("cache", "hit"))
+		c.JSON(http.StatusOK, fg.FeedGeneratorCache.FeedGeneratorDescription)
+		return
+	}
+
+	span.SetAttributes(attribute.String("cache", "miss"))
 
 	clusterAliases := []string{}
 	clusters, err := fg.PostRegistry.GetClusters(ctx)
@@ -169,6 +186,11 @@ func (fg *FeedGenerator) DescribeFeedGenerator(c *gin.Context) {
 	}
 
 	span.SetAttributes(attribute.Int("feeds.length", len(feedDescriptions)))
+
+	fg.FeedGeneratorCache = FeedGeneratorDescriptionCacheItem{
+		ExpiresAt:                time.Now().Add(fg.FeedGeneratorCacheTTL),
+		FeedGeneratorDescription: feedGeneratorDescription,
+	}
 
 	c.JSON(http.StatusOK, feedGeneratorDescription)
 }
