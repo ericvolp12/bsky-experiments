@@ -246,6 +246,7 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 							log.Errorf("failed to add like to post: %+v\n", err)
 							span.SetAttributes(attribute.String("error", err.Error()))
 						}
+						likesProcessedCounter.Inc()
 					}
 					return nil
 				}

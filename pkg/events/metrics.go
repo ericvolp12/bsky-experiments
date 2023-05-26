@@ -55,3 +55,8 @@ var apiCallDurationHistogram = promauto.NewHistogramVec(prometheus.HistogramOpts
 	Help:    "The duration of API calls",
 	Buckets: prometheus.DefBuckets,
 }, []string{"api_call"})
+
+var likesProcessedCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "bsky_likes_processed_total",
+	Help: "The total number of likes processed",
+})
