@@ -31,6 +31,19 @@ var feedRequestLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Buckets: []float64{.01, .05, .1, .25, .5, 1, 2.5, 5, 10},
 }, []string{"feed_name"})
 
+var animalLabels = []string{
+	"cv:bird",
+	"cv:cat",
+	"cv:dog",
+	"cv:horse",
+	"cv:sheep",
+	"cv:cow",
+	"cv:elephant",
+	"cv:bear",
+	"cv:zebra",
+	"cv:giraffe",
+}
+
 type FeedGenerator struct {
 	PostRegistry          *search.PostRegistry
 	Client                *xrpc.Client
@@ -340,8 +353,21 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 		}
 
 		posts = postsFromRegistry
+	} else if feedName == "animals" {
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelsByHotness(ctx, animalLabels, fg.DefaultLookback, limit, cursor)
+		if err != nil {
+			if errors.As(err, &search.NotFoundError{}) {
+				span.SetAttributes(attribute.Bool("feed.label.not_found", true))
+				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				return
+			}
+			span.SetAttributes(attribute.Bool("feed.label.error", true))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		posts = postsFromRegistry
 	} else { // Otherwise lookup labels
-		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabel(ctx, feedName, fg.DefaultLookback, limit, cursor)
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelByHotness(ctx, feedName, fg.DefaultLookback, limit, cursor)
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
 				span.SetAttributes(attribute.Bool("feed.label.not_found", true))

@@ -82,8 +82,14 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPostsPageWithAnyLabelStmt, err = db.PrepareContext(ctx, getPostsPageWithAnyLabel); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsPageWithAnyLabel: %w", err)
 	}
+	if q.getPostsPageWithAnyLabelSortedByHotnessStmt, err = db.PrepareContext(ctx, getPostsPageWithAnyLabelSortedByHotness); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsPageWithAnyLabelSortedByHotness: %w", err)
+	}
 	if q.getPostsPageWithLabelStmt, err = db.PrepareContext(ctx, getPostsPageWithLabel); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsPageWithLabel: %w", err)
+	}
+	if q.getPostsPageWithLabelSortedByHotnessStmt, err = db.PrepareContext(ctx, getPostsPageWithLabelSortedByHotness); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsPageWithLabelSortedByHotness: %w", err)
 	}
 	if q.getThreadViewStmt, err = db.PrepareContext(ctx, getThreadView); err != nil {
 		return nil, fmt.Errorf("error preparing query GetThreadView: %w", err)
@@ -205,9 +211,19 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPostsPageWithAnyLabelStmt: %w", cerr)
 		}
 	}
+	if q.getPostsPageWithAnyLabelSortedByHotnessStmt != nil {
+		if cerr := q.getPostsPageWithAnyLabelSortedByHotnessStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsPageWithAnyLabelSortedByHotnessStmt: %w", cerr)
+		}
+	}
 	if q.getPostsPageWithLabelStmt != nil {
 		if cerr := q.getPostsPageWithLabelStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostsPageWithLabelStmt: %w", cerr)
+		}
+	}
+	if q.getPostsPageWithLabelSortedByHotnessStmt != nil {
+		if cerr := q.getPostsPageWithLabelSortedByHotnessStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsPageWithLabelSortedByHotnessStmt: %w", cerr)
 		}
 	}
 	if q.getThreadViewStmt != nil {
@@ -272,34 +288,36 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                             DBTX
-	tx                             *sql.Tx
-	addAuthorStmt                  *sql.Stmt
-	addAuthorToClusterStmt         *sql.Stmt
-	addClusterStmt                 *sql.Stmt
-	addImageStmt                   *sql.Stmt
-	addLikeToPostStmt              *sql.Stmt
-	addPostStmt                    *sql.Stmt
-	addPostLabelStmt               *sql.Stmt
-	getAllUniqueLabelsStmt         *sql.Stmt
-	getAuthorStmt                  *sql.Stmt
-	getAuthorStatsStmt             *sql.Stmt
-	getAuthorsByHandleStmt         *sql.Stmt
-	getClustersStmt                *sql.Stmt
-	getImageStmt                   *sql.Stmt
-	getImagesForAuthorDIDStmt      *sql.Stmt
-	getImagesForPostStmt           *sql.Stmt
-	getMembersOfClusterStmt        *sql.Stmt
-	getOldestPresentParentStmt     *sql.Stmt
-	getPostStmt                    *sql.Stmt
-	getPostsPageByClusterAliasStmt *sql.Stmt
-	getPostsPageWithAnyLabelStmt   *sql.Stmt
-	getPostsPageWithLabelStmt      *sql.Stmt
-	getThreadViewStmt              *sql.Stmt
-	getTopPostersStmt              *sql.Stmt
-	getUnprocessedImagesStmt       *sql.Stmt
-	removeLikeFromPostStmt         *sql.Stmt
-	updateImageStmt                *sql.Stmt
+	db                                          DBTX
+	tx                                          *sql.Tx
+	addAuthorStmt                               *sql.Stmt
+	addAuthorToClusterStmt                      *sql.Stmt
+	addClusterStmt                              *sql.Stmt
+	addImageStmt                                *sql.Stmt
+	addLikeToPostStmt                           *sql.Stmt
+	addPostStmt                                 *sql.Stmt
+	addPostLabelStmt                            *sql.Stmt
+	getAllUniqueLabelsStmt                      *sql.Stmt
+	getAuthorStmt                               *sql.Stmt
+	getAuthorStatsStmt                          *sql.Stmt
+	getAuthorsByHandleStmt                      *sql.Stmt
+	getClustersStmt                             *sql.Stmt
+	getImageStmt                                *sql.Stmt
+	getImagesForAuthorDIDStmt                   *sql.Stmt
+	getImagesForPostStmt                        *sql.Stmt
+	getMembersOfClusterStmt                     *sql.Stmt
+	getOldestPresentParentStmt                  *sql.Stmt
+	getPostStmt                                 *sql.Stmt
+	getPostsPageByClusterAliasStmt              *sql.Stmt
+	getPostsPageWithAnyLabelStmt                *sql.Stmt
+	getPostsPageWithAnyLabelSortedByHotnessStmt *sql.Stmt
+	getPostsPageWithLabelStmt                   *sql.Stmt
+	getPostsPageWithLabelSortedByHotnessStmt    *sql.Stmt
+	getThreadViewStmt                           *sql.Stmt
+	getTopPostersStmt                           *sql.Stmt
+	getUnprocessedImagesStmt                    *sql.Stmt
+	removeLikeFromPostStmt                      *sql.Stmt
+	updateImageStmt                             *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -326,11 +344,13 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getPostStmt:                    q.getPostStmt,
 		getPostsPageByClusterAliasStmt: q.getPostsPageByClusterAliasStmt,
 		getPostsPageWithAnyLabelStmt:   q.getPostsPageWithAnyLabelStmt,
-		getPostsPageWithLabelStmt:      q.getPostsPageWithLabelStmt,
-		getThreadViewStmt:              q.getThreadViewStmt,
-		getTopPostersStmt:              q.getTopPostersStmt,
-		getUnprocessedImagesStmt:       q.getUnprocessedImagesStmt,
-		removeLikeFromPostStmt:         q.removeLikeFromPostStmt,
-		updateImageStmt:                q.updateImageStmt,
+		getPostsPageWithAnyLabelSortedByHotnessStmt: q.getPostsPageWithAnyLabelSortedByHotnessStmt,
+		getPostsPageWithLabelStmt:                   q.getPostsPageWithLabelStmt,
+		getPostsPageWithLabelSortedByHotnessStmt:    q.getPostsPageWithLabelSortedByHotnessStmt,
+		getThreadViewStmt:                           q.getThreadViewStmt,
+		getTopPostersStmt:                           q.getTopPostersStmt,
+		getUnprocessedImagesStmt:                    q.getUnprocessedImagesStmt,
+		removeLikeFromPostStmt:                      q.removeLikeFromPostStmt,
+		updateImageStmt:                             q.updateImageStmt,
 	}
 }
