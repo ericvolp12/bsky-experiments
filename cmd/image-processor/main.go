@@ -157,7 +157,7 @@ func main() {
 
 				imageLabels := []string{}
 				for _, class := range result.Results {
-					if class.Confidence >= 0.65 {
+					if class.Confidence >= 0.75 {
 						imageLabels = append(imageLabels, class.Label)
 					}
 				}
