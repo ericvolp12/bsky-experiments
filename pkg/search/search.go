@@ -510,6 +510,24 @@ func (pr *PostRegistry) AddPostLabel(ctx context.Context, postID string, label s
 	return err
 }
 
+func (pr *PostRegistry) AddLikeToPost(ctx context.Context, postID string) error {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:AddLikeToPost")
+	defer span.End()
+
+	err := pr.queries.AddLikeToPost(ctx, postID)
+	return err
+}
+
+func (pr *PostRegistry) RemoveLikeFromPost(ctx context.Context, postID string) error {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:RemoveLikeFromPost")
+	defer span.End()
+
+	err := pr.queries.RemoveLikeFromPost(ctx, postID)
+	return err
+}
+
 func (pr *PostRegistry) AssignAuthorToCluster(ctx context.Context, authorDID string, clusterID int32) error {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AssignAuthorToCluster")

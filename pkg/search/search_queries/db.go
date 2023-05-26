@@ -34,6 +34,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addImageStmt, err = db.PrepareContext(ctx, addImage); err != nil {
 		return nil, fmt.Errorf("error preparing query AddImage: %w", err)
 	}
+	if q.addLikeToPostStmt, err = db.PrepareContext(ctx, addLikeToPost); err != nil {
+		return nil, fmt.Errorf("error preparing query AddLikeToPost: %w", err)
+	}
 	if q.addPostStmt, err = db.PrepareContext(ctx, addPost); err != nil {
 		return nil, fmt.Errorf("error preparing query AddPost: %w", err)
 	}
@@ -76,6 +79,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPostsPageByClusterAliasStmt, err = db.PrepareContext(ctx, getPostsPageByClusterAlias); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsPageByClusterAlias: %w", err)
 	}
+	if q.getPostsPageWithAnyLabelStmt, err = db.PrepareContext(ctx, getPostsPageWithAnyLabel); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsPageWithAnyLabel: %w", err)
+	}
 	if q.getPostsPageWithLabelStmt, err = db.PrepareContext(ctx, getPostsPageWithLabel); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsPageWithLabel: %w", err)
 	}
@@ -87,6 +93,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getUnprocessedImagesStmt, err = db.PrepareContext(ctx, getUnprocessedImages); err != nil {
 		return nil, fmt.Errorf("error preparing query GetUnprocessedImages: %w", err)
+	}
+	if q.removeLikeFromPostStmt, err = db.PrepareContext(ctx, removeLikeFromPost); err != nil {
+		return nil, fmt.Errorf("error preparing query RemoveLikeFromPost: %w", err)
 	}
 	if q.updateImageStmt, err = db.PrepareContext(ctx, updateImage); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateImage: %w", err)
@@ -114,6 +123,11 @@ func (q *Queries) Close() error {
 	if q.addImageStmt != nil {
 		if cerr := q.addImageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addImageStmt: %w", cerr)
+		}
+	}
+	if q.addLikeToPostStmt != nil {
+		if cerr := q.addLikeToPostStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addLikeToPostStmt: %w", cerr)
 		}
 	}
 	if q.addPostStmt != nil {
@@ -186,6 +200,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPostsPageByClusterAliasStmt: %w", cerr)
 		}
 	}
+	if q.getPostsPageWithAnyLabelStmt != nil {
+		if cerr := q.getPostsPageWithAnyLabelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsPageWithAnyLabelStmt: %w", cerr)
+		}
+	}
 	if q.getPostsPageWithLabelStmt != nil {
 		if cerr := q.getPostsPageWithLabelStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostsPageWithLabelStmt: %w", cerr)
@@ -204,6 +223,11 @@ func (q *Queries) Close() error {
 	if q.getUnprocessedImagesStmt != nil {
 		if cerr := q.getUnprocessedImagesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getUnprocessedImagesStmt: %w", cerr)
+		}
+	}
+	if q.removeLikeFromPostStmt != nil {
+		if cerr := q.removeLikeFromPostStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing removeLikeFromPostStmt: %w", cerr)
 		}
 	}
 	if q.updateImageStmt != nil {
@@ -254,6 +278,7 @@ type Queries struct {
 	addAuthorToClusterStmt         *sql.Stmt
 	addClusterStmt                 *sql.Stmt
 	addImageStmt                   *sql.Stmt
+	addLikeToPostStmt              *sql.Stmt
 	addPostStmt                    *sql.Stmt
 	addPostLabelStmt               *sql.Stmt
 	getAllUniqueLabelsStmt         *sql.Stmt
@@ -268,10 +293,12 @@ type Queries struct {
 	getOldestPresentParentStmt     *sql.Stmt
 	getPostStmt                    *sql.Stmt
 	getPostsPageByClusterAliasStmt *sql.Stmt
+	getPostsPageWithAnyLabelStmt   *sql.Stmt
 	getPostsPageWithLabelStmt      *sql.Stmt
 	getThreadViewStmt              *sql.Stmt
 	getTopPostersStmt              *sql.Stmt
 	getUnprocessedImagesStmt       *sql.Stmt
+	removeLikeFromPostStmt         *sql.Stmt
 	updateImageStmt                *sql.Stmt
 }
 
@@ -283,6 +310,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addAuthorToClusterStmt:         q.addAuthorToClusterStmt,
 		addClusterStmt:                 q.addClusterStmt,
 		addImageStmt:                   q.addImageStmt,
+		addLikeToPostStmt:              q.addLikeToPostStmt,
 		addPostStmt:                    q.addPostStmt,
 		addPostLabelStmt:               q.addPostLabelStmt,
 		getAllUniqueLabelsStmt:         q.getAllUniqueLabelsStmt,
@@ -297,10 +325,12 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getOldestPresentParentStmt:     q.getOldestPresentParentStmt,
 		getPostStmt:                    q.getPostStmt,
 		getPostsPageByClusterAliasStmt: q.getPostsPageByClusterAliasStmt,
+		getPostsPageWithAnyLabelStmt:   q.getPostsPageWithAnyLabelStmt,
 		getPostsPageWithLabelStmt:      q.getPostsPageWithLabelStmt,
 		getThreadViewStmt:              q.getThreadViewStmt,
 		getTopPostersStmt:              q.getTopPostersStmt,
 		getUnprocessedImagesStmt:       q.getUnprocessedImagesStmt,
+		removeLikeFromPostStmt:         q.removeLikeFromPostStmt,
 		updateImageStmt:                q.updateImageStmt,
 	}
 }

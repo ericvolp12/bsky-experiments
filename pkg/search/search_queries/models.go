@@ -56,3 +56,8 @@ type PostLabel struct {
 	PostID string `json:"post_id"`
 	Label  string `json:"label"`
 }
+
+type PostLike struct {
+	PostID    string `json:"post_id"`
+	LikeCount int64  `json:"like_count"`
+}

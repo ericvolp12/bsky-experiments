@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -221,6 +222,34 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 					return nil
 				}
 
+				// If the record is a like, try to unmarshal it into a Like and stick it in the DB
+				if strings.HasPrefix(op.Path, "app.bsky.feed.like") {
+					span.SetAttributes(attribute.String("repo.name", evt.Repo))
+					span.SetAttributes(attribute.String("event.type", "app.bsky.feed.like"))
+					// Unmarshal the JSON Byte Array into a Like
+					var like = appbsky.FeedLike{}
+					err = json.Unmarshal(b, &like)
+					if err != nil {
+						log.Errorf("failed to unmarshal like into a Like: %+v\n", err)
+						return nil
+					}
+
+					if like.Subject != nil {
+						span.SetAttributes(attribute.String("like.subject.uri", like.Subject.Uri))
+
+						_, postID := path.Split(like.Subject.Uri)
+						span.SetAttributes(attribute.String("like.subject.post_id", postID))
+
+						// Add the Like to the DB
+						err := bsky.PostRegistry.AddLikeToPost(ctx, postID)
+						if err != nil {
+							log.Errorf("failed to add like to post: %+v\n", err)
+							span.SetAttributes(attribute.String("error", err.Error()))
+						}
+					}
+					return nil
+				}
+
 				// Unmarshal the JSON Byte Array into a FeedPost
 				var pst = appbsky.FeedPost{}
 				err = json.Unmarshal(b, &pst)
@@ -237,6 +266,10 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 					opPath:    op.Path,
 					eventTime: evt.Time,
 				}
+			case repomgr.EvtKindDeleteRecord:
+				span.SetAttributes(attribute.String("evt.kind", "delete"))
+				span.SetAttributes(attribute.String("op.path", op.Path))
+				return nil
 			}
 		}
 	}
