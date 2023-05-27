@@ -1,7 +1,15 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    queries: "queries/"
+    queries:
+      [
+        "queries/authors",
+        "queries/clusters",
+        "queries/images",
+        "queries/labels",
+        "queries/likes",
+        "queries/posts",
+      ]
     schema: "schema/"
     gen:
       go:
