@@ -65,11 +65,6 @@ sentiment-gpu-up:
 	@echo "Starting Sentiment Analysis API with GPU Acceleration..."
 	docker-compose -f build/sentiment/gpu.docker-compose.yml up --build -d
 
-# Build the Feed Generator TypeScript Service
-feedgen-up:
-	@echo "Starting TypeScript Feed Generator API..."
-	docker-compose -f build/feedgen/docker-compose.yml up --build -d
-
 # Build the Object Detection Python Service
 object-detection-up:
 	@echo "Starting Object Detection API..."

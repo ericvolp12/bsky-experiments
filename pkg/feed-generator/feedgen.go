@@ -44,6 +44,19 @@ var animalLabels = []string{
 	"cv:giraffe",
 }
 
+var foodLabels = []string{
+	"cv:banana",
+	"cv:apple",
+	"cv:sandwich",
+	"cv:orange",
+	"cv:broccoli",
+	"cv:carrot",
+	"cv:hot dog",
+	"cv:pizza",
+	"cv:donut",
+	"cv:cake",
+}
+
 type FeedGenerator struct {
 	PostRegistry          *search.PostRegistry
 	Client                *xrpc.Client
@@ -360,6 +373,19 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 		posts = postsFromRegistry
 	} else if feedName == "animals" {
 		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelsByHotness(ctx, animalLabels, limit, cursor)
+		if err != nil {
+			if errors.As(err, &search.NotFoundError{}) {
+				span.SetAttributes(attribute.Bool("feed.label.not_found", true))
+				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				return
+			}
+			span.SetAttributes(attribute.Bool("feed.label.error", true))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		posts = postsFromRegistry
+	} else if feedName == "food" {
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelsByHotness(ctx, foodLabels, limit, cursor)
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
 				span.SetAttributes(attribute.Bool("feed.label.not_found", true))
