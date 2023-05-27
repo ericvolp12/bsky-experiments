@@ -6,3 +6,4 @@ handles.txt
 target/
 dist/
 __pycache__/
+data

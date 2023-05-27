@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"time"
@@ -124,6 +125,10 @@ func main() {
 					zap.String("time", end.Format(time.RFC3339)),
 					zap.String("rootPostID", c.GetString("rootPostID")),
 					zap.String("rootPostAuthorDID", c.GetString("rootPostAuthorDID")),
+					zap.String("feedQuery", c.GetString("feedQuery")),
+					zap.String("feedName", c.GetString("feedName")),
+					zap.Int64("limit", c.GetInt64("limit")),
+					zap.String("cursor", c.GetString("cursor")),
 					zap.Duration("latency", latency),
 				)
 			}
@@ -132,7 +137,15 @@ func main() {
 
 	router.Use(ginzap.RecoveryWithZap(logger, true))
 
-	router.Use(otelgin.Middleware("BSky-Feed-Generator-Go"))
+	// Plug in OTEL Middleware and skip metrics endpoint
+	router.Use(
+		otelgin.Middleware(
+			"BSky-Feed-Generator-Go",
+			otelgin.WithFilter(func(req *http.Request) bool {
+				return req.URL.Path != "/metrics"
+			}),
+		),
+	)
 
 	// CORS middleware
 	router.Use(cors.New(

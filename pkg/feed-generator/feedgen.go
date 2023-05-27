@@ -269,6 +269,7 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 		return
 	}
 
+	c.Set("feedQuery", feedQuery)
 	span.SetAttributes(attribute.String("feed.query", feedQuery))
 
 	feedPrefix := ""
@@ -299,6 +300,7 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	}
 
 	span.SetAttributes(attribute.String("feed.name.parsed", feedName))
+	c.Set("feedName", feedName)
 
 	var cluster *string
 
@@ -329,12 +331,15 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 		}
 	}
 
+	c.Set("limit", int64(limit))
+
 	span.SetAttributes(attribute.Int64("feed.limit.parsed", int64(limit)))
 
 	// Get the cursor from the query
 	cursor := c.Query("cursor")
 
 	span.SetAttributes(attribute.String("feed.cursor.raw", cursor))
+	c.Set("cursor", cursor)
 
 	var posts []*search.Post
 
