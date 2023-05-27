@@ -354,7 +354,7 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 
 		posts = postsFromRegistry
 	} else if feedName == "animals" {
-		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelsByHotness(ctx, animalLabels, fg.DefaultLookback, limit, cursor)
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelsByHotness(ctx, animalLabels, limit, cursor)
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
 				span.SetAttributes(attribute.Bool("feed.label.not_found", true))
@@ -367,7 +367,7 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 		}
 		posts = postsFromRegistry
 	} else { // Otherwise lookup labels
-		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelByHotness(ctx, feedName, fg.DefaultLookback, limit, cursor)
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelByHotness(ctx, feedName, limit, cursor)
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
 				span.SetAttributes(attribute.Bool("feed.label.not_found", true))

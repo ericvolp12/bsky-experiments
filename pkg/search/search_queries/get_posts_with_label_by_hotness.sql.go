@@ -10,25 +10,19 @@ import (
 )
 
 const getPostsPageWithLabelSortedByHotness = `-- name: GetPostsPageWithLabelSortedByHotness :many
-SELECT p.id, p.text, p.parent_post_id, p.root_post_id, p.author_did, p.created_at, 
-       p.has_embedded_media, p.parent_relationship, p.sentiment, p.sentiment_confidence,
-       (COALESCE(pl.like_count, 0) / GREATEST(1, EXTRACT(EPOCH FROM NOW() - p.created_at) / 60) *
-        EXP(GREATEST(0, (EXTRACT(EPOCH FROM NOW() - p.created_at) / 60 - 360) / 360)))::FLOAT AS hotness
-FROM posts p
-JOIN post_labels ON p.id = post_labels.post_id
-LEFT JOIN post_likes pl ON p.id = pl.post_id 
-WHERE post_labels.label = $1 AND 
-      (CASE WHEN $2 = '' THEN TRUE ELSE p.id < $2 END) AND
-      p.created_at >= NOW() - make_interval(hours := CAST($3 AS INT))
-ORDER BY hotness DESC, p.id DESC
-LIMIT $4
+SELECT h.id, h.text, h.parent_post_id, h.root_post_id, h.author_did, h.created_at, 
+       h.has_embedded_media, h.parent_relationship, h.sentiment, h.sentiment_confidence, h.hotness
+FROM post_hotness h
+WHERE h.label = $1 AND 
+      (CASE WHEN $2 = '' THEN TRUE ELSE h.id < $2 END)
+ORDER BY h.hotness DESC, h.id DESC
+LIMIT $3
 `
 
 type GetPostsPageWithLabelSortedByHotnessParams struct {
-	Label    string      `json:"label"`
-	Cursor   interface{} `json:"cursor"`
-	HoursAgo int32       `json:"hours_ago"`
-	Limit    int32       `json:"limit"`
+	Label  string      `json:"label"`
+	Cursor interface{} `json:"cursor"`
+	Limit  int32       `json:"limit"`
 }
 
 type GetPostsPageWithLabelSortedByHotnessRow struct {
@@ -46,12 +40,7 @@ type GetPostsPageWithLabelSortedByHotnessRow struct {
 }
 
 func (q *Queries) GetPostsPageWithLabelSortedByHotness(ctx context.Context, arg GetPostsPageWithLabelSortedByHotnessParams) ([]GetPostsPageWithLabelSortedByHotnessRow, error) {
-	rows, err := q.query(ctx, q.getPostsPageWithLabelSortedByHotnessStmt, getPostsPageWithLabelSortedByHotness,
-		arg.Label,
-		arg.Cursor,
-		arg.HoursAgo,
-		arg.Limit,
-	)
+	rows, err := q.query(ctx, q.getPostsPageWithLabelSortedByHotnessStmt, getPostsPageWithLabelSortedByHotness, arg.Label, arg.Cursor, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

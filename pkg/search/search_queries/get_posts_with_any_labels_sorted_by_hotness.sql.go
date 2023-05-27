@@ -12,25 +12,21 @@ import (
 )
 
 const getPostsPageWithAnyLabelSortedByHotness = `-- name: GetPostsPageWithAnyLabelSortedByHotness :many
-SELECT p.id, p.text, p.parent_post_id, p.root_post_id, p.author_did, p.created_at, 
-       p.has_embedded_media, p.parent_relationship, p.sentiment, p.sentiment_confidence,
-       (COALESCE(pl.like_count, 0) / GREATEST(1, EXTRACT(EPOCH FROM NOW() - p.created_at) / 60) *
-        EXP(GREATEST(0, (EXTRACT(EPOCH FROM NOW() - p.created_at) / 60 - 360) / 360)))::FLOAT AS hotness
-FROM posts p
-JOIN post_labels ON p.id = post_labels.post_id
-LEFT JOIN post_likes pl ON p.id = pl.post_id 
-WHERE post_labels.label = ANY($1::varchar[]) AND 
-      (CASE WHEN $2 = '' THEN TRUE ELSE p.id < $2 END) AND
-      p.created_at >= NOW() - make_interval(hours := CAST($3 AS INT))
-ORDER BY hotness DESC, p.id DESC
-LIMIT $4
+SELECT h.id, h.text, h.parent_post_id, h.root_post_id, h.author_did, h.created_at, 
+       h.has_embedded_media, h.parent_relationship, h.sentiment, h.sentiment_confidence, MAX(h.hotness) as hotness
+FROM post_hotness h
+WHERE h.label = ANY($1::varchar[])
+GROUP BY h.id, h.text, h.parent_post_id, h.root_post_id, h.author_did, h.created_at, 
+         h.has_embedded_media, h.parent_relationship, h.sentiment, h.sentiment_confidence
+HAVING (CASE WHEN $2 = '' THEN TRUE ELSE h.id < $2 END)
+ORDER BY hotness DESC, h.id DESC
+LIMIT $3
 `
 
 type GetPostsPageWithAnyLabelSortedByHotnessParams struct {
-	Labels   []string    `json:"labels"`
-	Cursor   interface{} `json:"cursor"`
-	HoursAgo int32       `json:"hours_ago"`
-	Limit    int32       `json:"limit"`
+	Labels []string    `json:"labels"`
+	Cursor interface{} `json:"cursor"`
+	Limit  int32       `json:"limit"`
 }
 
 type GetPostsPageWithAnyLabelSortedByHotnessRow struct {
@@ -44,16 +40,11 @@ type GetPostsPageWithAnyLabelSortedByHotnessRow struct {
 	ParentRelationship  sql.NullString  `json:"parent_relationship"`
 	Sentiment           sql.NullString  `json:"sentiment"`
 	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
-	Hotness             float64         `json:"hotness"`
+	Hotness             interface{}     `json:"hotness"`
 }
 
 func (q *Queries) GetPostsPageWithAnyLabelSortedByHotness(ctx context.Context, arg GetPostsPageWithAnyLabelSortedByHotnessParams) ([]GetPostsPageWithAnyLabelSortedByHotnessRow, error) {
-	rows, err := q.query(ctx, q.getPostsPageWithAnyLabelSortedByHotnessStmt, getPostsPageWithAnyLabelSortedByHotness,
-		pq.Array(arg.Labels),
-		arg.Cursor,
-		arg.HoursAgo,
-		arg.Limit,
-	)
+	rows, err := q.query(ctx, q.getPostsPageWithAnyLabelSortedByHotnessStmt, getPostsPageWithAnyLabelSortedByHotness, pq.Array(arg.Labels), arg.Cursor, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

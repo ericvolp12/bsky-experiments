@@ -654,7 +654,6 @@ func (pr *PostRegistry) GetPostsPageForLabel(
 func (pr *PostRegistry) GetPostsPageForLabelsByHotness(
 	ctx context.Context,
 	labels []string,
-	hoursAgo int32,
 	limit int32,
 	cursor string,
 ) ([]*Post, error) {
@@ -663,10 +662,9 @@ func (pr *PostRegistry) GetPostsPageForLabelsByHotness(
 	defer span.End()
 
 	posts, err := pr.queries.GetPostsPageWithAnyLabelSortedByHotness(ctx, search_queries.GetPostsPageWithAnyLabelSortedByHotnessParams{
-		Labels:   labels,
-		Limit:    limit,
-		HoursAgo: hoursAgo,
-		Cursor:   cursor,
+		Labels: labels,
+		Limit:  limit,
+		Cursor: cursor,
 	})
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -723,7 +721,6 @@ func (pr *PostRegistry) GetPostsPageForLabelsByHotness(
 func (pr *PostRegistry) GetPostsPageForLabelByHotness(
 	ctx context.Context,
 	label string,
-	hoursAgo int32,
 	limit int32,
 	cursor string,
 ) ([]*Post, error) {
@@ -732,10 +729,9 @@ func (pr *PostRegistry) GetPostsPageForLabelByHotness(
 	defer span.End()
 
 	posts, err := pr.queries.GetPostsPageWithLabelSortedByHotness(ctx, search_queries.GetPostsPageWithLabelSortedByHotnessParams{
-		Label:    label,
-		Limit:    limit,
-		HoursAgo: hoursAgo,
-		Cursor:   cursor,
+		Label:  label,
+		Limit:  limit,
+		Cursor: cursor,
 	})
 
 	if err != nil {
