@@ -11,18 +11,18 @@ import (
 
 const getPostsPageWithLabelSortedByHotness = `-- name: GetPostsPageWithLabelSortedByHotness :many
 SELECT h.id, h.text, h.parent_post_id, h.root_post_id, h.author_did, h.created_at, 
-       h.has_embedded_media, h.parent_relationship, h.sentiment, h.sentiment_confidence, h.hotness
+       h.has_embedded_media, h.parent_relationship, h.sentiment, h.sentiment_confidence, h.hotness::float as hotness
 FROM post_hotness h
 WHERE h.label = $1 AND 
-      (CASE WHEN $2 = '' THEN TRUE ELSE h.id < $2 END)
+      (CASE WHEN $2::float = -1 THEN TRUE ELSE hotness < $2::float END)
 ORDER BY h.hotness DESC, h.id DESC
 LIMIT $3
 `
 
 type GetPostsPageWithLabelSortedByHotnessParams struct {
-	Label  string      `json:"label"`
-	Cursor interface{} `json:"cursor"`
-	Limit  int32       `json:"limit"`
+	Label  string  `json:"label"`
+	Cursor float64 `json:"cursor"`
+	Limit  int32   `json:"limit"`
 }
 
 type GetPostsPageWithLabelSortedByHotnessRow struct {

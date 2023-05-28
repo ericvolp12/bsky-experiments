@@ -42,6 +42,7 @@ type Post struct {
 	Sentiment           *string   `json:"sentiment"`
 	SentimentConfidence *float64  `json:"sentiment_confidence"`
 	Images              []*Image  `json:"images,omitempty"`
+	Hotness             *float64  `json:"hotness,omitempty"`
 }
 
 type Image struct {
@@ -655,7 +656,7 @@ func (pr *PostRegistry) GetPostsPageForLabelsByHotness(
 	ctx context.Context,
 	labels []string,
 	limit int32,
-	cursor string,
+	cursor float64,
 ) ([]*Post, error) {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetPostsPageForLabelsByHotness")
@@ -700,6 +701,8 @@ func (pr *PostRegistry) GetPostsPageForLabelsByHotness(
 			sentimentConfidence = &p.SentimentConfidence.Float64
 		}
 
+		hotness := p.Hotness
+
 		retPosts[i] = &Post{
 			ID:                  p.ID,
 			Text:                p.Text,
@@ -711,6 +714,7 @@ func (pr *PostRegistry) GetPostsPageForLabelsByHotness(
 			ParentRelationship:  parentRelationshipPtr,
 			Sentiment:           sentiment,
 			SentimentConfidence: sentimentConfidence,
+			Hotness:             &hotness,
 		}
 
 	}
@@ -722,7 +726,7 @@ func (pr *PostRegistry) GetPostsPageForLabelByHotness(
 	ctx context.Context,
 	label string,
 	limit int32,
-	cursor string,
+	cursor float64,
 ) ([]*Post, error) {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetPostsPageForLabelsByHotness")
@@ -768,6 +772,8 @@ func (pr *PostRegistry) GetPostsPageForLabelByHotness(
 			sentimentConfidence = &p.SentimentConfidence.Float64
 		}
 
+		hotness := p.Hotness
+
 		retPosts[i] = &Post{
 			ID:                  p.ID,
 			Text:                p.Text,
@@ -779,6 +785,7 @@ func (pr *PostRegistry) GetPostsPageForLabelByHotness(
 			ParentRelationship:  parentRelationshipPtr,
 			Sentiment:           sentiment,
 			SentimentConfidence: sentimentConfidence,
+			Hotness:             &hotness,
 		}
 
 	}

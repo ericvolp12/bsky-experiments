@@ -355,15 +355,9 @@ func handleRepoStreamWithRetry(
 				case <-updateCheckTimer.C:
 					bsky.SocialGraphMux.RLock()
 					if bsky.SocialGraph.LastUpdate.Add(updateCheckDuration).Before(time.Now()) {
-						log.Printf("The graph hasn't been updated in the past %v seconds, closing and reopening the WebSocket...", updateCheckDuration)
+						log.Printf("The graph hasn't been updated in the past %v seconds, exiting the graph builder (docker should restart it and get us in a good state)", updateCheckDuration)
 						bsky.SocialGraphMux.RUnlock()
-						// Cancel the context and close the WebSocket connection
-						// Reset the backoff timer
-						backoff = 0
-						// Set the lastupdate to now so we don't trigger this again
-						bsky.SocialGraphMux.Lock()
-						bsky.SocialGraph.LastUpdate = time.Now()
-						bsky.SocialGraphMux.Unlock()
+						os.Exit(1)
 						cancel()
 						c.Close()
 						return

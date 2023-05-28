@@ -348,17 +348,36 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 
 	span.SetAttributes(attribute.Int64("feed.limit.parsed", int64(limit)))
 
-	// Get the cursor from the query
+	// Get the cursor from the query (post_id:hotness)
 	cursor := c.Query("cursor")
+	c.Set("cursor", cursor)
+	cursorPostID := ""
+	cursorHotness := float64(-1)
 
 	span.SetAttributes(attribute.String("feed.cursor.raw", cursor))
-	c.Set("cursor", cursor)
+	if cursor != "" {
+		cursorParts := strings.Split(cursor, ":")
+		if len(cursorParts) != 2 {
+			span.SetAttributes(attribute.Bool("feed.cursor.invalid", true))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "cursor is invalid"})
+			return
+		}
+		cursorPostID = cursorParts[0]
+		parsedHotness, err := strconv.ParseFloat(cursorParts[1], 64)
+		if err != nil {
+			span.SetAttributes(attribute.Bool("feed.cursor.failed_to_parse", true))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "cursor is invalid (failed to parse hotness)"})
+			return
+		}
+		cursorHotness = parsedHotness
+		span.SetAttributes(attribute.Float64("feed.cursor.hotness", cursorHotness))
+	}
 
 	var posts []*search.Post
 
 	// Get cluster posts if a cluster is specified
 	if cluster != nil {
-		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForCluster(ctx, *cluster, fg.DefaultLookback, limit, cursor)
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForCluster(ctx, *cluster, fg.DefaultLookback, limit, cursorPostID)
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
 				span.SetAttributes(attribute.Bool("feed.cluster.not_found", true))
@@ -372,7 +391,7 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 
 		posts = postsFromRegistry
 	} else if feedName == "animals" {
-		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelsByHotness(ctx, animalLabels, limit, cursor)
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelsByHotness(ctx, animalLabels, limit, cursorHotness)
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
 				span.SetAttributes(attribute.Bool("feed.label.not_found", true))
@@ -385,7 +404,7 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 		}
 		posts = postsFromRegistry
 	} else if feedName == "food" {
-		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelsByHotness(ctx, foodLabels, limit, cursor)
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelsByHotness(ctx, foodLabels, limit, cursorHotness)
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
 				span.SetAttributes(attribute.Bool("feed.label.not_found", true))
@@ -398,7 +417,7 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 		}
 		posts = postsFromRegistry
 	} else { // Otherwise lookup labels
-		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelByHotness(ctx, feedName, limit, cursor)
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelByHotness(ctx, feedName, limit, cursorHotness)
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
 				span.SetAttributes(attribute.Bool("feed.label.not_found", true))
@@ -425,7 +444,12 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	}
 
 	if len(posts) > 0 {
-		feedSkeleton.Cursor = &posts[len(posts)-1].ID
+		lastPostHotness := 0.0
+		if posts[len(posts)-1].Hotness != nil {
+			lastPostHotness = *posts[len(posts)-1].Hotness
+		}
+		newCursor := fmt.Sprintf("%s:%f", posts[len(posts)-1].ID, lastPostHotness)
+		feedSkeleton.Cursor = &newCursor
 	}
 
 	feedRequestLatency.WithLabelValues(feedName).Observe(time.Since(start).Seconds())
