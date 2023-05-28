@@ -14,6 +14,12 @@ type Author struct {
 	Handle string `json:"handle"`
 }
 
+type AuthorBlock struct {
+	ActorDid  string    `json:"actor_did"`
+	TargetDid string    `json:"target_did"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type AuthorCluster struct {
 	AuthorDid string `json:"author_did"`
 	ClusterID int32  `json:"cluster_id"`

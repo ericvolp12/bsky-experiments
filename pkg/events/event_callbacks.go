@@ -206,6 +206,13 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 					return nil
 				}
 
+				// Parse time from the event time string
+				t, err := time.Parse(time.RFC3339, evt.Time)
+				if err != nil {
+					log.Errorf("error parsing time: %+v", err)
+					return nil
+				}
+
 				// If the record is a block, try to unmarshal it into a GraphBlock and log it
 				if strings.HasPrefix(op.Path, "app.bsky.graph.block") {
 					span.SetAttributes(attribute.String("repo.name", evt.Repo))
@@ -218,6 +225,11 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 						return nil
 					}
 					span.SetAttributes(attribute.String("block.subject", block.Subject))
+					err = bsky.PostRegistry.AddAuthorBlock(ctx, evt.Repo, block.Subject, t)
+					if err != nil {
+						log.Errorf("failed to add author block to registry: %+v\n", err)
+						return nil
+					}
 					log.Infow("processed graph block", "target", block.Subject, "source", evt.Repo)
 					return nil
 				}

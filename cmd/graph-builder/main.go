@@ -180,14 +180,14 @@ func main() {
 
 	// Run a routine that handles the events from the WebSocket
 	log.Info("starting repo sync routine...")
-	err = handleRepoStreamWithRetry(ctx, bsky, u, &events.RepoStreamCallbacks{
+	err = handleRepoStreamWithRetry(ctx, bsky, log, u, &events.RepoStreamCallbacks{
 		RepoCommit: bsky.HandleRepoCommit,
 		RepoInfo:   intEvents.HandleRepoInfo,
 		Error:      intEvents.HandleError,
 	})
 
 	if err != nil {
-		log.Errorf("Error: %v\n", err)
+		log.Errorf("Error: %v", err)
 	}
 
 	log.Info("waiting for routines to finish...")
@@ -326,16 +326,18 @@ func getNextBackoff(currentBackoff time.Duration) time.Duration {
 func handleRepoStreamWithRetry(
 	ctx context.Context,
 	bsky *intEvents.BSky,
+	log *zap.SugaredLogger,
 	u url.URL,
 	callbacks *events.RepoStreamCallbacks,
 ) error {
 	var backoff time.Duration
 
 	for {
-		log.Println("connecting to BSky WebSocket...")
+		log.Info("connecting to BSky WebSocket...")
 		c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {
-			log.Printf("failed to connect to websocket: %v", err)
+			log.Infof("failed to connect to websocket: %v", err)
+			continue
 		}
 		defer c.Close()
 
@@ -355,7 +357,7 @@ func handleRepoStreamWithRetry(
 				case <-updateCheckTimer.C:
 					bsky.SocialGraphMux.RLock()
 					if bsky.SocialGraph.LastUpdate.Add(updateCheckDuration).Before(time.Now()) {
-						log.Printf("The graph hasn't been updated in the past %v seconds, exiting the graph builder (docker should restart it and get us in a good state)", updateCheckDuration)
+						log.Infof("The graph hasn't been updated in the past %v seconds, exiting the graph builder (docker should restart it and get us in a good state)", updateCheckDuration)
 						bsky.SocialGraphMux.RUnlock()
 						os.Exit(1)
 						cancel()
@@ -371,7 +373,7 @@ func handleRepoStreamWithRetry(
 
 		err = events.HandleRepoStream(streamCtx, c, callbacks)
 		if err != nil {
-			log.Printf("Error in event handler routine: %v\n", err)
+			log.Infof("Error in event handler routine: %v", err)
 			backoff = getNextBackoff(backoff)
 			if backoff > maxBackoff {
 				return fmt.Errorf("maximum backoff of %v reached, giving up", maxBackoff)
@@ -379,7 +381,7 @@ func handleRepoStreamWithRetry(
 
 			select {
 			case <-time.After(backoff):
-				log.Printf("Reconnecting after %v...\n", backoff)
+				log.Infof("Reconnecting after %v...", backoff)
 			case <-ctx.Done():
 				return ctx.Err()
 			}

@@ -85,6 +85,12 @@ type AuthorStats struct {
 	UpdatedAt       time.Time    `json:"updated_at"`
 }
 
+type AuthorBlock struct {
+	ActorDID  string    `json:"author_did"`
+	TargetDID string    `json:"target_did"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type PostView struct {
 	Post         `json:"post"`
 	AuthorHandle string `json:"author_handle"`
@@ -499,6 +505,19 @@ func (pr *PostRegistry) AddAuthor(ctx context.Context, author *Author) error {
 	return err
 }
 
+func (pr *PostRegistry) AddAuthorBlock(ctx context.Context, authorDID string, targetDID string, createdAt time.Time) error {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:AddAuthorBlock")
+	defer span.End()
+
+	err := pr.queries.AddAuthorBlock(ctx, search_queries.AddAuthorBlockParams{
+		ActorDid:  authorDID,
+		TargetDid: targetDID,
+		CreatedAt: createdAt,
+	})
+	return err
+}
+
 func (pr *PostRegistry) AddPostLabel(ctx context.Context, postID string, label string) error {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AddPostLabel")
@@ -526,6 +545,18 @@ func (pr *PostRegistry) RemoveLikeFromPost(ctx context.Context, postID string) e
 	defer span.End()
 
 	err := pr.queries.RemoveLikeFromPost(ctx, postID)
+	return err
+}
+
+func (pr *PostRegistry) RemoveBlock(ctx context.Context, actorDID string, targetDID string) error {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:RemoveBlock")
+	defer span.End()
+
+	err := pr.queries.RemoveAuthorBlock(ctx, search_queries.RemoveAuthorBlockParams{
+		ActorDid:  actorDID,
+		TargetDid: targetDID,
+	})
 	return err
 }
 
@@ -565,6 +596,51 @@ func (pr *PostRegistry) GetClusters(ctx context.Context) ([]*Cluster, error) {
 	}
 
 	return retClusters, nil
+}
+
+func (pr *PostRegistry) GetBlockedByCount(ctx context.Context, targetDID string) (int64, error) {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetBlockedByCount")
+	defer span.End()
+
+	count, err := pr.queries.GetBlockedByCountForTarget(ctx, targetDID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, NotFoundError{fmt.Errorf("target not found")}
+		}
+		return 0, err
+	}
+
+	return count, nil
+}
+
+func (pr *PostRegistry) GetBlocksPageForTarget(ctx context.Context, targetDID string, limit int32, offset int32) ([]*AuthorBlock, error) {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetBlocksPageForTarget")
+	defer span.End()
+
+	blocks, err := pr.queries.GetBlocksForTarget(ctx, search_queries.GetBlocksForTargetParams{
+		TargetDid: targetDID,
+		Limit:     limit,
+		Offset:    offset,
+	})
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, NotFoundError{fmt.Errorf("blocks not found")}
+		}
+		return nil, err
+	}
+
+	retBlocks := make([]*AuthorBlock, len(blocks))
+	for i, block := range blocks {
+		retBlocks[i] = &AuthorBlock{
+			ActorDID:  block.ActorDid,
+			TargetDID: block.TargetDid,
+			CreatedAt: block.CreatedAt,
+		}
+	}
+
+	return retBlocks, nil
 }
 
 func (pr *PostRegistry) GetUniqueLabels(ctx context.Context) ([]string, error) {

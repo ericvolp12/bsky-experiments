@@ -9,6 +9,7 @@ sql:
         "queries/labels",
         "queries/likes",
         "queries/posts",
+        "queries/author_blocks",
       ]
     schema: "schema/"
     gen:

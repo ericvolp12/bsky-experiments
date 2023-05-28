@@ -25,6 +25,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addAuthorStmt, err = db.PrepareContext(ctx, addAuthor); err != nil {
 		return nil, fmt.Errorf("error preparing query AddAuthor: %w", err)
 	}
+	if q.addAuthorBlockStmt, err = db.PrepareContext(ctx, addAuthorBlock); err != nil {
+		return nil, fmt.Errorf("error preparing query AddAuthorBlock: %w", err)
+	}
 	if q.addAuthorToClusterStmt, err = db.PrepareContext(ctx, addAuthorToCluster); err != nil {
 		return nil, fmt.Errorf("error preparing query AddAuthorToCluster: %w", err)
 	}
@@ -49,11 +52,20 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getAuthorStmt, err = db.PrepareContext(ctx, getAuthor); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuthor: %w", err)
 	}
+	if q.getAuthorBlockStmt, err = db.PrepareContext(ctx, getAuthorBlock); err != nil {
+		return nil, fmt.Errorf("error preparing query GetAuthorBlock: %w", err)
+	}
 	if q.getAuthorStatsStmt, err = db.PrepareContext(ctx, getAuthorStats); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuthorStats: %w", err)
 	}
 	if q.getAuthorsByHandleStmt, err = db.PrepareContext(ctx, getAuthorsByHandle); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuthorsByHandle: %w", err)
+	}
+	if q.getBlockedByCountForTargetStmt, err = db.PrepareContext(ctx, getBlockedByCountForTarget); err != nil {
+		return nil, fmt.Errorf("error preparing query GetBlockedByCountForTarget: %w", err)
+	}
+	if q.getBlocksForTargetStmt, err = db.PrepareContext(ctx, getBlocksForTarget); err != nil {
+		return nil, fmt.Errorf("error preparing query GetBlocksForTarget: %w", err)
 	}
 	if q.getClustersStmt, err = db.PrepareContext(ctx, getClusters); err != nil {
 		return nil, fmt.Errorf("error preparing query GetClusters: %w", err)
@@ -100,6 +112,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getUnprocessedImagesStmt, err = db.PrepareContext(ctx, getUnprocessedImages); err != nil {
 		return nil, fmt.Errorf("error preparing query GetUnprocessedImages: %w", err)
 	}
+	if q.removeAuthorBlockStmt, err = db.PrepareContext(ctx, removeAuthorBlock); err != nil {
+		return nil, fmt.Errorf("error preparing query RemoveAuthorBlock: %w", err)
+	}
 	if q.removeLikeFromPostStmt, err = db.PrepareContext(ctx, removeLikeFromPost); err != nil {
 		return nil, fmt.Errorf("error preparing query RemoveLikeFromPost: %w", err)
 	}
@@ -114,6 +129,11 @@ func (q *Queries) Close() error {
 	if q.addAuthorStmt != nil {
 		if cerr := q.addAuthorStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addAuthorStmt: %w", cerr)
+		}
+	}
+	if q.addAuthorBlockStmt != nil {
+		if cerr := q.addAuthorBlockStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addAuthorBlockStmt: %w", cerr)
 		}
 	}
 	if q.addAuthorToClusterStmt != nil {
@@ -156,6 +176,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getAuthorStmt: %w", cerr)
 		}
 	}
+	if q.getAuthorBlockStmt != nil {
+		if cerr := q.getAuthorBlockStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getAuthorBlockStmt: %w", cerr)
+		}
+	}
 	if q.getAuthorStatsStmt != nil {
 		if cerr := q.getAuthorStatsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getAuthorStatsStmt: %w", cerr)
@@ -164,6 +189,16 @@ func (q *Queries) Close() error {
 	if q.getAuthorsByHandleStmt != nil {
 		if cerr := q.getAuthorsByHandleStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getAuthorsByHandleStmt: %w", cerr)
+		}
+	}
+	if q.getBlockedByCountForTargetStmt != nil {
+		if cerr := q.getBlockedByCountForTargetStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getBlockedByCountForTargetStmt: %w", cerr)
+		}
+	}
+	if q.getBlocksForTargetStmt != nil {
+		if cerr := q.getBlocksForTargetStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getBlocksForTargetStmt: %w", cerr)
 		}
 	}
 	if q.getClustersStmt != nil {
@@ -241,6 +276,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getUnprocessedImagesStmt: %w", cerr)
 		}
 	}
+	if q.removeAuthorBlockStmt != nil {
+		if cerr := q.removeAuthorBlockStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing removeAuthorBlockStmt: %w", cerr)
+		}
+	}
 	if q.removeLikeFromPostStmt != nil {
 		if cerr := q.removeLikeFromPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing removeLikeFromPostStmt: %w", cerr)
@@ -291,6 +331,7 @@ type Queries struct {
 	db                                          DBTX
 	tx                                          *sql.Tx
 	addAuthorStmt                               *sql.Stmt
+	addAuthorBlockStmt                          *sql.Stmt
 	addAuthorToClusterStmt                      *sql.Stmt
 	addClusterStmt                              *sql.Stmt
 	addImageStmt                                *sql.Stmt
@@ -299,8 +340,11 @@ type Queries struct {
 	addPostLabelStmt                            *sql.Stmt
 	getAllUniqueLabelsStmt                      *sql.Stmt
 	getAuthorStmt                               *sql.Stmt
+	getAuthorBlockStmt                          *sql.Stmt
 	getAuthorStatsStmt                          *sql.Stmt
 	getAuthorsByHandleStmt                      *sql.Stmt
+	getBlockedByCountForTargetStmt              *sql.Stmt
+	getBlocksForTargetStmt                      *sql.Stmt
 	getClustersStmt                             *sql.Stmt
 	getImageStmt                                *sql.Stmt
 	getImagesForAuthorDIDStmt                   *sql.Stmt
@@ -316,6 +360,7 @@ type Queries struct {
 	getThreadViewStmt                           *sql.Stmt
 	getTopPostersStmt                           *sql.Stmt
 	getUnprocessedImagesStmt                    *sql.Stmt
+	removeAuthorBlockStmt                       *sql.Stmt
 	removeLikeFromPostStmt                      *sql.Stmt
 	updateImageStmt                             *sql.Stmt
 }
@@ -325,6 +370,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		db:                             tx,
 		tx:                             tx,
 		addAuthorStmt:                  q.addAuthorStmt,
+		addAuthorBlockStmt:             q.addAuthorBlockStmt,
 		addAuthorToClusterStmt:         q.addAuthorToClusterStmt,
 		addClusterStmt:                 q.addClusterStmt,
 		addImageStmt:                   q.addImageStmt,
@@ -333,8 +379,11 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addPostLabelStmt:               q.addPostLabelStmt,
 		getAllUniqueLabelsStmt:         q.getAllUniqueLabelsStmt,
 		getAuthorStmt:                  q.getAuthorStmt,
+		getAuthorBlockStmt:             q.getAuthorBlockStmt,
 		getAuthorStatsStmt:             q.getAuthorStatsStmt,
 		getAuthorsByHandleStmt:         q.getAuthorsByHandleStmt,
+		getBlockedByCountForTargetStmt: q.getBlockedByCountForTargetStmt,
+		getBlocksForTargetStmt:         q.getBlocksForTargetStmt,
 		getClustersStmt:                q.getClustersStmt,
 		getImageStmt:                   q.getImageStmt,
 		getImagesForAuthorDIDStmt:      q.getImagesForAuthorDIDStmt,
@@ -350,6 +399,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getThreadViewStmt:                           q.getThreadViewStmt,
 		getTopPostersStmt:                           q.getTopPostersStmt,
 		getUnprocessedImagesStmt:                    q.getUnprocessedImagesStmt,
+		removeAuthorBlockStmt:                       q.removeAuthorBlockStmt,
 		removeLikeFromPostStmt:                      q.removeLikeFromPostStmt,
 		updateImageStmt:                             q.updateImageStmt,
 	}
