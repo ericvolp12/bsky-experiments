@@ -36,6 +36,7 @@ require (
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v2 v2.0.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
@@ -76,6 +77,7 @@ require (
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/bits-and-blooms/bloom/v3 v3.4.0
 	github.com/cheggaaa/pb/v3 v3.1.2
+	github.com/decred/dcrd/dcrec/secp256k1 v1.0.3
 	github.com/fatih/color v1.14.1 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
