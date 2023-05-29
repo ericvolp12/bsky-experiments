@@ -445,6 +445,14 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 			return
 		}
 		posts = postsFromRegistry
+	} else if feedName == "authTest" {
+		if c.GetString("user_did") == "" {
+			span.SetAttributes(attribute.Bool("feed.authTest.not_authorized", true))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "authorized"})
+		return
 	} else { // Otherwise lookup labels
 		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelByHotness(ctx, feedName, limit, cursorHotness)
 		if err != nil {

@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	feedgenerator "github.com/ericvolp12/bsky-experiments/pkg/feed-generator"
@@ -16,6 +19,8 @@ import (
 	"github.com/gin-contrib/cors"
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt"
+	"github.com/multiformats/go-multibase"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -29,6 +34,28 @@ import (
 type preheatItem struct {
 	authorID string
 	postID   string
+}
+
+type AccessClaims struct {
+	Scope string `json:"scope"`
+	jwt.StandardClaims
+}
+
+type PLCEntry struct {
+	Context            []string `json:"@context"`
+	ID                 string   `json:"id"`
+	AlsoKnownAs        []string `json:"alsoKnownAs"`
+	VerificationMethod []struct {
+		ID                 string `json:"id"`
+		Type               string `json:"type"`
+		Controller         string `json:"controller"`
+		PublicKeyMultibase string `json:"publicKeyMultibase"`
+	} `json:"verificationMethod"`
+	Service []struct {
+		ID              string `json:"id"`
+		Type            string `json:"type"`
+		ServiceEndpoint string `json:"serviceEndpoint"`
+	} `json:"service"`
 }
 
 func main() {
@@ -167,6 +194,107 @@ func main() {
 	// Prometheus middleware
 	p := ginprometheus.NewPrometheus("gin", nil)
 	p.Use(router)
+
+	// Auth middleware
+	router.Use(func(c *gin.Context) {
+		ctx := c.Request.Context()
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.Next()
+			return
+		}
+
+		authHeaderParts := strings.Split(authHeader, " ")
+		if len(authHeaderParts) != 2 {
+			c.Next()
+			return
+		}
+
+		if authHeaderParts[0] != "Bearer" {
+			c.Next()
+			return
+		}
+
+		accessToken := authHeaderParts[1]
+
+		claims := &AccessClaims{}
+
+		token, err := jwt.ParseWithClaims(accessToken, claims, func(token *jwt.Token) (interface{}, error) {
+			if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+				return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
+			}
+
+			// Get the user's key from PLC Directory: https://plc.directory/{did}
+			if claims, ok := token.Claims.(*AccessClaims); ok {
+				// Get the user's key from PLC Directory: https://plc.directory/{did}
+				userDID := claims.Subject
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("https://plc.directory/%s", userDID), nil)
+				if err != nil {
+					return nil, fmt.Errorf("Failed to create PLC Directory request: %v", err)
+				}
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					return nil, fmt.Errorf("Failed to get user's key from PLC Directory: %v", err)
+				}
+				defer resp.Body.Close()
+
+				if resp.StatusCode != http.StatusOK {
+					return nil, fmt.Errorf("Failed to get user's key from PLC Directory: %v", resp.Status)
+				}
+
+				body, err := ioutil.ReadAll(resp.Body)
+				if err != nil {
+					return nil, fmt.Errorf("Failed to read PLC Directory response: %v", err)
+				}
+				// Unmarshal into a PLC Entry
+				plcEntry := &PLCEntry{}
+				err = json.Unmarshal(body, plcEntry)
+				if err != nil {
+					return nil, fmt.Errorf("Failed to unmarshal PLC Entry: %v", err)
+				}
+
+				// Get the public key from the PLC Entry
+				if len(plcEntry.VerificationMethod) == 0 {
+					return nil, fmt.Errorf("No verification method found in PLC Entry")
+				}
+
+				// Get the public key from the PLC Entry
+				publicKey := plcEntry.VerificationMethod[0].PublicKeyMultibase
+
+				// Decode the public key
+				_, decodedPublicKey, err := multibase.Decode(publicKey)
+				if err != nil {
+					return nil, fmt.Errorf("Failed to decode public key: %v", err)
+				}
+
+				log.Printf("Decoded public key: %x", decodedPublicKey)
+
+				return decodedPublicKey, nil
+			}
+
+			return nil, fmt.Errorf("Invalid authorization token")
+		})
+
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			c.Abort()
+			return
+		}
+
+		if claims, ok := token.Claims.(*AccessClaims); ok {
+			if claims.Scope != "com.atproto.access" {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization token (invalid scope)"})
+				c.Abort()
+				return
+			}
+			// Set claims subject to context
+			c.Set("user_did", claims.Subject)
+			c.Next()
+		} else {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization token (invalid claims)"})
+			c.Abort()
+		}
+	})
 
 	router.GET("/update_cluster_assignments", feedGenerator.UpdateClusterAssignments)
 	router.GET("/.well-known/did.json", feedGenerator.GetWellKnownDID)
