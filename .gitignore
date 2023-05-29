@@ -7,3 +7,4 @@ target/
 dist/
 __pycache__/
 data
+graph.bin
