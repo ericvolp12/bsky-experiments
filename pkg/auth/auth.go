@@ -168,6 +168,7 @@ func (auth *Auth) GetClaimsFromAuthHeader(ctx context.Context, authHeader string
 			}
 
 			// Get the multibase key from the PLC Entry's first verification method
+			// TODO: Support multiple verification methods
 			multibaseKey := plcEntry.VerificationMethod[0].PublicKeyMultibase
 
 			// Decode the multibase key
