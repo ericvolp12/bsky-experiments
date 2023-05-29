@@ -249,8 +249,8 @@ func (auth *Auth) GetPLCEntry(ctx context.Context, did string) (*PLCEntry, error
 }
 
 func (auth *Auth) AuthenticateGinRequest(c *gin.Context) {
-	tracer := otel.Tracer("feed-generator")
-	ctx, span := tracer.Start(c.Request.Context(), "FeedGenerator:AuthMiddleware")
+	tracer := otel.Tracer("auth")
+	ctx, span := tracer.Start(c.Request.Context(), "Auth:AuthenticateGinRequest")
 
 	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
