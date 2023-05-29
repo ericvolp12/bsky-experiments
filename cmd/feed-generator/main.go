@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/ericvolp12/bsky-experiments/pkg/auth"
 	feedgenerator "github.com/ericvolp12/bsky-experiments/pkg/feed-generator"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
@@ -168,7 +169,13 @@ func main() {
 	p := ginprometheus.NewPrometheus("gin", nil)
 	p.Use(router)
 
-	auth, err := feedgenerator.NewAuth(10000, time.Hour*1)
+	auth, err := auth.NewAuth(
+		10000,
+		time.Hour*1,
+		"https://plc.directory",
+		5,
+		"did:web:feedsky.jazco.io",
+	)
 	if err != nil {
 		log.Fatalf("Failed to create Auth: %v", err)
 	}
@@ -177,7 +184,7 @@ func main() {
 	router.GET("/.well-known/did.json", feedGenerator.GetWellKnownDID)
 
 	// Auth middleware
-	router.Use(auth.AuthenticateRequest)
+	router.Use(auth.AuthenticateGinRequest)
 
 	router.GET("/xrpc/app.bsky.feed.getFeedSkeleton", feedGenerator.GetFeedSkeleton)
 	router.GET("/xrpc/app.bsky.feed.describeFeedGenerator", feedGenerator.DescribeFeedGenerator)
