@@ -5,7 +5,9 @@ go 1.20
 require (
 	github.com/XSAM/otelsql v0.22.0
 	github.com/bluesky-social/indigo v0.0.0-20230524015214-dde615f101b6
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0
 	github.com/ericvolp12/go-gin-prometheus v0.0.0-20221219081010-fc0e0436c283
+	github.com/ericvolp12/jwt-go-secp256k1 v0.0.1
 	github.com/gin-contrib/cors v1.4.0
 	github.com/gin-contrib/zap v0.1.0
 	github.com/gin-gonic/gin v1.9.0
@@ -115,7 +117,7 @@ require (
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect
-	github.com/multiformats/go-multibase v0.2.0 // indirect
+	github.com/multiformats/go-multibase v0.2.0
 	github.com/multiformats/go-multicodec v0.8.1 // indirect
 	github.com/multiformats/go-multihash v0.2.1 // indirect
 	github.com/multiformats/go-varint v0.0.7 // indirect
