@@ -7,7 +7,7 @@ services:
       dockerfile: build/feedgen-go/Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    image: bsky-feedgen-go #:working
+    image: bsky-feedgen-go #:stable
     container_name: bsky-feedgen-go
     environment:
       - GIN_MODE=release
@@ -15,3 +15,18 @@ services:
       - ../../.env
     ports:
       - "8095:8080"
+  # bsky-feedgen-go-test:
+  #   build:
+  #     context: ../../
+  #     dockerfile: build/feedgen-go/Dockerfile
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   image: bsky-feedgen-go
+  #   container_name: bsky-feedgen-go-test
+  #   environment:
+  #     - GIN_MODE=release
+  #   env_file:
+  #     - ../../.env
+  #   ports:
+  #     - "8096:8080"
+

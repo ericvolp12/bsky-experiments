@@ -2,6 +2,7 @@ package feedgenerator
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	bloom "github.com/bits-and-blooms/bloom/v3"
 	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/clusters"
@@ -275,6 +277,9 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	ctx, span := tracer.Start(c.Request.Context(), "FeedGenerator:GetFeedSkeleton")
 	defer span.End()
 
+	bloomFilterMaxSize := uint(1000)     // expected number of items in the bloom filter
+	bloomFilterFalsePositiveRate := 0.01 // false positive rate of the bloom filter
+
 	start := time.Now()
 	feedQuery := c.Query("feed")
 	if feedQuery == "" {
@@ -353,11 +358,12 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	c.Set("cursor", cursor)
 	cursorPostID := ""
 	cursorHotness := float64(-1)
+	var bloomFilter *bloom.BloomFilter
 
 	span.SetAttributes(attribute.String("feed.cursor.raw", cursor))
 	if cursor != "" {
 		cursorParts := strings.Split(cursor, ":")
-		if len(cursorParts) != 2 {
+		if len(cursorParts) != 3 {
 			span.SetAttributes(attribute.Bool("feed.cursor.invalid", true))
 			c.JSON(http.StatusBadRequest, gin.H{"error": "cursor is invalid"})
 			return
@@ -370,7 +376,30 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 			return
 		}
 		cursorHotness = parsedHotness
+
+		// grab the bloom filter from the cursor
+		filterString := cursorParts[2]
+		// convert the string back to a byte slice
+		filterBytes, err := base64.URLEncoding.DecodeString(filterString)
+		if err != nil {
+			span.SetAttributes(attribute.Bool("feed.cursor.failed_to_decode_filter", true))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "cursor is invalid (failed to decode filter)"})
+			return
+		}
+		bloomFilter = bloom.NewWithEstimates(bloomFilterMaxSize, bloomFilterFalsePositiveRate)
+		err = bloomFilter.UnmarshalBinary(filterBytes)
+		if err != nil {
+			span.SetAttributes(attribute.Bool("feed.cursor.failed_to_unmarshal_filter", true))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "cursor is invalid (failed to unmarshal filter)"})
+			return
+		}
+
 		span.SetAttributes(attribute.Float64("feed.cursor.hotness", cursorHotness))
+	}
+
+	if bloomFilter == nil {
+		// create a new bloom filter
+		bloomFilter = bloom.NewWithEstimates(bloomFilterMaxSize, bloomFilterFalsePositiveRate)
 	}
 
 	var posts []*search.Post
@@ -432,25 +461,45 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	}
 
 	span.SetAttributes(attribute.Int("feed.posts_returned", len(posts)))
+	feedItems := []FeedPostItem{}
+	var newCursor string
 
-	feedItems := make([]FeedPostItem, len(posts))
-	for i, post := range posts {
-		postAtURL := fmt.Sprintf("at://%s/app.bsky.feed.post/%s", post.AuthorDID, post.ID)
-		feedItems[i] = FeedPostItem{Post: postAtURL}
+	if len(posts) > 0 {
+		for _, post := range posts {
+			alreadySeen := bloomFilter.Test([]byte(post.ID))
+			if !alreadySeen {
+				postAtURL := fmt.Sprintf("at://%s/app.bsky.feed.post/%s", post.AuthorDID, post.ID)
+				feedItems = append(feedItems, FeedPostItem{Post: postAtURL})
+				bloomFilter.AddString(post.ID)
+			}
+		}
+
+		// serialize the filter to a byte slice
+		filterBytes, err := bloomFilter.MarshalBinary()
+		if err != nil {
+			span.SetAttributes(attribute.Bool("feed.filter.failed_to_marshal", true))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to marshal filter: %s", err.Error())})
+			return
+		}
+
+		// convert the byte slice to a URL-safe string
+		filterString := base64.URLEncoding.EncodeToString(filterBytes)
+
+		lastPostHotness := 0.0
+		if posts[len(posts)-1].Hotness != nil {
+			// get the hotness of the last post
+			lastPostHotness = *posts[len(posts)-1].Hotness
+		}
+
+		// construct the cursor with the last post ID, hotness, and serialized filter
+		newCursor = fmt.Sprintf("%s:%f:%s", posts[len(posts)-1].ID, lastPostHotness, filterString)
 	}
 
 	feedSkeleton := FeedSkeleton{
 		Feed: feedItems,
 	}
 
-	if len(posts) > 0 {
-		lastPostHotness := 0.0
-		if posts[len(posts)-1].Hotness != nil {
-			lastPostHotness = *posts[len(posts)-1].Hotness
-		}
-		newCursor := fmt.Sprintf("%s:%f", posts[len(posts)-1].ID, lastPostHotness)
-		feedSkeleton.Cursor = &newCursor
-	}
+	feedSkeleton.Cursor = &newCursor
 
 	feedRequestLatency.WithLabelValues(feedName).Observe(time.Since(start).Seconds())
 
