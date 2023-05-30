@@ -7,13 +7,13 @@ import (
 	"context"
 )
 
-const getAllUniqueLabels = `-- name: GetAllUniqueLabels :many
+const getAllUniquePostLabels = `-- name: GetAllUniquePostLabels :many
 SELECT DISTINCT label
 FROM post_labels
 `
 
-func (q *Queries) GetAllUniqueLabels(ctx context.Context) ([]string, error) {
-	rows, err := q.query(ctx, q.getAllUniqueLabelsStmt, getAllUniqueLabels)
+func (q *Queries) GetAllUniquePostLabels(ctx context.Context) ([]string, error) {
+	rows, err := q.query(ctx, q.getAllUniquePostLabelsStmt, getAllUniquePostLabels)
 	if err != nil {
 		return nil, err
 	}

@@ -59,6 +59,11 @@ var foodLabels = []string{
 	"cv:cake",
 }
 
+var privateFeedInstructionsPost = search.Post{
+	ID:        "3jwvwlajglc2w",
+	AuthorDID: "did:plc:q6gjnaw2blty4crticxkmujt",
+}
+
 type FeedGenerator struct {
 	PostRegistry          *search.PostRegistry
 	Client                *xrpc.Client
@@ -179,7 +184,7 @@ func (fg *FeedGenerator) DescribeFeedGenerator(c *gin.Context) {
 	span.SetAttributes(attribute.Int("clusters.length", len(clusterAliases)))
 
 	labels := []string{}
-	uniqueLabels, err := fg.PostRegistry.GetUniqueLabels(ctx)
+	uniqueLabels, err := fg.PostRegistry.GetUniquePostLabels(ctx)
 	if err != nil {
 		span.SetAttributes(attribute.String("labels.error", err.Error()))
 		log.Printf("failed to get unique labels: %s", err.Error())
@@ -320,15 +325,6 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	span.SetAttributes(attribute.String("feed.name.parsed", feedName))
 	c.Set("feedName", feedName)
 
-	var cluster *string
-
-	// Check if the feed is a "cluster-{alias}" feed
-	if strings.HasPrefix(feedName, "cluster-") {
-		clusterAlias := strings.TrimPrefix(feedName, "cluster-")
-		cluster = &clusterAlias
-		span.SetAttributes(attribute.String("feed.cluster", clusterAlias))
-	}
-
 	feedRequestCounter.WithLabelValues(feedName).Inc()
 
 	// Get the limit from the query, default to 50, maximum of 250
@@ -405,8 +401,11 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	var posts []*search.Post
 
 	// Get cluster posts if a cluster is specified
-	if cluster != nil {
-		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForCluster(ctx, *cluster, fg.DefaultLookback, limit, cursorPostID)
+	if strings.HasPrefix(feedName, "cluster-") {
+		clusterAlias := strings.TrimPrefix(feedName, "cluster-")
+		span.SetAttributes(attribute.String("feed.cluster", clusterAlias))
+
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForCluster(ctx, clusterAlias, fg.DefaultLookback, limit, cursorPostID)
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
 				span.SetAttributes(attribute.Bool("feed.cluster.not_found", true))
@@ -419,8 +418,55 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 		}
 
 		posts = postsFromRegistry
+	} else if strings.HasPrefix(feedName, "a:") {
+		// Get posts for a specific author label
+		authorLabel := strings.TrimPrefix(feedName, "a:")
+		span.SetAttributes(attribute.String("feed.author_label", authorLabel))
+
+		userDID := c.GetString("user_did")
+
+		// Check that author is assigned to this label
+		if userDID == "" {
+			span.SetAttributes(attribute.Bool("feed.author.not_authorized", true))
+			posts = []*search.Post{&privateFeedInstructionsPost}
+		} else {
+			labels, err := fg.PostRegistry.GetLabelsForAuthor(ctx, userDID)
+			if err != nil {
+				span.SetAttributes(attribute.Bool("feed.author.label_lookup.error", true))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			// Check that the author is assigned to this label
+			found := false
+			for _, label := range labels {
+				if label.LookupAlias == authorLabel {
+					found = true
+					break
+				}
+			}
+
+			if found {
+				postsFromRegistry, err := fg.PostRegistry.GetPostsPageForAuthorLabel(ctx, authorLabel, fg.DefaultLookback, limit, cursorPostID)
+				if err != nil {
+					if errors.As(err, &search.NotFoundError{}) {
+						span.SetAttributes(attribute.Bool("feed.author.posts.not_found", true))
+						c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+						return
+					}
+					span.SetAttributes(attribute.Bool("feed.author.posts.error", true))
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+
+				posts = postsFromRegistry
+			} else {
+				span.SetAttributes(attribute.Bool("feed.author.not_in_label", true))
+				posts = []*search.Post{&privateFeedInstructionsPost}
+			}
+		}
 	} else if feedName == "animals" {
-		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelsByHotness(ctx, animalLabels, limit, cursorHotness)
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForPostLabelsByHotness(ctx, animalLabels, limit, cursorHotness)
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
 				span.SetAttributes(attribute.Bool("feed.label.not_found", true))
@@ -433,7 +479,7 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 		}
 		posts = postsFromRegistry
 	} else if feedName == "food" {
-		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelsByHotness(ctx, foodLabels, limit, cursorHotness)
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForPostLabelsByHotness(ctx, foodLabels, limit, cursorHotness)
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
 				span.SetAttributes(attribute.Bool("feed.label.not_found", true))
@@ -454,7 +500,7 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "authorized"})
 		return
 	} else { // Otherwise lookup labels
-		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForLabelByHotness(ctx, feedName, limit, cursorHotness)
+		postsFromRegistry, err := fg.PostRegistry.GetPostsPageForPostLabelByHotness(ctx, feedName, limit, cursorHotness)
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
 				span.SetAttributes(attribute.Bool("feed.label.not_found", true))

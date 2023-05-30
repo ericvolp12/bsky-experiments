@@ -37,6 +37,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addImageStmt, err = db.PrepareContext(ctx, addImage); err != nil {
 		return nil, fmt.Errorf("error preparing query AddImage: %w", err)
 	}
+	if q.addLabelStmt, err = db.PrepareContext(ctx, addLabel); err != nil {
+		return nil, fmt.Errorf("error preparing query AddLabel: %w", err)
+	}
 	if q.addLikeToPostStmt, err = db.PrepareContext(ctx, addLikeToPost); err != nil {
 		return nil, fmt.Errorf("error preparing query AddLikeToPost: %w", err)
 	}
@@ -46,8 +49,11 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addPostLabelStmt, err = db.PrepareContext(ctx, addPostLabel); err != nil {
 		return nil, fmt.Errorf("error preparing query AddPostLabel: %w", err)
 	}
-	if q.getAllUniqueLabelsStmt, err = db.PrepareContext(ctx, getAllUniqueLabels); err != nil {
-		return nil, fmt.Errorf("error preparing query GetAllUniqueLabels: %w", err)
+	if q.assignLabelToAuthorStmt, err = db.PrepareContext(ctx, assignLabelToAuthor); err != nil {
+		return nil, fmt.Errorf("error preparing query AssignLabelToAuthor: %w", err)
+	}
+	if q.getAllUniquePostLabelsStmt, err = db.PrepareContext(ctx, getAllUniquePostLabels); err != nil {
+		return nil, fmt.Errorf("error preparing query GetAllUniquePostLabels: %w", err)
 	}
 	if q.getAuthorStmt, err = db.PrepareContext(ctx, getAuthor); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuthor: %w", err)
@@ -79,6 +85,18 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getImagesForPostStmt, err = db.PrepareContext(ctx, getImagesForPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetImagesForPost: %w", err)
 	}
+	if q.getLabelByAliasStmt, err = db.PrepareContext(ctx, getLabelByAlias); err != nil {
+		return nil, fmt.Errorf("error preparing query GetLabelByAlias: %w", err)
+	}
+	if q.getLabelsStmt, err = db.PrepareContext(ctx, getLabels); err != nil {
+		return nil, fmt.Errorf("error preparing query GetLabels: %w", err)
+	}
+	if q.getLabelsForAuthorStmt, err = db.PrepareContext(ctx, getLabelsForAuthor); err != nil {
+		return nil, fmt.Errorf("error preparing query GetLabelsForAuthor: %w", err)
+	}
+	if q.getMembersOfAuthorLabelStmt, err = db.PrepareContext(ctx, getMembersOfAuthorLabel); err != nil {
+		return nil, fmt.Errorf("error preparing query GetMembersOfAuthorLabel: %w", err)
+	}
 	if q.getMembersOfClusterStmt, err = db.PrepareContext(ctx, getMembersOfCluster); err != nil {
 		return nil, fmt.Errorf("error preparing query GetMembersOfCluster: %w", err)
 	}
@@ -88,20 +106,23 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPostStmt, err = db.PrepareContext(ctx, getPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPost: %w", err)
 	}
+	if q.getPostsPageByAuthorLabelAliasStmt, err = db.PrepareContext(ctx, getPostsPageByAuthorLabelAlias); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsPageByAuthorLabelAlias: %w", err)
+	}
 	if q.getPostsPageByClusterAliasStmt, err = db.PrepareContext(ctx, getPostsPageByClusterAlias); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsPageByClusterAlias: %w", err)
 	}
-	if q.getPostsPageWithAnyLabelStmt, err = db.PrepareContext(ctx, getPostsPageWithAnyLabel); err != nil {
-		return nil, fmt.Errorf("error preparing query GetPostsPageWithAnyLabel: %w", err)
+	if q.getPostsPageWithAnyPostLabelStmt, err = db.PrepareContext(ctx, getPostsPageWithAnyPostLabel); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsPageWithAnyPostLabel: %w", err)
 	}
-	if q.getPostsPageWithAnyLabelSortedByHotnessStmt, err = db.PrepareContext(ctx, getPostsPageWithAnyLabelSortedByHotness); err != nil {
-		return nil, fmt.Errorf("error preparing query GetPostsPageWithAnyLabelSortedByHotness: %w", err)
+	if q.getPostsPageWithAnyPostLabelSortedByHotnessStmt, err = db.PrepareContext(ctx, getPostsPageWithAnyPostLabelSortedByHotness); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsPageWithAnyPostLabelSortedByHotness: %w", err)
 	}
-	if q.getPostsPageWithLabelStmt, err = db.PrepareContext(ctx, getPostsPageWithLabel); err != nil {
-		return nil, fmt.Errorf("error preparing query GetPostsPageWithLabel: %w", err)
+	if q.getPostsPageWithPostLabelStmt, err = db.PrepareContext(ctx, getPostsPageWithPostLabel); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsPageWithPostLabel: %w", err)
 	}
-	if q.getPostsPageWithLabelSortedByHotnessStmt, err = db.PrepareContext(ctx, getPostsPageWithLabelSortedByHotness); err != nil {
-		return nil, fmt.Errorf("error preparing query GetPostsPageWithLabelSortedByHotness: %w", err)
+	if q.getPostsPageWithPostLabelSortedByHotnessStmt, err = db.PrepareContext(ctx, getPostsPageWithPostLabelSortedByHotness); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsPageWithPostLabelSortedByHotness: %w", err)
 	}
 	if q.getThreadViewStmt, err = db.PrepareContext(ctx, getThreadView); err != nil {
 		return nil, fmt.Errorf("error preparing query GetThreadView: %w", err)
@@ -117,6 +138,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.removeLikeFromPostStmt, err = db.PrepareContext(ctx, removeLikeFromPost); err != nil {
 		return nil, fmt.Errorf("error preparing query RemoveLikeFromPost: %w", err)
+	}
+	if q.unassignLabelFromAuthorStmt, err = db.PrepareContext(ctx, unassignLabelFromAuthor); err != nil {
+		return nil, fmt.Errorf("error preparing query UnassignLabelFromAuthor: %w", err)
 	}
 	if q.updateImageStmt, err = db.PrepareContext(ctx, updateImage); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateImage: %w", err)
@@ -151,6 +175,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing addImageStmt: %w", cerr)
 		}
 	}
+	if q.addLabelStmt != nil {
+		if cerr := q.addLabelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addLabelStmt: %w", cerr)
+		}
+	}
 	if q.addLikeToPostStmt != nil {
 		if cerr := q.addLikeToPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addLikeToPostStmt: %w", cerr)
@@ -166,9 +195,14 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing addPostLabelStmt: %w", cerr)
 		}
 	}
-	if q.getAllUniqueLabelsStmt != nil {
-		if cerr := q.getAllUniqueLabelsStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getAllUniqueLabelsStmt: %w", cerr)
+	if q.assignLabelToAuthorStmt != nil {
+		if cerr := q.assignLabelToAuthorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing assignLabelToAuthorStmt: %w", cerr)
+		}
+	}
+	if q.getAllUniquePostLabelsStmt != nil {
+		if cerr := q.getAllUniquePostLabelsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getAllUniquePostLabelsStmt: %w", cerr)
 		}
 	}
 	if q.getAuthorStmt != nil {
@@ -221,6 +255,26 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getImagesForPostStmt: %w", cerr)
 		}
 	}
+	if q.getLabelByAliasStmt != nil {
+		if cerr := q.getLabelByAliasStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getLabelByAliasStmt: %w", cerr)
+		}
+	}
+	if q.getLabelsStmt != nil {
+		if cerr := q.getLabelsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getLabelsStmt: %w", cerr)
+		}
+	}
+	if q.getLabelsForAuthorStmt != nil {
+		if cerr := q.getLabelsForAuthorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getLabelsForAuthorStmt: %w", cerr)
+		}
+	}
+	if q.getMembersOfAuthorLabelStmt != nil {
+		if cerr := q.getMembersOfAuthorLabelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getMembersOfAuthorLabelStmt: %w", cerr)
+		}
+	}
 	if q.getMembersOfClusterStmt != nil {
 		if cerr := q.getMembersOfClusterStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getMembersOfClusterStmt: %w", cerr)
@@ -236,29 +290,34 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPostStmt: %w", cerr)
 		}
 	}
+	if q.getPostsPageByAuthorLabelAliasStmt != nil {
+		if cerr := q.getPostsPageByAuthorLabelAliasStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsPageByAuthorLabelAliasStmt: %w", cerr)
+		}
+	}
 	if q.getPostsPageByClusterAliasStmt != nil {
 		if cerr := q.getPostsPageByClusterAliasStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostsPageByClusterAliasStmt: %w", cerr)
 		}
 	}
-	if q.getPostsPageWithAnyLabelStmt != nil {
-		if cerr := q.getPostsPageWithAnyLabelStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getPostsPageWithAnyLabelStmt: %w", cerr)
+	if q.getPostsPageWithAnyPostLabelStmt != nil {
+		if cerr := q.getPostsPageWithAnyPostLabelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsPageWithAnyPostLabelStmt: %w", cerr)
 		}
 	}
-	if q.getPostsPageWithAnyLabelSortedByHotnessStmt != nil {
-		if cerr := q.getPostsPageWithAnyLabelSortedByHotnessStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getPostsPageWithAnyLabelSortedByHotnessStmt: %w", cerr)
+	if q.getPostsPageWithAnyPostLabelSortedByHotnessStmt != nil {
+		if cerr := q.getPostsPageWithAnyPostLabelSortedByHotnessStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsPageWithAnyPostLabelSortedByHotnessStmt: %w", cerr)
 		}
 	}
-	if q.getPostsPageWithLabelStmt != nil {
-		if cerr := q.getPostsPageWithLabelStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getPostsPageWithLabelStmt: %w", cerr)
+	if q.getPostsPageWithPostLabelStmt != nil {
+		if cerr := q.getPostsPageWithPostLabelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsPageWithPostLabelStmt: %w", cerr)
 		}
 	}
-	if q.getPostsPageWithLabelSortedByHotnessStmt != nil {
-		if cerr := q.getPostsPageWithLabelSortedByHotnessStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getPostsPageWithLabelSortedByHotnessStmt: %w", cerr)
+	if q.getPostsPageWithPostLabelSortedByHotnessStmt != nil {
+		if cerr := q.getPostsPageWithPostLabelSortedByHotnessStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsPageWithPostLabelSortedByHotnessStmt: %w", cerr)
 		}
 	}
 	if q.getThreadViewStmt != nil {
@@ -284,6 +343,11 @@ func (q *Queries) Close() error {
 	if q.removeLikeFromPostStmt != nil {
 		if cerr := q.removeLikeFromPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing removeLikeFromPostStmt: %w", cerr)
+		}
+	}
+	if q.unassignLabelFromAuthorStmt != nil {
+		if cerr := q.unassignLabelFromAuthorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing unassignLabelFromAuthorStmt: %w", cerr)
 		}
 	}
 	if q.updateImageStmt != nil {
@@ -328,79 +392,95 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                                          DBTX
-	tx                                          *sql.Tx
-	addAuthorStmt                               *sql.Stmt
-	addAuthorBlockStmt                          *sql.Stmt
-	addAuthorToClusterStmt                      *sql.Stmt
-	addClusterStmt                              *sql.Stmt
-	addImageStmt                                *sql.Stmt
-	addLikeToPostStmt                           *sql.Stmt
-	addPostStmt                                 *sql.Stmt
-	addPostLabelStmt                            *sql.Stmt
-	getAllUniqueLabelsStmt                      *sql.Stmt
-	getAuthorStmt                               *sql.Stmt
-	getAuthorBlockStmt                          *sql.Stmt
-	getAuthorStatsStmt                          *sql.Stmt
-	getAuthorsByHandleStmt                      *sql.Stmt
-	getBlockedByCountForTargetStmt              *sql.Stmt
-	getBlocksForTargetStmt                      *sql.Stmt
-	getClustersStmt                             *sql.Stmt
-	getImageStmt                                *sql.Stmt
-	getImagesForAuthorDIDStmt                   *sql.Stmt
-	getImagesForPostStmt                        *sql.Stmt
-	getMembersOfClusterStmt                     *sql.Stmt
-	getOldestPresentParentStmt                  *sql.Stmt
-	getPostStmt                                 *sql.Stmt
-	getPostsPageByClusterAliasStmt              *sql.Stmt
-	getPostsPageWithAnyLabelStmt                *sql.Stmt
-	getPostsPageWithAnyLabelSortedByHotnessStmt *sql.Stmt
-	getPostsPageWithLabelStmt                   *sql.Stmt
-	getPostsPageWithLabelSortedByHotnessStmt    *sql.Stmt
-	getThreadViewStmt                           *sql.Stmt
-	getTopPostersStmt                           *sql.Stmt
-	getUnprocessedImagesStmt                    *sql.Stmt
-	removeAuthorBlockStmt                       *sql.Stmt
-	removeLikeFromPostStmt                      *sql.Stmt
-	updateImageStmt                             *sql.Stmt
+	db                                              DBTX
+	tx                                              *sql.Tx
+	addAuthorStmt                                   *sql.Stmt
+	addAuthorBlockStmt                              *sql.Stmt
+	addAuthorToClusterStmt                          *sql.Stmt
+	addClusterStmt                                  *sql.Stmt
+	addImageStmt                                    *sql.Stmt
+	addLabelStmt                                    *sql.Stmt
+	addLikeToPostStmt                               *sql.Stmt
+	addPostStmt                                     *sql.Stmt
+	addPostLabelStmt                                *sql.Stmt
+	assignLabelToAuthorStmt                         *sql.Stmt
+	getAllUniquePostLabelsStmt                      *sql.Stmt
+	getAuthorStmt                                   *sql.Stmt
+	getAuthorBlockStmt                              *sql.Stmt
+	getAuthorStatsStmt                              *sql.Stmt
+	getAuthorsByHandleStmt                          *sql.Stmt
+	getBlockedByCountForTargetStmt                  *sql.Stmt
+	getBlocksForTargetStmt                          *sql.Stmt
+	getClustersStmt                                 *sql.Stmt
+	getImageStmt                                    *sql.Stmt
+	getImagesForAuthorDIDStmt                       *sql.Stmt
+	getImagesForPostStmt                            *sql.Stmt
+	getLabelByAliasStmt                             *sql.Stmt
+	getLabelsStmt                                   *sql.Stmt
+	getLabelsForAuthorStmt                          *sql.Stmt
+	getMembersOfAuthorLabelStmt                     *sql.Stmt
+	getMembersOfClusterStmt                         *sql.Stmt
+	getOldestPresentParentStmt                      *sql.Stmt
+	getPostStmt                                     *sql.Stmt
+	getPostsPageByAuthorLabelAliasStmt              *sql.Stmt
+	getPostsPageByClusterAliasStmt                  *sql.Stmt
+	getPostsPageWithAnyPostLabelStmt                *sql.Stmt
+	getPostsPageWithAnyPostLabelSortedByHotnessStmt *sql.Stmt
+	getPostsPageWithPostLabelStmt                   *sql.Stmt
+	getPostsPageWithPostLabelSortedByHotnessStmt    *sql.Stmt
+	getThreadViewStmt                               *sql.Stmt
+	getTopPostersStmt                               *sql.Stmt
+	getUnprocessedImagesStmt                        *sql.Stmt
+	removeAuthorBlockStmt                           *sql.Stmt
+	removeLikeFromPostStmt                          *sql.Stmt
+	unassignLabelFromAuthorStmt                     *sql.Stmt
+	updateImageStmt                                 *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                             tx,
-		tx:                             tx,
-		addAuthorStmt:                  q.addAuthorStmt,
-		addAuthorBlockStmt:             q.addAuthorBlockStmt,
-		addAuthorToClusterStmt:         q.addAuthorToClusterStmt,
-		addClusterStmt:                 q.addClusterStmt,
-		addImageStmt:                   q.addImageStmt,
-		addLikeToPostStmt:              q.addLikeToPostStmt,
-		addPostStmt:                    q.addPostStmt,
-		addPostLabelStmt:               q.addPostLabelStmt,
-		getAllUniqueLabelsStmt:         q.getAllUniqueLabelsStmt,
-		getAuthorStmt:                  q.getAuthorStmt,
-		getAuthorBlockStmt:             q.getAuthorBlockStmt,
-		getAuthorStatsStmt:             q.getAuthorStatsStmt,
-		getAuthorsByHandleStmt:         q.getAuthorsByHandleStmt,
-		getBlockedByCountForTargetStmt: q.getBlockedByCountForTargetStmt,
-		getBlocksForTargetStmt:         q.getBlocksForTargetStmt,
-		getClustersStmt:                q.getClustersStmt,
-		getImageStmt:                   q.getImageStmt,
-		getImagesForAuthorDIDStmt:      q.getImagesForAuthorDIDStmt,
-		getImagesForPostStmt:           q.getImagesForPostStmt,
-		getMembersOfClusterStmt:        q.getMembersOfClusterStmt,
-		getOldestPresentParentStmt:     q.getOldestPresentParentStmt,
-		getPostStmt:                    q.getPostStmt,
-		getPostsPageByClusterAliasStmt: q.getPostsPageByClusterAliasStmt,
-		getPostsPageWithAnyLabelStmt:   q.getPostsPageWithAnyLabelStmt,
-		getPostsPageWithAnyLabelSortedByHotnessStmt: q.getPostsPageWithAnyLabelSortedByHotnessStmt,
-		getPostsPageWithLabelStmt:                   q.getPostsPageWithLabelStmt,
-		getPostsPageWithLabelSortedByHotnessStmt:    q.getPostsPageWithLabelSortedByHotnessStmt,
-		getThreadViewStmt:                           q.getThreadViewStmt,
-		getTopPostersStmt:                           q.getTopPostersStmt,
-		getUnprocessedImagesStmt:                    q.getUnprocessedImagesStmt,
-		removeAuthorBlockStmt:                       q.removeAuthorBlockStmt,
-		removeLikeFromPostStmt:                      q.removeLikeFromPostStmt,
-		updateImageStmt:                             q.updateImageStmt,
+		db:                                 tx,
+		tx:                                 tx,
+		addAuthorStmt:                      q.addAuthorStmt,
+		addAuthorBlockStmt:                 q.addAuthorBlockStmt,
+		addAuthorToClusterStmt:             q.addAuthorToClusterStmt,
+		addClusterStmt:                     q.addClusterStmt,
+		addImageStmt:                       q.addImageStmt,
+		addLabelStmt:                       q.addLabelStmt,
+		addLikeToPostStmt:                  q.addLikeToPostStmt,
+		addPostStmt:                        q.addPostStmt,
+		addPostLabelStmt:                   q.addPostLabelStmt,
+		assignLabelToAuthorStmt:            q.assignLabelToAuthorStmt,
+		getAllUniquePostLabelsStmt:         q.getAllUniquePostLabelsStmt,
+		getAuthorStmt:                      q.getAuthorStmt,
+		getAuthorBlockStmt:                 q.getAuthorBlockStmt,
+		getAuthorStatsStmt:                 q.getAuthorStatsStmt,
+		getAuthorsByHandleStmt:             q.getAuthorsByHandleStmt,
+		getBlockedByCountForTargetStmt:     q.getBlockedByCountForTargetStmt,
+		getBlocksForTargetStmt:             q.getBlocksForTargetStmt,
+		getClustersStmt:                    q.getClustersStmt,
+		getImageStmt:                       q.getImageStmt,
+		getImagesForAuthorDIDStmt:          q.getImagesForAuthorDIDStmt,
+		getImagesForPostStmt:               q.getImagesForPostStmt,
+		getLabelByAliasStmt:                q.getLabelByAliasStmt,
+		getLabelsStmt:                      q.getLabelsStmt,
+		getLabelsForAuthorStmt:             q.getLabelsForAuthorStmt,
+		getMembersOfAuthorLabelStmt:        q.getMembersOfAuthorLabelStmt,
+		getMembersOfClusterStmt:            q.getMembersOfClusterStmt,
+		getOldestPresentParentStmt:         q.getOldestPresentParentStmt,
+		getPostStmt:                        q.getPostStmt,
+		getPostsPageByAuthorLabelAliasStmt: q.getPostsPageByAuthorLabelAliasStmt,
+		getPostsPageByClusterAliasStmt:     q.getPostsPageByClusterAliasStmt,
+		getPostsPageWithAnyPostLabelStmt:   q.getPostsPageWithAnyPostLabelStmt,
+		getPostsPageWithAnyPostLabelSortedByHotnessStmt: q.getPostsPageWithAnyPostLabelSortedByHotnessStmt,
+		getPostsPageWithPostLabelStmt:                   q.getPostsPageWithPostLabelStmt,
+		getPostsPageWithPostLabelSortedByHotnessStmt:    q.getPostsPageWithPostLabelSortedByHotnessStmt,
+		getThreadViewStmt:                               q.getThreadViewStmt,
+		getTopPostersStmt:                               q.getTopPostersStmt,
+		getUnprocessedImagesStmt:                        q.getUnprocessedImagesStmt,
+		removeAuthorBlockStmt:                           q.removeAuthorBlockStmt,
+		removeLikeFromPostStmt:                          q.removeLikeFromPostStmt,
+		unassignLabelFromAuthorStmt:                     q.unassignLabelFromAuthorStmt,
+		updateImageStmt:                                 q.updateImageStmt,
 	}
 }

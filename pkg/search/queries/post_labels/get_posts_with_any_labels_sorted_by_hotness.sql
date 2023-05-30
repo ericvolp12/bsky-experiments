@@ -1,4 +1,4 @@
--- name: GetPostsPageWithAnyLabelSortedByHotness :many
+-- name: GetPostsPageWithAnyPostLabelSortedByHotness :many
 SELECT h.id, h.text, h.parent_post_id, h.root_post_id, h.author_did, h.created_at, 
        h.has_embedded_media, h.parent_relationship, h.sentiment, h.sentiment_confidence, MAX(h.hotness)::float as hotness
 FROM post_hotness h

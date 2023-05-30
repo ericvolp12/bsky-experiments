@@ -7,7 +7,7 @@ import (
 	"context"
 )
 
-const getPostsPageWithAnyLabel = `-- name: GetPostsPageWithAnyLabel :many
+const getPostsPageWithAnyPostLabel = `-- name: GetPostsPageWithAnyPostLabel :many
 SELECT p.id, p.text, p.parent_post_id, p.root_post_id, p.author_did, p.created_at, 
        p.has_embedded_media, p.parent_relationship, p.sentiment, p.sentiment_confidence
 FROM posts p
@@ -19,15 +19,15 @@ ORDER BY p.id DESC
 LIMIT $4
 `
 
-type GetPostsPageWithAnyLabelParams struct {
+type GetPostsPageWithAnyPostLabelParams struct {
 	Labels   string      `json:"labels"`
 	Cursor   interface{} `json:"cursor"`
 	HoursAgo int32       `json:"hours_ago"`
 	Limit    int32       `json:"limit"`
 }
 
-func (q *Queries) GetPostsPageWithAnyLabel(ctx context.Context, arg GetPostsPageWithAnyLabelParams) ([]Post, error) {
-	rows, err := q.query(ctx, q.getPostsPageWithAnyLabelStmt, getPostsPageWithAnyLabel,
+func (q *Queries) GetPostsPageWithAnyPostLabel(ctx context.Context, arg GetPostsPageWithAnyPostLabelParams) ([]Post, error) {
+	rows, err := q.query(ctx, q.getPostsPageWithAnyPostLabelStmt, getPostsPageWithAnyPostLabel,
 		arg.Labels,
 		arg.Cursor,
 		arg.HoursAgo,

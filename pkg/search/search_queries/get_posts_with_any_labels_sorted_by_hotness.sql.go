@@ -11,7 +11,7 @@ import (
 	"github.com/lib/pq"
 )
 
-const getPostsPageWithAnyLabelSortedByHotness = `-- name: GetPostsPageWithAnyLabelSortedByHotness :many
+const getPostsPageWithAnyPostLabelSortedByHotness = `-- name: GetPostsPageWithAnyPostLabelSortedByHotness :many
 SELECT h.id, h.text, h.parent_post_id, h.root_post_id, h.author_did, h.created_at, 
        h.has_embedded_media, h.parent_relationship, h.sentiment, h.sentiment_confidence, MAX(h.hotness)::float as hotness
 FROM post_hotness h
@@ -23,13 +23,13 @@ ORDER BY hotness DESC, h.id DESC
 LIMIT $3
 `
 
-type GetPostsPageWithAnyLabelSortedByHotnessParams struct {
+type GetPostsPageWithAnyPostLabelSortedByHotnessParams struct {
 	Labels []string `json:"labels"`
 	Cursor float64  `json:"cursor"`
 	Limit  int32    `json:"limit"`
 }
 
-type GetPostsPageWithAnyLabelSortedByHotnessRow struct {
+type GetPostsPageWithAnyPostLabelSortedByHotnessRow struct {
 	ID                  string          `json:"id"`
 	Text                string          `json:"text"`
 	ParentPostID        sql.NullString  `json:"parent_post_id"`
@@ -43,15 +43,15 @@ type GetPostsPageWithAnyLabelSortedByHotnessRow struct {
 	Hotness             float64         `json:"hotness"`
 }
 
-func (q *Queries) GetPostsPageWithAnyLabelSortedByHotness(ctx context.Context, arg GetPostsPageWithAnyLabelSortedByHotnessParams) ([]GetPostsPageWithAnyLabelSortedByHotnessRow, error) {
-	rows, err := q.query(ctx, q.getPostsPageWithAnyLabelSortedByHotnessStmt, getPostsPageWithAnyLabelSortedByHotness, pq.Array(arg.Labels), arg.Cursor, arg.Limit)
+func (q *Queries) GetPostsPageWithAnyPostLabelSortedByHotness(ctx context.Context, arg GetPostsPageWithAnyPostLabelSortedByHotnessParams) ([]GetPostsPageWithAnyPostLabelSortedByHotnessRow, error) {
+	rows, err := q.query(ctx, q.getPostsPageWithAnyPostLabelSortedByHotnessStmt, getPostsPageWithAnyPostLabelSortedByHotness, pq.Array(arg.Labels), arg.Cursor, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetPostsPageWithAnyLabelSortedByHotnessRow
+	var items []GetPostsPageWithAnyPostLabelSortedByHotnessRow
 	for rows.Next() {
-		var i GetPostsPageWithAnyLabelSortedByHotnessRow
+		var i GetPostsPageWithAnyPostLabelSortedByHotnessRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Text,

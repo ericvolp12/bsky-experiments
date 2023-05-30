@@ -4,12 +4,15 @@ sql:
     queries:
       [
         "queries/authors",
+        "queries/author_blocks",
+        "queries/author_clusters",
+        "queries/author_labels",
         "queries/clusters",
         "queries/images",
         "queries/labels",
         "queries/likes",
         "queries/posts",
-        "queries/author_blocks",
+        "queries/post_labels",
       ]
     schema: "schema/"
     gen:

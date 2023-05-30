@@ -25,6 +25,12 @@ type AuthorCluster struct {
 	ClusterID int32  `json:"cluster_id"`
 }
 
+type AuthorLabel struct {
+	AuthorDid string    `json:"author_did"`
+	LabelID   int32     `json:"label_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Cluster struct {
 	ID          int32  `json:"id"`
 	LookupAlias string `json:"lookup_alias"`
@@ -43,6 +49,12 @@ type Image struct {
 	CvCompleted  bool                  `json:"cv_completed"`
 	CvRunAt      sql.NullTime          `json:"cv_run_at"`
 	CvClasses    pqtype.NullRawMessage `json:"cv_classes"`
+}
+
+type Label struct {
+	ID          int64  `json:"id"`
+	LookupAlias string `json:"lookup_alias"`
+	Name        string `json:"name"`
 }
 
 type Post struct {
