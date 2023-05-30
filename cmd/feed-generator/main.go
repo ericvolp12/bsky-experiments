@@ -183,11 +183,16 @@ func main() {
 	router.GET("/update_cluster_assignments", feedGenerator.UpdateClusterAssignments)
 	router.GET("/.well-known/did.json", feedGenerator.GetWellKnownDID)
 
-	// Auth middleware
-	router.Use(auth.AuthenticateGinRequest)
+	// JWT Auth middleware
+	router.Use(auth.AuthenticateGinRequestViaJWT)
 
 	router.GET("/xrpc/app.bsky.feed.getFeedSkeleton", feedGenerator.GetFeedSkeleton)
 	router.GET("/xrpc/app.bsky.feed.describeFeedGenerator", feedGenerator.DescribeFeedGenerator)
+
+	// API Key Auth Middleware
+	router.Use(auth.AuthenticateGinRequestViaAPIKey)
+	router.GET("/assign_user_to_feed", feedGenerator.AssignUserToFeed)
+	router.GET("/unassign_user_from_feed", feedGenerator.UnassignUserFromFeed)
 
 	port := os.Getenv("PORT")
 	if port == "" {

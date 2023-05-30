@@ -63,6 +63,12 @@ var cacheSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Help: "The size of the cache in bytes",
 }, []string{"cache_type"})
 
+type FeedAuthEntity struct {
+	FeedAlias string `json:"feed_alias"`
+	APIKey    string `json:"api_key"`
+	UserDID   string `json:"user_did"`
+}
+
 type Auth struct {
 	KeyCache     *lru.ARCCache
 	KeyCacheTTL  time.Duration
@@ -70,6 +76,8 @@ type Auth struct {
 	Limiter      *rate.Limiter
 	ServiceDID   string
 	PLCDirectory string
+	// A bit of a hack for small-scope authenticated APIs
+	APIKeyFeedMap map[string]*FeedAuthEntity
 }
 
 // NewAuth creates a new Auth instance with the given key cache size and TTL
@@ -110,6 +118,10 @@ func NewAuth(
 		ServiceDID:   serviceDID,
 		Limiter:      limiter,
 	}, nil
+}
+
+func (auth *Auth) UpdateAPIKeyFeedMapping(feedID string, feedAuthEntity *FeedAuthEntity) {
+	auth.APIKeyFeedMap[feedID] = feedAuthEntity
 }
 
 func (auth *Auth) GetClaimsFromAuthHeader(ctx context.Context, authHeader string, claims jwt.Claims) error {
@@ -248,9 +260,9 @@ func (auth *Auth) GetPLCEntry(ctx context.Context, did string) (*PLCEntry, error
 	return plcEntry, nil
 }
 
-func (auth *Auth) AuthenticateGinRequest(c *gin.Context) {
+func (auth *Auth) AuthenticateGinRequestViaJWT(c *gin.Context) {
 	tracer := otel.Tracer("auth")
-	ctx, span := tracer.Start(c.Request.Context(), "Auth:AuthenticateGinRequest")
+	ctx, span := tracer.Start(c.Request.Context(), "Auth:AuthenticateGinRequestViaJWT")
 
 	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
@@ -280,4 +292,35 @@ func (auth *Auth) AuthenticateGinRequest(c *gin.Context) {
 	span.SetAttributes(attribute.String("user.did", claims.Issuer))
 	span.End()
 	c.Next()
+}
+
+// AuthenticateGinRequestViaAPIKey authenticates a Gin request via an API key
+// statically configured for the app, this is useful for testing and debugging
+// or use-case specific scenarios where a DID is not available.
+func (auth *Auth) AuthenticateGinRequestViaAPIKey(c *gin.Context) {
+	tracer := otel.Tracer("auth")
+	_, span := tracer.Start(c.Request.Context(), "Auth:AuthenticateGinRequestViaAPIKey")
+	defer span.End()
+
+	authHeader := c.GetHeader("X-API-Key")
+	if authHeader == "" {
+		span.SetAttributes(attribute.Bool("auth.api_key", false))
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing required API key in X-API-Key header"})
+		c.Abort()
+		return
+	}
+
+	for key, authEntity := range auth.APIKeyFeedMap {
+		if authHeader == key {
+			span.SetAttributes(attribute.Bool("auth.api_key", true))
+			c.Set("feed.auth.entity", authEntity)
+			c.Next()
+			return
+		}
+	}
+
+	span.SetAttributes(attribute.Bool("auth.api_key", false))
+	c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid API key"})
+	c.Abort()
+	return
 }
