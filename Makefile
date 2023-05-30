@@ -21,11 +21,11 @@ docker-build-graph-builder:
 
 graph-builder-up:
 	@echo "Starting Graph Builder..."
-	docker-compose -f build/graph-builder/docker-compose.yml up --build -d
+	docker compose -f build/graph-builder/docker-compose.yml up --build -d
 
 graph-builder-restart:
 	@echo "Restarting Graph Builder..."
-	docker-compose -f build/graph-builder/docker-compose.yml restart -t 5
+	docker compose -f build/graph-builder/docker-compose.yml restart -t 5
 
 # Build the Search API Go binary
 build-search:
@@ -39,41 +39,41 @@ docker-build-search:
 
 search-up:
 	@echo "Starting Search API..."
-	docker-compose -f build/search/docker-compose.yml up --build -d
+	docker compose -f build/search/docker-compose.yml up --build -d
 
 search-restart:
 	@echo "Restarting Graph Builder..."
-	docker-compose -f build/search/docker-compose.yml restart -t 5
+	docker compose -f build/search/docker-compose.yml restart -t 5
 
 # Build the Layout Rust Service
 layout-up:
 	@echo "Starting Rust Layout API..."
-	docker-compose -f build/layout/docker-compose.yml up --build -d
+	docker compose -f build/layout/docker-compose.yml up --build -d
 
 # Build the Layout TypeScript Service
 ts-layout-up:
 	@echo "Starting TypeScript Layout API..."
-	docker-compose -f build/ts-layout/docker-compose.yml up --build -d
+	docker compose -f build/ts-layout/docker-compose.yml up --build -d
 
 # Build the Sentiment Analysis Python Service
 sentiment-up:
 	@echo "Starting Sentiment Analysis API..."
-	docker-compose -f build/sentiment/docker-compose.yml up --build -d
+	docker compose -f build/sentiment/docker-compose.yml up --build -d
 
 # Build the Sentiment Analysis Python Service with GPU Acceleration
 sentiment-gpu-up:
 	@echo "Starting Sentiment Analysis API with GPU Acceleration..."
-	docker-compose -f build/sentiment/gpu.docker-compose.yml up --build -d
+	docker compose -f build/sentiment/gpu.docker-compose.yml up --build -d
 
 # Build the Object Detection Python Service
 object-detection-up:
 	@echo "Starting Object Detection API..."
-	docker-compose -f build/object-detection/docker-compose.yml up --build -d
+	docker compose -f build/object-detection/docker-compose.yml up --build -d
 
 # Build the Object Detection Python Service with GPU Acceleration
 object-detection-gpu-up:
 	@echo "Starting Object Detection API with GPU Acceleration..."
-	docker-compose -f build/object-detection/gpu.docker-compose.yml up --build -d
+	docker compose -f build/object-detection/gpu.docker-compose.yml up --build -d
 
 # Build the Image Processor Go binary
 build-image-processor:
@@ -82,7 +82,7 @@ build-image-processor:
 
 image-processor-up:
 	@echo "Starting Image Processor..."
-	docker-compose -f build/image-processor/docker-compose.yml up --build -d
+	docker compose -f build/image-processor/docker-compose.yml up --build -d
 
 # Build the Feedgen Go binary
 build-feedgen-go:
@@ -91,12 +91,12 @@ build-feedgen-go:
 
 feedgen-go-up:
 	@echo "Starting Go Feed Generator..."
-	docker-compose -f build/feedgen-go/docker-compose.yml up --build -d
+	docker compose -f build/feedgen-go/docker-compose.yml up --build -d
 
 # Start up the Pyroscope Continuous Profiler Backend
 pyroscope-up:
 	@echo "Starting Pyroscope..."
-	docker-compose -f build/pyroscope/docker-compose.yml up --build -d
+	docker compose -f build/pyroscope/docker-compose.yml up --build -d
 
 # Generate SQLC Code
 sqlc:
