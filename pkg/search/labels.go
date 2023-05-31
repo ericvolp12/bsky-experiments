@@ -98,6 +98,37 @@ func (pr *PostRegistry) GetLabelsForAuthor(ctx context.Context, authorDID string
 	return retLabels, nil
 }
 
+func (pr *PostRegistry) GetMembersOfAuthorLabel(ctx context.Context, labelAlias string) ([]*Author, error) {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetMembersOfAuthorLabel")
+	defer span.End()
+
+	label, err := pr.queries.GetLabelByAlias(ctx, labelAlias)
+	if err != nil {
+		return nil, NotFoundError{fmt.Errorf("label not found")}
+	}
+
+	authors, err := pr.queries.GetMembersOfAuthorLabel(ctx, label.ID)
+	if err != nil {
+		span.SetAttributes(attribute.String("db.error", err.Error()))
+		if err == sql.ErrNoRows {
+			return nil, NotFoundError{fmt.Errorf("label not found")}
+		}
+
+		return nil, err
+	}
+
+	retAuthors := make([]*Author, len(authors))
+	for i, a := range authors {
+		retAuthors[i] = &Author{
+			DID:    a.Did,
+			Handle: a.Handle,
+		}
+	}
+
+	return retAuthors, nil
+}
+
 func (pr *PostRegistry) UnassignLabelFromAuthorByAlias(ctx context.Context, authorDID string, labelAlias string) error {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:UnassignLabelFromAuthorByAlias")

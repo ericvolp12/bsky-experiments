@@ -111,17 +111,18 @@ func NewAuth(
 	limiter := rate.NewLimiter(rate.Every(timeBetweenRequests), 1)
 
 	return &Auth{
-		KeyCache:     keyCache,
-		KeyCacheTTL:  keyCacheTTL,
-		PLCDirectory: plcDirectory,
-		HTTPClient:   &client,
-		ServiceDID:   serviceDID,
-		Limiter:      limiter,
+		KeyCache:      keyCache,
+		KeyCacheTTL:   keyCacheTTL,
+		PLCDirectory:  plcDirectory,
+		HTTPClient:    &client,
+		ServiceDID:    serviceDID,
+		Limiter:       limiter,
+		APIKeyFeedMap: make(map[string]*FeedAuthEntity),
 	}, nil
 }
 
-func (auth *Auth) UpdateAPIKeyFeedMapping(feedID string, feedAuthEntity *FeedAuthEntity) {
-	auth.APIKeyFeedMap[feedID] = feedAuthEntity
+func (auth *Auth) UpdateAPIKeyFeedMapping(apiKey string, feedAuthEntity *FeedAuthEntity) {
+	auth.APIKeyFeedMap[apiKey] = feedAuthEntity
 }
 
 func (auth *Auth) GetClaimsFromAuthHeader(ctx context.Context, authHeader string, claims jwt.Claims) error {
@@ -302,8 +303,8 @@ func (auth *Auth) AuthenticateGinRequestViaAPIKey(c *gin.Context) {
 	_, span := tracer.Start(c.Request.Context(), "Auth:AuthenticateGinRequestViaAPIKey")
 	defer span.End()
 
-	authHeader := c.GetHeader("X-API-Key")
-	if authHeader == "" {
+	keyFromHeader := c.GetHeader("X-API-Key")
+	if keyFromHeader == "" {
 		span.SetAttributes(attribute.Bool("auth.api_key", false))
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing required API key in X-API-Key header"})
 		c.Abort()
@@ -311,7 +312,7 @@ func (auth *Auth) AuthenticateGinRequestViaAPIKey(c *gin.Context) {
 	}
 
 	for key, authEntity := range auth.APIKeyFeedMap {
-		if authHeader == key {
+		if keyFromHeader == key {
 			span.SetAttributes(attribute.Bool("auth.api_key", true))
 			c.Set("feed.auth.entity", authEntity)
 			c.Next()

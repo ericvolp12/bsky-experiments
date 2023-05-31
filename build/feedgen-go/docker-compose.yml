@@ -11,10 +11,15 @@ services:
     container_name: bsky-feedgen-go
     environment:
       - GIN_MODE=release
+      - KEYS_JSON_PATH=/keys.json
     env_file:
       - ../../.env
     ports:
       - "8095:8080"
+    volumes:
+      - type: bind
+        source: ../../keys.json
+        target: /keys.json
   # bsky-feedgen-go-test:
   #   build:
   #     context: ../../

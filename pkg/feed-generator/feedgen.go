@@ -574,8 +574,8 @@ func (fg *FeedGenerator) AssignUserToFeed(c *gin.Context) {
 	}
 
 	// Cast the rawAuthEntity to a FeedAuthEntity
-	authEntity, ok := rawAuthEntity.(auth.FeedAuthEntity)
-	if !ok {
+	authEntity, ok := rawAuthEntity.(*auth.FeedAuthEntity)
+	if !ok || authEntity == nil {
 		span.SetAttributes(attribute.Bool("feed.assign_label.not_authorized", true))
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authorized: could not cast auth entity"})
 		return
@@ -602,11 +602,11 @@ func (fg *FeedGenerator) AssignUserToFeed(c *gin.Context) {
 	if err != nil {
 		if errors.As(err, &search.NotFoundError{}) {
 			span.SetAttributes(attribute.Bool("feed.assign_label.author_not_found", true))
-			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Errorf("author not found: %s", err.Error()).Error()})
+			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("author not found: %s", err.Error())})
 			return
 		}
 		span.SetAttributes(attribute.Bool("feed.assign_label.error", true))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Errorf("failed to get authors: %s", err.Error()).Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("error getting authors: %s", err.Error())})
 		return
 	}
 
@@ -627,7 +627,7 @@ func (fg *FeedGenerator) AssignUserToFeed(c *gin.Context) {
 	err = fg.PostRegistry.AssignLabelToAuthorByAlias(ctx, userDID, feedName)
 	if err != nil {
 		span.SetAttributes(attribute.Bool("feed.assign_label.error", true))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Errorf("failed to assign label to user: %s", err.Error())})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to assign label to user: %s", err.Error())})
 		return
 	}
 
@@ -647,8 +647,8 @@ func (fg *FeedGenerator) UnassignUserFromFeed(c *gin.Context) {
 	}
 
 	// Cast the rawAuthEntity to a FeedAuthEntity
-	authEntity, ok := rawAuthEntity.(auth.FeedAuthEntity)
-	if !ok {
+	authEntity, ok := rawAuthEntity.(*auth.FeedAuthEntity)
+	if !ok || authEntity == nil {
 		span.SetAttributes(attribute.Bool("feed.assign_label.not_authorized", true))
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authorized: could not cast auth entity"})
 		return
@@ -675,11 +675,11 @@ func (fg *FeedGenerator) UnassignUserFromFeed(c *gin.Context) {
 	if err != nil {
 		if errors.As(err, &search.NotFoundError{}) {
 			span.SetAttributes(attribute.Bool("feed.assign_label.author_not_found", true))
-			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Errorf("author not found: %s", err.Error()).Error()})
+			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("author not found: %s", err.Error())})
 			return
 		}
 		span.SetAttributes(attribute.Bool("feed.assign_label.error", true))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Errorf("failed to get authors: %s", err.Error()).Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("error getting authors: %s", err.Error())})
 		return
 	}
 
@@ -700,9 +700,50 @@ func (fg *FeedGenerator) UnassignUserFromFeed(c *gin.Context) {
 	err = fg.PostRegistry.UnassignLabelFromAuthorByAlias(ctx, userDID, feedName)
 	if err != nil {
 		span.SetAttributes(attribute.Bool("feed.assign_label.error", true))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Errorf("failed to unassign label from user: %s", err.Error())})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to unassign label from user: %s", err.Error())})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "success"})
+}
+
+func (fg *FeedGenerator) GetFeedMembers(c *gin.Context) {
+	tracer := otel.Tracer("feed-generator")
+	ctx, span := tracer.Start(c.Request.Context(), "FeedGenerator:GetFeedMembers")
+	defer span.End()
+
+	rawAuthEntity, exists := c.Get("feed.auth.entity")
+	if !exists {
+		span.SetAttributes(attribute.Bool("feed.get_members.not_authorized", true))
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authorized: no user DID in context"})
+		return
+	}
+
+	// Cast the rawAuthEntity to a FeedAuthEntity
+	authEntity, ok := rawAuthEntity.(*auth.FeedAuthEntity)
+	if !ok || authEntity == nil {
+		span.SetAttributes(attribute.Bool("feed.get_members.not_authorized", true))
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authorized: could not cast auth entity"})
+		return
+	}
+
+	feedName := c.Query("feedName")
+	if feedName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "feedName is required"})
+		return
+	}
+
+	if authEntity.FeedAlias != feedName {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authorized: you are not authorized to list the users assigned to this feed"})
+		return
+	}
+
+	authors, err := fg.PostRegistry.GetMembersOfAuthorLabel(ctx, feedName)
+	if err != nil {
+		span.SetAttributes(attribute.Bool("feed.get_members.error", true))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("error getting authors: %s", err.Error())})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"authors": authors})
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -169,7 +170,7 @@ func main() {
 	p := ginprometheus.NewPrometheus("gin", nil)
 	p.Use(router)
 
-	auth, err := auth.NewAuth(
+	auther, err := auth.NewAuth(
 		10000,
 		time.Hour*1,
 		"https://plc.directory",
@@ -180,19 +181,45 @@ func main() {
 		log.Fatalf("Failed to create Auth: %v", err)
 	}
 
+	keysJSONPath := os.Getenv("KEYS_JSON_PATH")
+	if keysJSONPath == "" {
+		log.Fatal("KEYS_JSON_PATH environment variable is required")
+	}
+
+	// Add Auth Entities to auth for API Key Auth
+	// Read the JSON file
+	file, err := os.Open(keysJSONPath)
+	if err != nil {
+		log.Fatalf("Failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	// Decode the file into a slice of FeedAuthEntity structs
+	entities := make([]*auth.FeedAuthEntity, 0)
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&entities); err != nil {
+		log.Fatalf("Failed to decode file: %v", err)
+	}
+
+	// Add the entities to the Auth struct's map
+	for _, entity := range entities {
+		auther.UpdateAPIKeyFeedMapping(entity.APIKey, entity)
+	}
+
 	router.GET("/update_cluster_assignments", feedGenerator.UpdateClusterAssignments)
 	router.GET("/.well-known/did.json", feedGenerator.GetWellKnownDID)
 
 	// JWT Auth middleware
-	router.Use(auth.AuthenticateGinRequestViaJWT)
+	router.Use(auther.AuthenticateGinRequestViaJWT)
 
 	router.GET("/xrpc/app.bsky.feed.getFeedSkeleton", feedGenerator.GetFeedSkeleton)
 	router.GET("/xrpc/app.bsky.feed.describeFeedGenerator", feedGenerator.DescribeFeedGenerator)
 
 	// API Key Auth Middleware
-	router.Use(auth.AuthenticateGinRequestViaAPIKey)
-	router.GET("/assign_user_to_feed", feedGenerator.AssignUserToFeed)
-	router.GET("/unassign_user_from_feed", feedGenerator.UnassignUserFromFeed)
+	router.Use(auther.AuthenticateGinRequestViaAPIKey)
+	router.PUT("/assign_user_to_feed", feedGenerator.AssignUserToFeed)
+	router.PUT("/unassign_user_from_feed", feedGenerator.UnassignUserFromFeed)
+	router.GET("/feed_members", feedGenerator.GetFeedMembers)
 
 	port := os.Getenv("PORT")
 	if port == "" {

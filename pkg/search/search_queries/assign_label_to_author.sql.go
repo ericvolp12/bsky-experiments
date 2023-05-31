@@ -10,7 +10,7 @@ import (
 const assignLabelToAuthor = `-- name: AssignLabelToAuthor :exec
 INSERT INTO author_labels (author_did, label_id)
 VALUES ($1, $2::bigint)
-ON CONFLICT (author_id, label_id) DO NOTHING
+ON CONFLICT (author_did, label_id) DO NOTHING
 `
 
 type AssignLabelToAuthorParams struct {
