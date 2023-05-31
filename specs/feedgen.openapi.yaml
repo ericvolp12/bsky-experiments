@@ -1,0 +1,106 @@
+openapi: 3.0.0
+info:
+  title: FeedSky API
+  description: API for managing the FeedSky feeds for the BlueSky application on ATProto
+  version: 1.0.0
+servers:
+  - url: "https://feedsky.jazco.io"
+paths:
+  /assign_user_to_feed:
+    put:
+      summary: Assign user to feed
+      operationId: assignUserToFeed
+      parameters:
+        - name: feedName
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: handle
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                required:
+                  - message
+      security:
+        - apiKey: []
+  /unassign_user_from_feed:
+    put:
+      summary: Unassign user from feed
+      operationId: unassignUserFromFeed
+      parameters:
+        - name: feedName
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: handle
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                required:
+                  - message
+      security:
+        - apiKey: []
+  /feed_members:
+    get:
+      summary: List the users currently in the feed
+      operationId: listFeedMembers
+      parameters:
+        - name: feedName
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        did:
+                          type: string
+                        handle:
+                          type: string
+                      required:
+                        - did
+                        - handle
+                required:
+                  - authors
+      security:
+        - apiKey: []
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: x-API-Key

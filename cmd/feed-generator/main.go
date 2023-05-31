@@ -139,6 +139,9 @@ func main() {
 
 	router.Use(ginzap.RecoveryWithZap(logger, true))
 
+	// Serve static files from the public folder
+	router.Static("/public", "./public")
+
 	// Plug in OTEL Middleware and skip metrics endpoint
 	router.Use(
 		otelgin.Middleware(
