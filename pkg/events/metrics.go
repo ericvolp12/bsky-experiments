@@ -43,6 +43,16 @@ var postsProcessedCounter = promauto.NewCounter(prometheus.CounterOpts{
 	Help: "The total number of posts processed",
 })
 
+var rebaseEventsProcessed = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "bsky_rebase_events_processed_total",
+	Help: "The total number of rebase events processed",
+})
+
+var deleteRecordsProcessed = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "bsky_delete_records_processed_total",
+	Help: "The total number of delete records processed",
+})
+
 // Initialize Prometheus metrics for duration of processing posts
 var postProcessingDurationHistogram = promauto.NewHistogram(prometheus.HistogramOpts{
 	Name:    "bsky_post_processing_duration_seconds",

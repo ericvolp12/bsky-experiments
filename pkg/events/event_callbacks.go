@@ -174,116 +174,121 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 	rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
 	if err != nil {
 		log.Errorf("failed to read repo from car: %+v\n", err)
-	} else {
-		for _, op := range evt.Ops {
-			ek := repomgr.EventKind(op.Action)
-			switch ek {
-			case repomgr.EvtKindCreateRecord, repomgr.EvtKindUpdateRecord:
-				span.SetAttributes(attribute.String("op.path", op.Path))
-				// Grab the record from the merkel tree
-				rc, rec, err := rr.GetRecord(ctx, op.Path)
-				if err != nil {
-					e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
-					log.Errorf("failed to get a record from the event: %+v\n", e)
-					return nil
-				}
-
-				// Verify that the record cid matches the cid in the event
-				if lexutil.LexLink(rc) != *op.Cid {
-					e := fmt.Errorf("mismatch in record and op cid: %s != %s", rc, *op.Cid)
-					log.Errorf("failed to LexLink the record in the event: %+v\n", e)
-					return nil
-				}
-
-				recordAsCAR := lexutil.LexiconTypeDecoder{
-					Val: rec,
-				}
-
-				// Attempt to Unpack the CAR Blocks into JSON Byte Array
-				b, err := recordAsCAR.MarshalJSON()
-				if err != nil {
-					log.Errorf("failed to marshal record as CAR: %+v\n", err)
-					return nil
-				}
-
-				// Parse time from the event time string
-				t, err := time.Parse(time.RFC3339, evt.Time)
-				if err != nil {
-					log.Errorf("error parsing time: %+v", err)
-					return nil
-				}
-
-				// If the record is a block, try to unmarshal it into a GraphBlock and log it
-				if strings.HasPrefix(op.Path, "app.bsky.graph.block") {
-					span.SetAttributes(attribute.String("repo.name", evt.Repo))
-					span.SetAttributes(attribute.String("event.type", "app.bsky.graph.block"))
-					// Unmarshal the JSON Byte Array into a Block
-					var block = appbsky.GraphBlock{}
-					err = json.Unmarshal(b, &block)
-					if err != nil {
-						log.Errorf("failed to unmarshal block into a GraphBlock: %+v\n", err)
-						return nil
-					}
-					span.SetAttributes(attribute.String("block.subject", block.Subject))
-					err = bsky.PostRegistry.AddAuthorBlock(ctx, evt.Repo, block.Subject, t)
-					if err != nil {
-						log.Errorf("failed to add author block to registry: %+v\n", err)
-						return nil
-					}
-					log.Infow("processed graph block", "target", block.Subject, "source", evt.Repo)
-					return nil
-				}
-
-				// If the record is a like, try to unmarshal it into a Like and stick it in the DB
-				if strings.HasPrefix(op.Path, "app.bsky.feed.like") {
-					span.SetAttributes(attribute.String("repo.name", evt.Repo))
-					span.SetAttributes(attribute.String("event.type", "app.bsky.feed.like"))
-					// Unmarshal the JSON Byte Array into a Like
-					var like = appbsky.FeedLike{}
-					err = json.Unmarshal(b, &like)
-					if err != nil {
-						log.Errorf("failed to unmarshal like into a Like: %+v\n", err)
-						return nil
-					}
-
-					if like.Subject != nil {
-						span.SetAttributes(attribute.String("like.subject.uri", like.Subject.Uri))
-
-						_, postID := path.Split(like.Subject.Uri)
-						span.SetAttributes(attribute.String("like.subject.post_id", postID))
-
-						// Add the Like to the DB
-						err := bsky.PostRegistry.AddLikeToPost(ctx, postID)
-						if err != nil {
-							log.Errorf("failed to add like to post: %+v\n", err)
-							span.SetAttributes(attribute.String("error", err.Error()))
-						}
-						likesProcessedCounter.Inc()
-					}
-					return nil
-				}
-
-				// Unmarshal the JSON Byte Array into a FeedPost
-				var pst = appbsky.FeedPost{}
-				err = json.Unmarshal(b, &pst)
-				if err != nil {
-					log.Errorf("failed to unmarshal post into a FeedPost: %+v\n", err)
-					return nil
-				}
-
-				// Add the RepoRecord to the Queue
-				bsky.RepoRecordQueue <- RepoRecord{
-					ctx:       ctx,
-					pst:       pst,
-					repoName:  evt.Repo,
-					opPath:    op.Path,
-					eventTime: evt.Time,
-				}
-			case repomgr.EvtKindDeleteRecord:
-				span.SetAttributes(attribute.String("evt.kind", "delete"))
-				span.SetAttributes(attribute.String("op.path", op.Path))
+		return nil
+	}
+	if evt.Rebase {
+		rebaseEventsProcessed.Inc()
+		return nil
+	}
+	for _, op := range evt.Ops {
+		ek := repomgr.EventKind(op.Action)
+		switch ek {
+		case repomgr.EvtKindCreateRecord, repomgr.EvtKindUpdateRecord:
+			span.SetAttributes(attribute.String("op.path", op.Path))
+			// Grab the record from the merkel tree
+			rc, rec, err := rr.GetRecord(ctx, op.Path)
+			if err != nil {
+				e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
+				log.Errorf("failed to get a record from the event: %+v\n", e)
 				return nil
 			}
+
+			// Verify that the record cid matches the cid in the event
+			if lexutil.LexLink(rc) != *op.Cid {
+				e := fmt.Errorf("mismatch in record and op cid: %s != %s", rc, *op.Cid)
+				log.Errorf("failed to LexLink the record in the event: %+v\n", e)
+				return nil
+			}
+
+			recordAsCAR := lexutil.LexiconTypeDecoder{
+				Val: rec,
+			}
+
+			// Attempt to Unpack the CAR Blocks into JSON Byte Array
+			b, err := recordAsCAR.MarshalJSON()
+			if err != nil {
+				log.Errorf("failed to marshal record as CAR: %+v\n", err)
+				return nil
+			}
+
+			// Parse time from the event time string
+			t, err := time.Parse(time.RFC3339, evt.Time)
+			if err != nil {
+				log.Errorf("error parsing time: %+v", err)
+				return nil
+			}
+
+			// If the record is a block, try to unmarshal it into a GraphBlock and log it
+			if strings.HasPrefix(op.Path, "app.bsky.graph.block") {
+				span.SetAttributes(attribute.String("repo.name", evt.Repo))
+				span.SetAttributes(attribute.String("event.type", "app.bsky.graph.block"))
+				// Unmarshal the JSON Byte Array into a Block
+				var block = appbsky.GraphBlock{}
+				err = json.Unmarshal(b, &block)
+				if err != nil {
+					log.Errorf("failed to unmarshal block into a GraphBlock: %+v\n", err)
+					return nil
+				}
+				span.SetAttributes(attribute.String("block.subject", block.Subject))
+				err = bsky.PostRegistry.AddAuthorBlock(ctx, evt.Repo, block.Subject, t)
+				if err != nil {
+					log.Errorf("failed to add author block to registry: %+v\n", err)
+					return nil
+				}
+				log.Infow("processed graph block", "target", block.Subject, "source", evt.Repo)
+				return nil
+			}
+
+			// If the record is a like, try to unmarshal it into a Like and stick it in the DB
+			if strings.HasPrefix(op.Path, "app.bsky.feed.like") {
+				span.SetAttributes(attribute.String("repo.name", evt.Repo))
+				span.SetAttributes(attribute.String("event.type", "app.bsky.feed.like"))
+				// Unmarshal the JSON Byte Array into a Like
+				var like = appbsky.FeedLike{}
+				err = json.Unmarshal(b, &like)
+				if err != nil {
+					log.Errorf("failed to unmarshal like into a Like: %+v\n", err)
+					return nil
+				}
+
+				if like.Subject != nil {
+					span.SetAttributes(attribute.String("like.subject.uri", like.Subject.Uri))
+
+					_, postID := path.Split(like.Subject.Uri)
+					span.SetAttributes(attribute.String("like.subject.post_id", postID))
+
+					// Add the Like to the DB
+					err := bsky.PostRegistry.AddLikeToPost(ctx, postID)
+					if err != nil {
+						log.Errorf("failed to add like to post: %+v\n", err)
+						span.SetAttributes(attribute.String("error", err.Error()))
+					}
+					likesProcessedCounter.Inc()
+				}
+				return nil
+			}
+
+			// Unmarshal the JSON Byte Array into a FeedPost
+			var pst = appbsky.FeedPost{}
+			err = json.Unmarshal(b, &pst)
+			if err != nil {
+				log.Errorf("failed to unmarshal post into a FeedPost: %+v\n", err)
+				return nil
+			}
+
+			// Add the RepoRecord to the Queue
+			bsky.RepoRecordQueue <- RepoRecord{
+				ctx:       ctx,
+				pst:       pst,
+				repoName:  evt.Repo,
+				opPath:    op.Path,
+				eventTime: evt.Time,
+			}
+		case repomgr.EvtKindDeleteRecord:
+			deleteRecordsProcessed.Inc()
+			span.SetAttributes(attribute.String("evt.kind", "delete"))
+			span.SetAttributes(attribute.String("op.path", op.Path))
+			return nil
 		}
 	}
 	return nil
