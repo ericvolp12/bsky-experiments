@@ -28,6 +28,16 @@ var feedRequestCounter = promauto.NewCounterVec(prometheus.CounterOpts{
 	Help: "The total number of feed requests",
 }, []string{"feed_name"})
 
+var feedUserCounter = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "feed_user_count",
+	Help: "The total number of feed users",
+}, []string{"feed_name"})
+
+var uniqueFeedUserCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "unique_feed_user_count",
+	Help: "The total number of unique feed users",
+})
+
 var feedRequestLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    "feed_request_latency",
 	Help:    "The latency of feed requests",
@@ -74,6 +84,8 @@ type FeedGenerator struct {
 	AcceptableURIPrefixes []string
 	FeedGeneratorCache    FeedGeneratorDescriptionCacheItem
 	FeedGeneratorCacheTTL time.Duration
+	FeedUsers             map[string][]string
+	UniqueSeenUsers       *bloom.BloomFilter
 }
 
 type FeedPostItem struct {
@@ -132,6 +144,8 @@ func NewFeedGenerator(
 		"at://did:plc:q6gjnaw2blty4crticxkmujt/app.bsky.feed.generator/",
 	}
 
+	uniqueSeenUsers := bloom.NewWithEstimates(1000000, 0.01)
+
 	return &FeedGenerator{
 		PostRegistry:          postRegistry,
 		Client:                client,
@@ -141,6 +155,8 @@ func NewFeedGenerator(
 		AcceptableURIPrefixes: acceptableURIPrefixes,
 		FeedGeneratorCache:    FeedGeneratorDescriptionCacheItem{},
 		FeedGeneratorCacheTTL: 5 * time.Minute,
+		FeedUsers:             map[string][]string{},
+		UniqueSeenUsers:       uniqueSeenUsers,
 	}, nil
 }
 
@@ -275,6 +291,33 @@ func (fg *FeedGenerator) UpdateClusterAssignments(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "cluster assignments updated", "errors": errs})
 }
 
+func (fg *FeedGenerator) ProcessUser(feedName string, userDID string) {
+	// Check if the user has ever been seen before
+	if !fg.UniqueSeenUsers.TestString(userDID) {
+		fg.UniqueSeenUsers.AddString(userDID)
+		uniqueFeedUserCounter.Inc()
+	}
+
+	// Check if the feed user list exists
+	if fg.FeedUsers[feedName] == nil {
+		// If not, create the feed user list
+		fg.FeedUsers[feedName] = []string{
+			userDID,
+		}
+	} else {
+		// Check if the user is already in the list
+		for _, existingUserDID := range fg.FeedUsers[feedName] {
+			if existingUserDID == userDID {
+				return
+			}
+		}
+
+		fg.FeedUsers[feedName] = append(fg.FeedUsers[feedName], userDID)
+	}
+
+	feedUserCounter.WithLabelValues(feedName).Inc()
+}
+
 func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	// Incoming requests should have a query parameter "feed" that looks like: at://did:web:feedsky.jazco.io/app.bsky.feed.generator/feed-name
 	// Also a query parameter "limit" that looks like: 50
@@ -285,6 +328,8 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 
 	bloomFilterMaxSize := uint(1000)     // expected number of items in the bloom filter
 	bloomFilterFalsePositiveRate := 0.01 // false positive rate of the bloom filter
+
+	userDID := c.GetString("user_did")
 
 	start := time.Now()
 	feedQuery := c.Query("feed")
@@ -326,7 +371,9 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 	span.SetAttributes(attribute.String("feed.name.parsed", feedName))
 	c.Set("feedName", feedName)
 
-	feedRequestCounter.WithLabelValues(feedName).Inc()
+	if userDID != "" {
+		fg.ProcessUser(feedName, userDID)
+	}
 
 	// Get the limit from the query, default to 50, maximum of 250
 	limit := int32(50)
@@ -423,9 +470,6 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 		// Get posts for a specific author label
 		authorLabel := strings.TrimPrefix(feedName, "a:")
 		span.SetAttributes(attribute.String("feed.author_label", authorLabel))
-
-		userDID := c.GetString("user_did")
-
 		// Check that author is assigned to this label
 		if userDID == "" {
 			span.SetAttributes(attribute.Bool("feed.author.not_authorized", true))

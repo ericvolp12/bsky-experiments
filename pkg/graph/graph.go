@@ -156,8 +156,18 @@ func (g *Graph) Write(writer io.Writer) error {
 }
 
 // Diff computes the difference between two graphs and returns a list of EdgeDiff.
-func Diff(g1, g2 *Graph) []EdgeDiff {
+func Diff(g1, g2 *Graph) ([]Node, []EdgeDiff) {
 	diff := []EdgeDiff{}
+
+	nodes := []Node{}
+
+	// Find nodes that are in g1 but not in g2
+	for nodeID, node := range g1.Nodes {
+		_, ok := g2.Nodes[nodeID]
+		if !ok {
+			nodes = append(nodes, node)
+		}
+	}
 
 	for from, edges := range g1.Edges {
 		for to, weight := range edges {
@@ -173,7 +183,7 @@ func Diff(g1, g2 *Graph) []EdgeDiff {
 		}
 	}
 
-	return diff
+	return nodes, diff
 }
 
 // ApplyDiff updates the graph by applying the given diff to its edges.
