@@ -370,6 +370,7 @@ func (fg *FeedGenerator) GetFeedSkeleton(c *gin.Context) {
 
 	span.SetAttributes(attribute.String("feed.name.parsed", feedName))
 	c.Set("feedName", feedName)
+	feedRequestCounter.WithLabelValues(feedName).Inc()
 
 	if userDID != "" {
 		fg.ProcessUser(feedName, userDID)
