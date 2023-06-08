@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+    big-bsky:
+        build:
+            context: ..
+            dockerfile: docker/Dockerfile
+        restart: always
+        image: big-bsky
+        container_name: big-bsky
+        env_file:
+            - ../.env
+        ports:
+            - "6969:6969"
+        volumes:
+            - type: bind
+              source: ../data/
+              target: /app/data/
+            - type: bind
+              source: ../.env
+              target: /app/.env
