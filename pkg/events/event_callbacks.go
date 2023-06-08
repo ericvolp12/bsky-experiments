@@ -46,6 +46,8 @@ type BSky struct {
 
 	Logger *zap.SugaredLogger
 
+	LastSeq int64 // LastSeq is the last sequence number processed
+
 	// Generate a Profile Cache with a TTL
 	profileCache    *lru.ARCCache
 	profileCacheTTL time.Duration
@@ -170,6 +172,8 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 	defer span.End()
 
 	log := bsky.Logger.With("repo", evt.Repo, "seq", evt.Seq)
+
+	bsky.LastSeq = evt.Seq
 
 	rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
 	if err != nil {
