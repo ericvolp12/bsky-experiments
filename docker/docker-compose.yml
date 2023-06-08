@@ -1,7 +1,7 @@
 version: "3.8"
 
 networks:
-    big-bsky-network:
+    bluesky-network:
         driver: bridge
         ipam:
             driver: default
@@ -16,28 +16,35 @@ services:
             - POSTGRES_DB=app
             - POSTGRES_USER=username
             - POSTGRES_PASSWORD=password
+        networks:
+            - bluesky-network
         ports:
             - "6543:5432"
-    big-bsky:
+    bluesky:
         restart: always
-        image: big-bsky
-        container_name: big-bsky
+        image: bluesky
+        container_name: bluesky
         user: root
         env_file:
             - ../.env
 
+        working_dir: /workspaces/bluesky
+
         networks:
-            - big-bsky-network
+            - bluesky-network
         ports:
             - "6969:6969"
         volumes:
             - type: bind
+              source: ..
+              target: /workspaces/bluesky
+            - type: bind
               source: ../data/
-              target: /app/data/
+              target: /workspaces/bluesky/data/
             - type: bind
               source: ../.env
-              target: /app/.env
-        command: ["sh", "-c", "pwd && ls -a && sleep 5000"]
+              target: /workspaces/bluesky/.env
+        command: ["sh", "-c", "pwd && ls -a && sleep 120"]
         build:
             context: ..
             dockerfile: docker/Dockerfile
