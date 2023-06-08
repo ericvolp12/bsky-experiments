@@ -1,15 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -142,6 +145,28 @@ func main() {
 	} else {
 		log.Info("social graph resumed successfully")
 		bsky.SocialGraph = resumedGraph
+	}
+
+	// Try to read the seq number from file
+	seqFile, err := os.Open(graphFile + ".seq")
+	if err != nil {
+		log.Infof("error reading seq number from file: %s\n", err)
+		log.Info("starting from latest seq")
+	} else {
+		log.Info("reading seq number from file...")
+		scanner := bufio.NewScanner(seqFile)
+		scanner.Scan()
+		seq, err := strconv.ParseInt(scanner.Text(), 10, 64)
+		if err != nil {
+			log.Infof("error reading seq number from file: %s\n", err)
+			log.Info("starting from latest seq")
+		} else {
+			if seq != 0 {
+				log.Infof("starting from seq %d", seq)
+				bsky.LastSeq = seq
+				u.RawQuery = fmt.Sprintf("cursor=%d", seq)
+			}
+		}
 	}
 
 	graphTicker := time.NewTicker(5 * time.Minute)
@@ -277,6 +302,13 @@ func saveGraph(
 		log.Errorf("error writing social graph to binary file: %s", err)
 	}
 	span.AddEvent("saveGraph:FinishedWritingGraphToBinaryFile")
+
+	// Write the last seq number to a file
+	span.AddEvent("saveGraph:WriteLastSeqNumber")
+	err = ioutil.WriteFile(graphFileFromEnv+".seq", []byte(fmt.Sprintf("%d", bsky.LastSeq)), 0644)
+	if err != nil {
+		log.Errorf("error writing last seq number to file: %s", err)
+	}
 
 	// Copy the file to the "latest" path, we don't need to lock the graph for this
 	span.AddEvent("saveGraph:CopyGraphFile")
