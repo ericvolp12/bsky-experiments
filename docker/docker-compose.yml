@@ -1,15 +1,33 @@
 version: "3.8"
 
+networks:
+    big-bsky-network:
+        driver: bridge
+        ipam:
+            driver: default
+            config:
+                - subnet: 172.19.0.0/24
+                  gateway: 172.19.0.1
+
 services:
+    postgres_db:
+        image: postgres:10-alpine
+        environment:
+            - POSTGRES_DB=app
+            - POSTGRES_USER=username
+            - POSTGRES_PASSWORD=password
+        ports:
+            - "6543:5432"
     big-bsky:
-        build:
-            context: ..
-            dockerfile: docker/Dockerfile
         restart: always
         image: big-bsky
         container_name: big-bsky
+        user: root
         env_file:
             - ../.env
+
+        networks:
+            - big-bsky-network
         ports:
             - "6969:6969"
         volumes:
@@ -19,3 +37,9 @@ services:
             - type: bind
               source: ../.env
               target: /app/.env
+        command: ["sh", "-c", "make graph-builder-up"]
+        build:
+            context: ..
+            dockerfile: docker/Dockerfile
+        depends_on:
+            - "postgres_db"
