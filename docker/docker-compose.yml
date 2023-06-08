@@ -44,7 +44,7 @@ services:
             - type: bind
               source: ../.env
               target: /workspaces/bluesky/.env
-        command: ["sh", "-c", "pwd && ls -a && sleep 120"]
+        command: ["sh", "-c", "make"]
         build:
             context: ..
             dockerfile: docker/Dockerfile
