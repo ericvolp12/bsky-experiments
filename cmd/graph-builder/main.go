@@ -21,6 +21,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -100,6 +101,25 @@ func main() {
 		sentimentAnalysisEnabled = true
 	}
 
+	redisAddress := os.Getenv("REDIS_ADDRESS")
+	if redisAddress == "" {
+		redisAddress = "localhost:6379"
+	}
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     redisAddress,
+		Password: "",
+		DB:       0,
+	})
+
+	// Test the connection to redis
+	_, err = redisClient.Ping(ctx).Result()
+	if err != nil {
+		log.Fatalf("failed to connect to redis: %+v\n", err)
+	}
+
+	redisReaderWriter := graph.NewRedisReaderWriter(redisClient)
+
 	log.Info("initializing BSky Event Handler...")
 	bsky, err := intEvents.NewBSky(
 		ctx,
@@ -138,7 +158,7 @@ func main() {
 		for {
 			select {
 			case <-graphTicker.C:
-				saveGraph(ctx, log, bsky, &binReaderWriter, graphFile)
+				saveGraph(ctx, log, bsky, &binReaderWriter, redisReaderWriter, graphFile)
 			case <-quit:
 				graphTicker.Stop()
 				wg.Done()
@@ -215,6 +235,7 @@ func saveGraph(
 	log *zap.SugaredLogger,
 	bsky *intEvents.BSky,
 	binReaderWriter *graph.BinaryGraphReaderWriter,
+	redisReaderWriter *graph.RedisReaderWriter,
 	graphFileFromEnv string,
 ) {
 	tracer := otel.Tracer("graph-builder")
@@ -234,6 +255,14 @@ func saveGraph(
 	span.AddEvent("saveGraph:ReleaseGraphLock")
 	bsky.SocialGraphMux.RUnlock()
 
+	log.Info("writing social graph to redis...")
+	span.AddEvent("saveGraph:WriteGraphToRedis")
+	err := redisReaderWriter.WriteGraph(*newGraph, "social-graph")
+	if err != nil {
+		log.Errorf("error writing social graph to redis: %s", err)
+	}
+	span.AddEvent("saveGraph:FinishedWritingGraphToRedis")
+
 	logMsg := fmt.Sprintf("writing social graph to binary file, last updated: %s",
 		bsky.SocialGraph.LastUpdate.Format("02.01.06 15:04:05"))
 
@@ -241,17 +270,21 @@ func saveGraph(
 		"graph_last_updated_at", newGraph.LastUpdate,
 	)
 
+	span.AddEvent("saveGraph:WriteGraphToBinaryFile")
 	// Write the graph to a timestamped file
-	err := binReaderWriter.WriteGraph(*newGraph, timestampedGraphFilePath)
+	err = binReaderWriter.WriteGraph(*newGraph, timestampedGraphFilePath)
 	if err != nil {
 		log.Errorf("error writing social graph to binary file: %s", err)
 	}
+	span.AddEvent("saveGraph:FinishedWritingGraphToBinaryFile")
 
 	// Copy the file to the "latest" path, we don't need to lock the graph for this
+	span.AddEvent("saveGraph:CopyGraphFile")
 	err = copyFile(timestampedGraphFilePath, graphFileFromEnv)
 	if err != nil {
 		log.Errorf("error copying binary file: %s", err)
 	}
+	span.AddEvent("saveGraph:FinishedCopyingGraphFile")
 
 	log.Info("social graph written to binary file successfully")
 }

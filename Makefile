@@ -98,6 +98,11 @@ pyroscope-up:
 	@echo "Starting Pyroscope..."
 	docker compose -f build/pyroscope/docker-compose.yml up --build -d
 
+# Start up the DragonflyDB Database
+dragonfly-up:
+	@echo "Starting DragonflyDB..."
+	docker compose -f build/dragonfly/docker-compose.yml up -d
+
 # Generate SQLC Code
 sqlc:
 	@echo "Generating SQLC code..."
