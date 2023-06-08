@@ -37,7 +37,7 @@ services:
             - type: bind
               source: ../.env
               target: /app/.env
-        command: ["sh", "-c", "make graph-builder-up"]
+        command: ["sh", "-c", "pwd && ls -a && sleep 5000"]
         build:
             context: ..
             dockerfile: docker/Dockerfile
