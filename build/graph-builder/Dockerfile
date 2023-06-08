@@ -2,13 +2,12 @@ FROM golang:1.20 as builder
 
 WORKDIR /app
 
-RUN go mod tidy
-
 COPY go.mod go.sum ./
 
-RUN go mod download
-
+RUN go get -u
 RUN go mod tidy
+
+RUN go mod download
 
 COPY pkg ./pkg
 
