@@ -44,7 +44,7 @@ services:
             - type: bind
               source: ../.env
               target: /workspaces/bluesky/.env
-        command: ["sh", "-c", "make"]
+        command: ["sh", "-c", "make graph-builder-up"]
         build:
             context: ..
             dockerfile: docker/Dockerfile

@@ -2,7 +2,7 @@ FROM golang:1.20 as builder
 
 WORKDIR /app
 
-RUN go clean --modcache && go mod tidy -v -e
+#RUN go clean --modcache && go mod tidy -v -e
 
 COPY go.mod go.sum ./
 
