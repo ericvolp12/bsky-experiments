@@ -3,7 +3,7 @@ FROM golang:1.20 as builder
 WORKDIR /app
 
 COPY go.mod go.sum ./
-
+RUN go get github.com/shopspring/decimal
 RUN go get -u
 RUN go mod tidy
 
