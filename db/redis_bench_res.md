@@ -9,17 +9,31 @@ All tests were performed on localhost behind Docker NAT, on a `AMD EPYC 7302P 16
 I tested some simple operations on small key/value pairs both with and without pipelines and got these results:
 
 ```
-Test: No-Pipeline, 100k key inserts, 5m reads (50x read amplification)
+Test: No-Pipeline, 100k key inserts, 5 byte values, 5m reads (50x read amplification)
 
 redis-stack: 64.117s
 dragonflydb: 66.052s
 ```
 
 ```
-Test: Pipeline, 500k key inserts, 25m reads (50x read amplification)
+Test: Pipeline, 500k key inserts, 5 byte values, 25m reads (50x read amplification)
 
 redis-stack: 16.583s
 dragonflydb: 35.217s
+```
+
+```
+Test: No-Pipeline, 100k key inserts, 1kb values, 5m reads (50x read amplification)
+
+redis-stack: 69.527s
+dragonflydb: 70.019s
+```
+
+```
+Test: Pipeline, 500k key inserts, 1kb values, 25m reads (50x read amplification)
+
+redis-stack: 42.633s
+dragonflydb: 66.865s
 ```
 
 From these results we can see that `redis-stack` handles pipelined reads with higher throughput than `dragonflydb`. The tests used pipelines with 10,000 commands in each to prevent I/O errors.

@@ -92,12 +92,18 @@ func TestRedisWithPipelines(t *testing.T) {
 		keys[i] = "key" + fmt.Sprint(i)
 	}
 
+	// Generate a 1KB value
+	value := ""
+	for k := 0; k < 100; k++ {
+		value += "0123456789"
+	}
+
 	// Add keys in batches of 10,000
 	for i := 0; i < n; i += maxPipelineSize {
 		pipeline := conn.Pipeline()
 
 		for j := i; j < i+maxPipelineSize; j++ {
-			pipeline.Set(ctx, keys[j], "value", time.Minute*2)
+			pipeline.Set(ctx, keys[j], value, time.Minute*2)
 		}
 
 		// Execute the pipeline
@@ -135,7 +141,7 @@ func TestRedisWithPipelines(t *testing.T) {
 					if cmd.Err() != nil {
 						errs = append(errs, cmd.Err())
 					}
-					if cmd.(*redis.StringCmd).Val() != "value" {
+					if cmd.(*redis.StringCmd).Val() != value {
 						errs = append(errs, fmt.Errorf("wrong value"))
 					}
 				}
@@ -168,7 +174,7 @@ func TestRedisWithoutPipelines(t *testing.T) {
 
 	// Initialize Redis
 	conn := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: "localhost:6385",
 		DB:   0,
 	})
 
@@ -178,9 +184,15 @@ func TestRedisWithoutPipelines(t *testing.T) {
 		keys[i] = "key" + fmt.Sprint(i)
 	}
 
+	// Generate a 1KB value
+	value := ""
+	for k := 0; k < 100; k++ {
+		value += "0123456789"
+	}
+
 	// Add keys
 	for i := 0; i < n; i++ {
-		_, err := conn.Set(ctx, keys[i], "value", time.Minute*2).Result()
+		_, err := conn.Set(ctx, keys[i], value, time.Minute*2).Result()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -199,7 +211,7 @@ func TestRedisWithoutPipelines(t *testing.T) {
 				if err != nil {
 					errs = append(errs, err)
 				}
-				if val != "value" {
+				if val != value {
 					errs = append(errs, fmt.Errorf("wrong value"))
 				}
 			}
