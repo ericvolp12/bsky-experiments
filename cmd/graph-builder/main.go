@@ -36,12 +36,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// Count is used for sorting and storing mention counts
-type Count struct {
-	Handle string
-	Count  int
-}
-
 const (
 	maxBackoff       = 30 * time.Second
 	maxBackoffFactor = 2
