@@ -77,7 +77,8 @@ func TestRedis(t *testing.T) {
 	ctx := context.Background()
 
 	// Number of keys to generate
-	n := 50000
+	n := 500000
+	maxPipelineSize := 10000
 
 	// Initialize Redis
 	conn := redis.NewClient(&redis.Options{
@@ -91,47 +92,52 @@ func TestRedis(t *testing.T) {
 		keys[i] = "key" + fmt.Sprint(i)
 	}
 
-	pipeline := conn.Pipeline()
+	// Add keys in batches of 10,000
+	for i := 0; i < n; i += maxPipelineSize {
+		pipeline := conn.Pipeline()
 
-	// Set them in Redis
-	for i := 0; i < n; i++ {
-		pipeline.Set(ctx, keys[i], "value", time.Minute*2)
+		for j := i; j < i+maxPipelineSize; j++ {
+			pipeline.Set(ctx, keys[j], "value", time.Minute*2)
+		}
+
+		// Execute the pipeline
+		_, err := pipeline.Exec(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	// Execute the pipeline
-	_, err := pipeline.Exec(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Read back the keys in 50 goroutines (2.5m reads total)
-	numRoutines := 100
+	// Read back the keys in 50 goroutines (25m reads total)
+	numRoutines := 50
 	errChan := make(chan []error, numRoutines)
 
 	for i := 0; i < numRoutines; i++ {
 		go func() {
-			pipeline := conn.Pipeline()
-
 			errs := []error{}
 
-			for i := 0; i < n; i++ {
-				pipeline.Get(ctx, keys[i])
-			}
+			// Read in batches of 10,000
+			for i := 0; i < n; i += maxPipelineSize {
+				pipeline := conn.Pipeline()
 
-			// Execute the pipeline
-			cmder, err := pipeline.Exec(ctx)
-			if err != nil {
-				errs = append(errs, err)
-			}
-
-			// Check that we got the right values
-			for i := 0; i < n; i++ {
-				cmd := cmder[i]
-				if cmd.Err() != nil {
-					errs = append(errs, cmd.Err())
+				for j := i; j < i+maxPipelineSize; j++ {
+					pipeline.Get(ctx, keys[j])
 				}
-				if cmd.(*redis.StringCmd).Val() != "value" {
-					errs = append(errs, fmt.Errorf("wrong value"))
+
+				// Execute the pipeline
+				cmder, err := pipeline.Exec(ctx)
+				if err != nil {
+					errs = append(errs, err)
+				}
+
+				// Check that we got the right values
+				for j := i; j < i+10000; j++ {
+					cmd := cmder[j-i]
+					if cmd.Err() != nil {
+						errs = append(errs, cmd.Err())
+					}
+					if cmd.(*redis.StringCmd).Val() != "value" {
+						errs = append(errs, fmt.Errorf("wrong value"))
+					}
 				}
 			}
 
