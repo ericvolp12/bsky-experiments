@@ -1,6 +1,6 @@
 FROM golang:1.20 as builder
 
-WORKDIR /app
+WORKDIR /workspaces/bluesky
 
 #RUN go clean --modcache && go mod tidy -v -e
 
@@ -24,8 +24,8 @@ FROM debian:stable-slim
 
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /app/graph-builder .
+COPY --from=builder /workspaces/bluesky/graph-builder .
 
-RUN mkdir -p /app/data
+RUN mkdir -p /workspaces/bluesky/data
 
-CMD ["./graph-builder"]
+CMD ["/workspaces/bluesky/graph-builder"]

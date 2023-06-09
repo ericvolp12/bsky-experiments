@@ -45,6 +45,7 @@ services:
               source: ../.env
               target: /workspaces/bluesky/.env
         command: ["sh", "-c", "make graph-builder-up"]
+        #command: ["sh", "-c", "pwd && ls -a && cd build && cd graph-builder && ls -a && sleep 120"]
         build:
             context: ..
             dockerfile: docker/Dockerfile

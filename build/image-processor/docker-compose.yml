@@ -17,8 +17,8 @@ services:
     volumes:
       - type: bind
         source: ../../data/
-        target: /app/data/
+        target: /workspaces/bluesky/data/
       - type: bind
         source: ../../.env
-        target: /app/.env
+        target: /workspaces/bluesky/.env
 
