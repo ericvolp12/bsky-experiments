@@ -212,7 +212,7 @@ func (bsky *BSky) ProcessRepoRecord(
 		}
 	}
 
-	postLink := fmt.Sprintf("https://staging.bsky.app/profile/%s/post/%s", authorProfile.Handle, postID)
+	postLink := fmt.Sprintf("https://bsky.app/profile/%s/post/%s", authorProfile.Handle, postID)
 
 	// Write the post to the Post Registry if enabled
 	if bsky.PostRegistryEnabled {
