@@ -29,3 +29,15 @@ The `redis-stack` utilized 100% of its single CPU core during execution while th
 Without Docker NAT, the `No-Pipeline` tests executed in half the time for both DBs, while the `Pipeline` test didn't have a noticable difference in execution time for either DB when running under `network=host`.
 
 Redis recommends running `Redis Cluster` on a single host to shard out keys more effectively and increase throughput, I've yet to test that but given how little CPU utilization the single `redis-stack` consumed, I'm interested in conducting further testing.
+
+## Versions
+Docker Commands
+```
+docker run --rm -it --name=dragonfly_bench -p 6385:6379 docker.dragonflydb.io/dragonflydb/dragonfly
+docker run -it --name redis-stack -p 6380:6379 redis/redis-stack:latest
+```
+
+```
+DragonflyDB: df-v1.3.0-f80afca9c23e2f30373437520a162c591eaa2005
+Redis: 6.2.12 - oss
+```
