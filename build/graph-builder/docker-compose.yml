@@ -4,7 +4,7 @@ services:
   bsky-graph-builder:
     build:
       context: ../../
-      dockerfile: Dockerfile
+      dockerfile: build/graph-builder/Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: always
@@ -18,6 +18,7 @@ services:
       - ../../.env
     ports:
       - "6060:6060"
+    working_dir: /app
     volumes:
       - type: bind
         source: ../../data/

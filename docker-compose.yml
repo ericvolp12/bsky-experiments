@@ -10,6 +10,14 @@ networks:
             #gateway: 172.19.0.1
 
 services:
+    redis:
+        image: redis:6.2-alpine
+        restart: always
+        ports:
+            - "6379:6379"
+        command: redis-server --save 60 1 --loglevel warning
+        networks:
+            - bluesky-net
     postgres_db:
         image: postgres:10-alpine
         environment:
@@ -35,6 +43,7 @@ services:
         ports:
             - "6969:6969"
         volumes:
+            - "/var/run/docker.sock:/var/run/docker.sock"
             - type: bind
               source: .
               target: /app
@@ -45,10 +54,14 @@ services:
               source: .env
               target: /app/.env
         #command: ["sh", "-c", "make graph-builder-up"]
-        command: ["sh", "-c", "apt-get update && export DEBIAN_FRONTEND=noninteractive && apt-get -y install build-essential software-properties-common && curl -fsSL https://get.docker.com -o get-docker.sh && bash ./get_docker.sh"]
+        #command: ["sh", "-c", "apt-get update && export DEBIAN_FRONTEND=noninteractive && apt-get -y install build-essential software-properties-common && curl -fsSL https://get.docker.com -o get-docker.sh && bash ./get_docker.sh"]
         #command: ["sh", "-c", "apt-get update && apt-get install ca-certificates curl gnupg && install -m 0755 -d /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && chmod a+r /etc/apt/keyrings/docker.gpg && echo "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && apt-get update && apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin && pwd && ls -a && cd build && cd graph-builder && ls -a && sleep 120"]
         build:
             context: .
             dockerfile: Dockerfile
+        links:
+            - redis
+            - postgres_db
         depends_on:
-            - "postgres_db"
+            - redis
+            - postgres_db
