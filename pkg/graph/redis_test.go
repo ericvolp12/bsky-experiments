@@ -105,9 +105,10 @@ func TestRedis(t *testing.T) {
 	}
 
 	// Read back the keys in 50 goroutines (2.5m reads total)
-	errChan := make(chan []error, 50)
+	numRoutines := 100
+	errChan := make(chan []error, numRoutines)
 
-	for i := 0; i < 50; i++ {
+	for i := 0; i < numRoutines; i++ {
 		go func() {
 			pipeline := conn.Pipeline()
 
@@ -140,7 +141,7 @@ func TestRedis(t *testing.T) {
 
 	// Wait for all goroutines to finish
 	errs := []error{}
-	for i := 0; i < 50; i++ {
+	for i := 0; i < numRoutines; i++ {
 		errs = append(errs, <-errChan...)
 	}
 
