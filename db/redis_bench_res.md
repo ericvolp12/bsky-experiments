@@ -6,80 +6,16 @@ In this exploration I decided to run a few benchmarks in Go using the `github.co
 
 All tests were performed on localhost behind Docker NAT, on a `AMD EPYC 7302P 16-Core Processor` inside a Proxmox VM with 24GB of allocated RAM available.
 
-I tested some simple operations on small key/value pairs both with and without pipelines and got these results:
-
 ```
-Test: No-Pipeline
-Inserts: 100k
-Value Size: 5b
-Reads: 5m
-
-redis-stack: 64.117s
-dragonflydb: 66.052s
-```
-
-```
-Test: No-Pipeline
-Inserts: 100k
-Value Size: 1kb
-Reads: 5m
-
-redis-stack: 69.527s
-dragonflydb: 70.019s
-```
-
-```
-Test: No-Pipeline
-Inserts: 100k
-Value Size: 10kb
-Reads: 5m
-
-redis-stack: 101.712s
-dragonflydb: 90.429s
-```
-
-```
-Test: Pipeline
-Inserts: 500k
-Value Size: 5b
-Reads: 25m
-Pipeline Size: 10k
-
-redis-stack: 16.583s
-dragonflydb: 35.217s
-```
-
-```
-Test: Pipeline
-Inserts: 500k
-Value Size: 1kb
-Reads: 25m
-Pipeline Size: 10k
-
-redis-stack: 42.633s
-dragonflydb: 66.865s
-```
-
-```
-Test: Pipeline
-Inserts: 500k
-Value Size: 1kb
-Reads: 25m
-Pipeline Size: 1k
-
-redis-stack: 39.503s
-dragonflydb: 68.294s
-```
-
-```
-Test: Pipeline
-Inserts: 100k
-Value Size: 10kb
-Reads: 5m
-Pipeline Size: 1k
-
-redis-stack: 49.189s
-dragonflydb: 26.303s
+| Test         | Inserts | Value Size | Reads | Pipeline Size | redis-stack | dragonflydb |
+|--------------|---------|------------|-------|---------------|-------------|-------------|
+| No-Pipeline  | 100k    | 5b         | 5m    | N/A           | 64.117s     | 66.052s     |
+| No-Pipeline  | 100k    | 1kb        | 5m    | N/A           | 69.527s     | 70.019s     |
+| No-Pipeline  | 100k    | 10kb       | 5m    | N/A           | 101.712s    | 90.429s     |
+| Pipeline     | 500k    | 5b         | 25m   | 10k           | 16.583s     | 35.217s     |
+| Pipeline     | 500k    | 1kb        | 25m   | 10k           | 42.633s     | 66.865s     |
+| Pipeline     | 500k    | 1kb        | 25m   | 1k            | 39.503s     | 68.294s     |
+| Pipeline     | 100k    | 10kb       | 5m    | 1k            | 49.189s     | 26.303s     |
 ```
 
 From these results we can see that `redis-stack` handles pipelined reads with higher throughput than `dragonflydb`. The tests used pipelines with 10,000 commands in each to prevent I/O errors.
