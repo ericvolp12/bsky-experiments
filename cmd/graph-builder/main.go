@@ -219,7 +219,7 @@ func main() {
 
 	// Run a routine that handles the events from the WebSocket
 	log.Info("starting repo sync routine...")
-	err = handleRepoStreamWithRetry(ctx, bsky, log, u, &events.RepoStreamCallbacks{
+	err = handleRepoStreamWithRetry(ctx, bsky, log, u, &intEvents.RepoStreamCtxCallbacks{
 		RepoCommit: bsky.HandleRepoCommit,
 		RepoInfo:   intEvents.HandleRepoInfo,
 		Error:      intEvents.HandleError,
@@ -387,7 +387,7 @@ func handleRepoStreamWithRetry(
 	bsky *intEvents.BSky,
 	log *zap.SugaredLogger,
 	u url.URL,
-	callbacks *events.RepoStreamCallbacks,
+	callbacks *intEvents.RepoStreamCtxCallbacks,
 ) error {
 	var backoff time.Duration
 
@@ -430,7 +430,19 @@ func handleRepoStreamWithRetry(
 			}
 		}()
 
-		err = events.HandleRepoStream(streamCtx, c, callbacks)
+		pool := events.NewConsumerPool(16, 32, func(ctx context.Context, xe *events.XRPCStreamEvent) error {
+			switch {
+			case xe.RepoCommit != nil:
+				callbacks.RepoCommit(ctx, xe.RepoCommit)
+			case xe.RepoInfo != nil:
+				callbacks.RepoInfo(ctx, xe.RepoInfo)
+			case xe.Error != nil:
+				callbacks.Error(ctx, xe.Error)
+			}
+			return nil
+		})
+
+		err = events.HandleRepoStream(streamCtx, c, pool)
 		if err != nil {
 			log.Infof("Error in event handler routine: %v", err)
 			backoff = getNextBackoff(backoff)

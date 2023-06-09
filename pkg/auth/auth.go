@@ -14,7 +14,7 @@ import (
 	es256k "github.com/ericvolp12/jwt-go-secp256k1"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
-	lru "github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru/arc/v2"
 	"github.com/multiformats/go-multibase"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -70,7 +70,7 @@ type FeedAuthEntity struct {
 }
 
 type Auth struct {
-	KeyCache     *lru.ARCCache
+	KeyCache     *lru.ARCCache[string, KeyCacheEntry]
 	KeyCacheTTL  time.Duration
 	HTTPClient   *http.Client
 	Limiter      *rate.Limiter
@@ -95,7 +95,7 @@ func NewAuth(
 	requestsPerSecond int,
 	serviceDID string,
 ) (*Auth, error) {
-	keyCache, err := lru.NewARC(keyCacheSize)
+	keyCache, err := lru.NewARC[string, KeyCacheEntry](keyCacheSize)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create key cache: %v", err)
 	}
@@ -155,15 +155,10 @@ func (auth *Auth) GetClaimsFromAuthHeader(ctx context.Context, authHeader string
 			// Get the user's key from PLC Directory
 			userDID := claims.Issuer
 			entry, ok := auth.KeyCache.Get(userDID)
-			if ok {
-				cacheEntry := entry.(KeyCacheEntry)
-				if cacheEntry.ExpiresAt.After(time.Now()) {
-					if cacheEntry.ExpiresAt.After(time.Now()) {
-						cacheHits.WithLabelValues("key").Inc()
-						span.SetAttributes(attribute.Bool("caches.keys.hit", true))
-						return cacheEntry.Key, nil
-					}
-				}
+			if ok && entry.ExpiresAt.After(time.Now()) {
+				cacheHits.WithLabelValues("key").Inc()
+				span.SetAttributes(attribute.Bool("caches.keys.hit", true))
+				return entry.Key, nil
 			}
 
 			cacheMisses.WithLabelValues("key").Inc()

@@ -17,7 +17,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/search/search_queries"
 	"github.com/ericvolp12/bsky-experiments/pkg/usercount"
 	"github.com/gin-gonic/gin"
-	lru "github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru/arc/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -59,9 +59,9 @@ type API struct {
 	LayoutServiceHost string
 
 	ThreadViewCacheTTL time.Duration
-	ThreadViewCache    *lru.ARCCache
+	ThreadViewCache    *lru.ARCCache[string, ThreadViewCacheEntry]
 	LayoutCacheTTL     time.Duration
-	LayoutCache        *lru.ARCCache
+	LayoutCache        *lru.ARCCache[string, LayoutCacheEntry]
 	StatsCacheTTL      time.Duration
 	StatsCache         *StatsCacheEntry
 	StatsCacheRWMux    *sync.RWMutex
@@ -86,12 +86,12 @@ func NewAPI(
 	}
 
 	// Hellthread is around 300KB right now so 1000 worst-case threads should be around 300MB
-	threadViewCache, err := lru.NewARC(1000)
+	threadViewCache, err := lru.NewARC[string, ThreadViewCacheEntry](1000)
 	if err != nil {
 		return nil, fmt.Errorf("error initializing thread view cache: %w", err)
 	}
 
-	layoutCache, err := lru.NewARC(500)
+	layoutCache, err := lru.NewARC[string, LayoutCacheEntry](500)
 	if err != nil {
 		return nil, fmt.Errorf("error initializing layout cache: %w", err)
 	}
@@ -327,15 +327,10 @@ func (api *API) LayoutThread(ctx context.Context, rootPostID string, threadView 
 
 	// Check for the layout in the ARC Cache
 	entry, ok := api.LayoutCache.Get(rootPostID)
-	if ok {
-		cacheEntry := entry.(LayoutCacheEntry)
-		if cacheEntry.Expiration.After(time.Now()) {
-			cacheHits.WithLabelValues("layout").Inc()
-			span.SetAttributes(attribute.Bool("caches.layouts.hit", true))
-			return cacheEntry.Layout, nil
-		}
-		// If the layout is expired, remove it from the cache
-		api.LayoutCache.Remove(rootPostID)
+	if ok && entry.Expiration.After(time.Now()) {
+		cacheHits.WithLabelValues("layout").Inc()
+		span.SetAttributes(attribute.Bool("caches.layouts.hit", true))
+		return entry.Layout, nil
 	}
 
 	cacheMisses.WithLabelValues("layout").Inc()
@@ -457,15 +452,10 @@ func (api *API) GetThreadView(ctx context.Context, postID, authorID string) ([]s
 
 	// Check for the thread in the ARC Cache
 	entry, ok := api.ThreadViewCache.Get(postID)
-	if ok {
-		cacheEntry := entry.(ThreadViewCacheEntry)
-		if cacheEntry.Expiration.After(time.Now()) {
-			cacheHits.WithLabelValues("thread").Inc()
-			span.SetAttributes(attribute.Bool("caches.threads.hit", true))
-			return cacheEntry.ThreadView, nil
-		}
-		// If the thread is expired, remove it from the cache
-		api.ThreadViewCache.Remove(postID)
+	if ok && entry.Expiration.After(time.Now()) {
+		cacheHits.WithLabelValues("thread").Inc()
+		span.SetAttributes(attribute.Bool("caches.threads.hit", true))
+		return entry.ThreadView, nil
 	}
 
 	cacheMisses.WithLabelValues("thread").Inc()
