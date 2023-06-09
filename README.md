@@ -18,7 +18,7 @@ Graph data is written to `data/social-graph.bin` for the latest version and `dat
 
 1. Copy the contents of `.env.example` to `.env` in the root project directory.
 
-2. Add your [BSky App Password](https://staging.bsky.app/settings/app-passwords) credentials (using your normal BSky email address as the username), replacing the placeholder in `ATP_AUTH=`.
+2. Add your [BSky App Password](https://bsky.app/settings/app-passwords) credentials (using your normal BSky email address as the username), replacing the placeholder in `ATP_AUTH=`.
 
 3. For OTLP Tracing, configure the `OTEL_EXPORTER_OTLP_ENDPOINT=` to point at a valid OTLPHTTP trace collector.
 
