@@ -4,9 +4,7 @@ networks:
     bluesky-net:
         external: true
         name: bluesky-net
-        #driver: bridge
-        #ipam:
-        #driver: default
+
 services:
   bsky-graph-builder:
     build:
