@@ -6,7 +6,6 @@ In this exploration I decided to run a few benchmarks in Go using the `github.co
 
 All tests were performed on localhost behind Docker NAT, on a `AMD EPYC 7302P 16-Core Processor` inside a Proxmox VM with 24GB of allocated RAM available.
 
-```
 | Test         | Inserts | Value Size | Reads | Pipeline Size | redis-stack | dragonflydb |
 |--------------|---------|------------|-------|---------------|-------------|-------------|
 | No-Pipeline  | 100k    | 5b         | 5m    | N/A           | 64.117s     | 66.052s     |
@@ -16,7 +15,6 @@ All tests were performed on localhost behind Docker NAT, on a `AMD EPYC 7302P 16
 | Pipeline     | 500k    | 1kb        | 25m   | 10k           | 42.633s     | 66.865s     |
 | Pipeline     | 500k    | 1kb        | 25m   | 1k            | 39.503s     | 68.294s     |
 | Pipeline     | 100k    | 10kb       | 5m    | 1k            | 49.189s     | 26.303s     |
-```
 
 From these results we can see that `redis-stack` handles pipelined reads with higher throughput than `dragonflydb`. The tests used pipelines with 10,000 commands in each to prevent I/O errors.
 
