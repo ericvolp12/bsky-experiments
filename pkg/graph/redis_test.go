@@ -71,9 +71,9 @@ func BenchmarkRedis(b *testing.B) {
 	}
 }
 
-// TestRedis is a test for the Redis storage backend
+// TestRedisWithPipelines is a test for the Redis storage backend
 // We generate a bunch of expiring keys and set them in Redis, then we read them back
-func TestRedis(t *testing.T) {
+func TestRedisWithPipelines(t *testing.T) {
 	ctx := context.Background()
 
 	// Number of keys to generate
@@ -82,7 +82,7 @@ func TestRedis(t *testing.T) {
 
 	// Initialize Redis
 	conn := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: "localhost:6385",
 		DB:   0,
 	})
 
@@ -138,6 +138,69 @@ func TestRedis(t *testing.T) {
 					if cmd.(*redis.StringCmd).Val() != "value" {
 						errs = append(errs, fmt.Errorf("wrong value"))
 					}
+				}
+			}
+
+			errChan <- errs
+		}()
+	}
+
+	// Wait for all goroutines to finish
+	errs := []error{}
+	for i := 0; i < numRoutines; i++ {
+		errs = append(errs, <-errChan...)
+	}
+
+	// Check that there were no errors
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+}
+
+// TestRedisWithoutPipelines is a test for the Redis storage backend
+// We generate a bunch of expiring keys and set them in Redis, then we read them back
+// This test does not use pipelines
+func TestRedisWithoutPipelines(t *testing.T) {
+	ctx := context.Background()
+
+	// Number of keys to generate
+	n := 100000
+
+	// Initialize Redis
+	conn := redis.NewClient(&redis.Options{
+		Addr: "localhost:6385",
+		DB:   0,
+	})
+
+	// Generate a bunch of keys
+	keys := make([]string, n)
+	for i := 0; i < n; i++ {
+		keys[i] = "key" + fmt.Sprint(i)
+	}
+
+	// Add keys
+	for i := 0; i < n; i++ {
+		_, err := conn.Set(ctx, keys[i], "value", time.Minute*2).Result()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Read back the keys in 50 goroutines (5m reads total)
+	numRoutines := 50
+	errChan := make(chan []error, numRoutines)
+
+	for i := 0; i < numRoutines; i++ {
+		go func() {
+			errs := []error{}
+
+			for i := 0; i < n; i++ {
+				val, err := conn.Get(ctx, keys[i]).Result()
+				if err != nil {
+					errs = append(errs, err)
+				}
+				if val != "value" {
+					errs = append(errs, fmt.Errorf("wrong value"))
 				}
 			}
 
