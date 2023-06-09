@@ -22,7 +22,7 @@ FROM debian:stable-slim
 
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /app/graph-builder .
+COPY --from=builder /app/graph-builder /app/graph-builder
 
 RUN mkdir -p /app/data
-CMD ["graph-builder"]
+CMD ["/app/graph-builder"]
