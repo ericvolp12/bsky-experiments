@@ -28,6 +28,8 @@ services:
             - bluesky-net
         ports:
             - "6543:5432"
+        volumes:
+            - ./pkg/search/schema:/docker-entrypoint-initdb.d
     bluesky:
         restart: always
         image: bluesky
