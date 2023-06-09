@@ -1,6 +1,6 @@
 FROM golang:1.20 as builder
 
-WORKDIR /workspaces/bluesky
+WORKDIR /app
 
 COPY go.mod go.sum ./
 
@@ -22,12 +22,12 @@ FROM alpine:latest
 
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /workspaces/bluesky/search .
+COPY --from=builder /app/search .
 
 COPY public/ public/
 
 COPY specs/search.openapi.yaml public/openapi3-spec.yaml
 
-COPY graph.bin /workspaces/bluesky/graph.bin
+COPY graph.bin /app/graph.bin
 
 CMD ["./search"]

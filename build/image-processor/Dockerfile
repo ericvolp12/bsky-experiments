@@ -1,6 +1,6 @@
 FROM golang:1.20 as builder
 
-WORKDIR /workspaces/bluesky
+WORKDIR /app
 
 COPY go.mod go.sum ./
 
@@ -22,8 +22,8 @@ FROM debian:stable-slim
 
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /workspaces/bluesky/image-processor .
+COPY --from=builder /app/image-processor .
 
-RUN mkdir -p /workspaces/bluesky/data
+RUN mkdir -p /app/data
 
 CMD ["./image-processor"]

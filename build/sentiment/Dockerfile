@@ -1,9 +1,9 @@
 # Stage 1: Base layer with python and necessary libraries
 FROM python:3.10-slim-buster as base
 
-WORKDIR /workspaces/bluesky
+WORKDIR /app
 
-COPY python/sentiment/poetry.lock python/sentiment/pyproject.toml /workspaces/bluesky/
+COPY python/sentiment/poetry.lock python/sentiment/pyproject.toml /app/
 
 RUN pip install poetry \
     && poetry config virtualenvs.create false \
@@ -27,9 +27,9 @@ RUN mkdir -p /models
 
 ENV MODEL_FROM_DISK=True
 
-COPY --from=model-downloader /model/twitter-roberta-base-sentiment-latest /workspaces/bluesky/cardiffnlp/twitter-roberta-base-sentiment-latest
-COPY python/sentiment/bsky-sentiment /workspaces/bluesky/bsky-sentiment
+COPY --from=model-downloader /model/twitter-roberta-base-sentiment-latest /app/cardiffnlp/twitter-roberta-base-sentiment-latest
+COPY python/sentiment/bsky-sentiment /app/bsky-sentiment
 
-ENV PYTHONPATH=/workspaces/bluesky
+ENV PYTHONPATH=/app
 
 CMD ["uvicorn", "bsky-sentiment.app:app", "--host", "0.0.0.0", "--port", "8088"]

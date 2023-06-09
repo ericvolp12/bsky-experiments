@@ -1,6 +1,6 @@
 FROM golang:1.20 as builder
 
-WORKDIR /workspaces/bluesky
+WORKDIR /app
 
 COPY go.mod go.sum ./
 
@@ -22,7 +22,7 @@ FROM alpine:latest
 
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /workspaces/bluesky/feedgen .
+COPY --from=builder /app/feedgen .
 
 COPY public/ public/
 

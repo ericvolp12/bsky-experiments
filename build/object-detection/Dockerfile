@@ -1,9 +1,9 @@
 # Stage 1: Base layer with python and necessary libraries
 FROM python:3.10-slim-buster as base
 
-WORKDIR /workspaces/bluesky
+WORKDIR /app
 
-COPY python/object-detection/poetry.lock python/object-detection/pyproject.toml /workspaces/bluesky/
+COPY python/object-detection/poetry.lock python/object-detection/pyproject.toml /app/
 
 RUN pip install poetry \
     && poetry config virtualenvs.create false \
@@ -27,9 +27,9 @@ RUN mkdir -p /models
 
 ENV MODEL_FROM_DISK=True
 
-COPY --from=model-downloader /model/detr-resnet-50 /workspaces/bluesky/facebook/detr-resnet-50
-COPY python/object-detection/bsky-object-detection /workspaces/bluesky/bsky-object-detection
+COPY --from=model-downloader /model/detr-resnet-50 /app/facebook/detr-resnet-50
+COPY python/object-detection/bsky-object-detection /app/bsky-object-detection
 
-ENV PYTHONPATH=/workspaces/bluesky
+ENV PYTHONPATH=/app
 
 CMD ["uvicorn", "bsky-object-detection.app:app", "--host", "0.0.0.0", "--port", "8093"]

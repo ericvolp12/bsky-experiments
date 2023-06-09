@@ -1,6 +1,6 @@
 FROM node:18 as exporter
 
-WORKDIR /workspaces/bluesky
+WORKDIR /app
 
 COPY package.json tsconfig.json yarn.lock ./
 

@@ -1,13 +1,13 @@
 version: "3.8"
 
 networks:
-    bluesky-network:
+    bluesky-net:
         driver: bridge
         ipam:
             driver: default
-            config:
-                - subnet: 172.19.0.0/24
-                  gateway: 172.19.0.1
+            #config:
+            #- subnet: 172.19.0.0/24
+            #gateway: 172.19.0.1
 
 services:
     postgres_db:
@@ -17,7 +17,7 @@ services:
             - POSTGRES_USER=username
             - POSTGRES_PASSWORD=password
         networks:
-            - bluesky-network
+            - bluesky-net
         ports:
             - "6543:5432"
     bluesky:
@@ -26,28 +26,28 @@ services:
         container_name: bluesky
         user: root
         env_file:
-            - ../.env
+            - .env
 
-        working_dir: /workspaces/bluesky
+        working_dir: /app
 
         networks:
-            - bluesky-network
+            - bluesky-net
         ports:
             - "6969:6969"
         volumes:
             - type: bind
-              source: ..
-              target: /workspaces/bluesky
+              source: .
+              target: /app
             - type: bind
-              source: ../data/
-              target: /workspaces/bluesky/data/
+              source: data/
+              target: /app/data/
             - type: bind
-              source: ../.env
-              target: /workspaces/bluesky/.env
-        command: ["sh", "-c", "make graph-builder-up"]
+              source: .env
+              target: /app/.env
+        #command: ["sh", "-c", "make graph-build-up"]
         #command: ["sh", "-c", "pwd && ls -a && cd build && cd graph-builder && ls -a && sleep 120"]
         build:
-            context: ..
-            dockerfile: docker/Dockerfile
+            context: .
+            dockerfile: Dockerfile
         depends_on:
             - "postgres_db"
