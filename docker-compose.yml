@@ -53,7 +53,7 @@ services:
             - type: bind
               source: .env
               target: /app/.env
-        command: ["sh", "-c", "service docker start && make graph-builder-up && sleep infinity"]
+        command: ["sh", "-c", "service docker start && make sqlc && make graph-builder-up && sleep infinity"]
         build:
             context: .
             dockerfile: Dockerfile
