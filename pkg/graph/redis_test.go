@@ -78,7 +78,7 @@ func TestRedisWithPipelines(t *testing.T) {
 
 	// Number of keys to generate
 	n := 500000
-	maxPipelineSize := 10000
+	maxPipelineSize := 1000
 
 	// Initialize Redis
 	conn := redis.NewClient(&redis.Options{
@@ -136,7 +136,7 @@ func TestRedisWithPipelines(t *testing.T) {
 				}
 
 				// Check that we got the right values
-				for j := i; j < i+10000; j++ {
+				for j := i; j < i+maxPipelineSize; j++ {
 					cmd := cmder[j-i]
 					if cmd.Err() != nil {
 						errs = append(errs, cmd.Err())
