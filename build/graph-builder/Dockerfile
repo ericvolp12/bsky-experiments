@@ -2,7 +2,7 @@ FROM golang:1.20 as builder
 
 WORKDIR /app
 
-#RUN go clean --modcache && go mod tidy -v -e
+RUN go clean --modcache && go mod tidy -v -e
 
 COPY go.mod go.sum ./
 
@@ -27,5 +27,4 @@ COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certifica
 COPY --from=builder /app/graph-builder .
 
 RUN mkdir -p /app/data
-
-CMD ["./graph-builder"]
+CMD ["graph-builder"]
