@@ -174,7 +174,7 @@ func TestRedisWithoutPipelines(t *testing.T) {
 
 	// Initialize Redis
 	conn := redis.NewClient(&redis.Options{
-		Addr: "localhost:6385",
+		Addr: "localhost:6379",
 		DB:   0,
 	})
 
