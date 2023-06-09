@@ -1,0 +1,69 @@
+version: "3.8"
+
+networks:
+    bluesky-net:
+        name: bluesky-net
+        driver: bridge
+        ipam:
+            driver: default
+
+services:
+    redis:
+        image: redis:6.2-alpine
+        restart: always
+        ports:
+            - "6379:6379"
+        command: redis-server --save 60 1 --loglevel warning &
+        volumes:
+            - redis:/data
+        networks:
+            - bluesky-net
+    postgres_db:
+        image: postgres:10-alpine
+        environment:
+            - POSTGRES_DB=registry
+            - POSTGRES_USER=username
+            - POSTGRES_PASSWORD=password
+        networks:
+            - bluesky-net
+        ports:
+            - "6543:5432"
+    bluesky:
+        restart: always
+        image: bluesky
+        container_name: bluesky
+        #user: root
+        env_file:
+            - .env
+
+        working_dir: /app
+
+        networks:
+            - bluesky-net
+        ports:
+            - "6969:6969"
+        volumes:
+            - "/var/run/docker.sock:/var/run/docker.sock"
+            - type: bind
+              source: .
+              target: /app
+            - type: bind
+              source: data/
+              target: /app/data/
+            - type: bind
+              source: .env
+              target: /app/.env
+        command: ["sh", "-c", "service docker start && make graph-builder-up && sleep infinity"]
+        build:
+            context: .
+            dockerfile: Dockerfile
+        links:
+            - "redis:redis"
+            - "postgres_db:postgres_db"
+        depends_on:
+            - redis
+            - postgres_db
+
+volumes:
+    redis:
+        driver: local

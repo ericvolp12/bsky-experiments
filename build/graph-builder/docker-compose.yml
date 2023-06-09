@@ -1,5 +1,10 @@
 version: '3.8'
 
+networks:
+    bluesky-net:
+        external: true
+        name: bluesky-net
+
 services:
   bsky-graph-builder:
     build:
@@ -18,6 +23,9 @@ services:
       - ../../.env
     ports:
       - "6060:6060"
+    working_dir: /app
+    networks:
+        - bluesky-net
     volumes:
       - type: bind
         source: ../../data/
