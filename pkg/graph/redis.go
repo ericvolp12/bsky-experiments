@@ -45,6 +45,11 @@ func (rw *RedisReaderWriter) WriteGraph(ctx context.Context, g Graph, keyPrefix 
 		}
 	}
 
+	_, err := pipeline.Exec(ctx)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
