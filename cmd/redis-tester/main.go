@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -12,9 +13,12 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/namesgenerator"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
 
 type TestParam struct {
+	TestID       int
 	Inserts      int
 	ValueSize    int
 	ReadAmp      int
@@ -24,6 +28,21 @@ type TestParam struct {
 	Repetitions  int
 }
 
+type BackendResult struct {
+	BackendName    string
+	AverageRuntime time.Duration
+}
+
+type TestResultRow struct {
+	TestName       string
+	Inserts        int
+	ValueSize      int
+	Reads          int
+	PipelineSize   int
+	Repetitions    int
+	BackendResults map[string]BackendResult
+}
+
 var backendImageMap = map[string]string{
 	"redis-stack": "redis/redis-stack-server:latest",
 	"dragonfly":   "docker.dragonflydb.io/dragonflydb/dragonfly:latest",
@@ -31,23 +50,23 @@ var backendImageMap = map[string]string{
 
 func main() {
 	params := []TestParam{
-		{Inserts: 100_000, ValueSize: 5, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
-		{Inserts: 100_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
-		{Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
+		{TestID: 0, Inserts: 100_000, ValueSize: 5, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
+		{TestID: 1, Inserts: 100_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
+		{TestID: 2, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
 
-		{Inserts: 100_000, ValueSize: 5, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
-		{Inserts: 100_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
-		{Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
+		{TestID: 0, Inserts: 100_000, ValueSize: 5, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
+		{TestID: 1, Inserts: 100_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
+		{TestID: 2, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
 
-		{Inserts: 500_000, ValueSize: 5, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
-		{Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
-		{Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
-		{Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
+		{TestID: 3, Inserts: 500_000, ValueSize: 5, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
+		{TestID: 4, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
+		{TestID: 5, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
+		{TestID: 6, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
 
-		{Inserts: 500_000, ValueSize: 5, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
-		{Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
-		{Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
-		{Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
+		{TestID: 3, Inserts: 500_000, ValueSize: 5, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
+		{TestID: 4, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
+		{TestID: 5, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
+		{TestID: 6, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
 	}
 
 	runtimes := make([][]time.Duration, len(params))
@@ -56,14 +75,54 @@ func main() {
 		runtimes = append(runtimes, runTest(param, idx))
 	}
 
-	// Average the runtimes for each test and print them out.
-	for idx, param := range params {
-		var total time.Duration
-		for _, runtime := range runtimes[idx] {
-			total += runtime
+	// Create a file to write the results to.
+	f, err := os.Create("results.txt")
+	if err != nil {
+		log.Printf("Error creating results file: %v", err)
+	}
+
+	if f != nil {
+		defer f.Close()
+		fmt.Fprintf(f, "|Test Name|Inserts|Value Size|Reads|Pipeline Size|Repetitions|")
+		// Add a column for each Backend
+		for _, backend := range backendImageMap {
+			fmt.Fprintf(f, "%s|", backend)
 		}
-		avg := total / time.Duration(param.Repetitions)
-		fmt.Printf("%s\t%s\t%d\t%d\t%d\t%d\t%.3f\t%d\n", param.TestName, param.RedisBackend, param.Inserts, param.ValueSize, param.ReadAmp, param.PipelineSize, avg.Seconds(), param.Repetitions)
+	}
+
+	testResults := map[int]TestResultRow{}
+	for _, param := range params {
+		testResults[param.TestID] = TestResultRow{
+			TestName:       param.TestName,
+			Inserts:        param.Inserts,
+			ValueSize:      param.ValueSize,
+			Reads:          param.ReadAmp,
+			PipelineSize:   param.PipelineSize,
+			Repetitions:    param.Repetitions,
+			BackendResults: map[string]BackendResult{},
+		}
+	}
+
+	for idx, param := range params {
+		avgRuntime := time.Duration(0)
+		for _, runtime := range runtimes[idx] {
+			avgRuntime += runtime
+		}
+
+		testResults[param.TestID].BackendResults[param.RedisBackend] = BackendResult{
+			AverageRuntime: avgRuntime,
+		}
+	}
+
+	for _, result := range testResults {
+		fmt.Fprintf(f, "|%s|%d|%d|%d|%d|%d|", result.TestName, result.Inserts, result.ValueSize, result.Reads, result.PipelineSize, result.Repetitions)
+		for _, backend := range backendImageMap {
+			if backendResult, ok := result.BackendResults[backend]; ok {
+				fmt.Fprintf(f, "%s|", backendResult.AverageRuntime)
+			} else {
+				fmt.Fprintf(f, "N/A|")
+			}
+		}
 	}
 }
 
@@ -74,7 +133,11 @@ func runTest(param TestParam, idx int) []time.Duration {
 
 	durations := make([]time.Duration, param.Repetitions)
 
-	log.Printf("Starting test %s\t%s\t%d\t%d\t%d\t%d", param.TestName, param.RedisBackend, param.Inserts, param.ValueSize, param.ReadAmp, param.PipelineSize)
+	p := message.NewPrinter(language.English)
+
+	testMsg := p.Sprintf("Starting test %s\tBackend: %s\tInserts: %d\tValue Size: %d bytes\tRead Amplification: %d\tPipeline Size: %d", param.TestName, param.RedisBackend, param.Inserts, param.ValueSize, param.ReadAmp, param.PipelineSize)
+
+	log.Printf(testMsg)
 
 	for i := 0; i < param.Repetitions; i++ {
 		log.Printf("Starting test %d/%d", i+1, param.Repetitions)
