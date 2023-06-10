@@ -74,6 +74,8 @@ func runTest(param TestParam, idx int) []time.Duration {
 
 	durations := make([]time.Duration, param.Repetitions)
 
+	log.Printf("Starting test %s\t%s\t%d\t%d\t%d\t%d", param.TestName, param.RedisBackend, param.Inserts, param.ValueSize, param.ReadAmp, param.PipelineSize)
+
 	for i := 0; i < param.Repetitions; i++ {
 		log.Printf("Starting test %d/%d", i+1, param.Repetitions)
 
@@ -127,7 +129,7 @@ func runTest(param TestParam, idx int) []time.Duration {
 			log.Fatal("Failed to ping Redis server after 5 attempts")
 		}
 
-		log.Printf("Running test %s", param.TestName)
+		log.Printf("Running test ...")
 
 		start := time.Now()
 
@@ -144,7 +146,7 @@ func runTest(param TestParam, idx int) []time.Duration {
 			log.Fatal(err)
 		}
 
-		log.Printf("Test %s finished", param.TestName)
+		log.Printf("Test %s finished in %s", param.TestName, time.Since(start).String())
 
 		// Cleanup: Stop and remove the Redis container.
 		if err := cli.ContainerStop(ctx, resp.ID, container.StopOptions{}); err != nil {
