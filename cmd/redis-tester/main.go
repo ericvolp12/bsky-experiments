@@ -69,11 +69,14 @@ func main() {
 		// {TestID: 6, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
 	}
 
-	runtimes := make([][]time.Duration, len(params))
+	runtimes := [][]time.Duration{}
 
 	for idx, param := range params {
 		runtimes = append(runtimes, runTest(param, idx))
 	}
+
+	// Debug log runtimes
+	log.Printf("Runtimes: %#v", runtimes)
 
 	// Create a file to write the results to.
 	f, err := os.Create("results.txt")
@@ -135,7 +138,7 @@ func runTest(param TestParam, idx int) []time.Duration {
 	ctx := context.Background()
 	log.SetPrefix(fmt.Sprintf("[%s:%d] ", param.TestName, idx))
 
-	runtimes := make([]time.Duration, param.Repetitions)
+	runtimes := []time.Duration{}
 
 	p := message.NewPrinter(language.English)
 
@@ -207,13 +210,15 @@ func runTest(param TestParam, idx int) []time.Duration {
 			err = TestRedisWithPipelines(param)
 		}
 
-		runtimes = append(runtimes, time.Since(start))
+		runtime := time.Since(start)
+
+		runtimes = append(runtimes, runtime)
 
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		log.Printf("Test %s finished in %s", param.TestName, time.Since(start).String())
+		log.Printf("Test %s finished in %s", param.TestName, runtime.String())
 
 		// Cleanup: Stop and remove the Redis container.
 		if err := cli.ContainerStop(ctx, resp.ID, container.StopOptions{}); err != nil {
