@@ -75,14 +75,17 @@ func runTest(param TestParam, idx int) []time.Duration {
 	durations := make([]time.Duration, param.Repetitions)
 
 	for i := 0; i < param.Repetitions; i++ {
+		log.Printf("Starting test %d/%d", i+1, param.Repetitions)
 
-		cli, err := client.NewEnvClient()
+		cli, err := client.NewClientWithOpts(client.FromEnv)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		image := backendImageMap[param.RedisBackend]
 		containerName := namesgenerator.GetRandomName(0)
+
+		log.Printf("Starting container %s with image %s", containerName, image)
 
 		resp, err := cli.ContainerCreate(ctx, &container.Config{
 			Image: image,
@@ -97,6 +100,8 @@ func runTest(param TestParam, idx int) []time.Duration {
 		if err := cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
 			log.Fatal(err)
 		}
+
+		log.Printf("Checking container %s", containerName)
 
 		// Wait for Redis to start up.
 		time.Sleep(5 * time.Second)
@@ -122,6 +127,8 @@ func runTest(param TestParam, idx int) []time.Duration {
 			log.Fatal("Failed to ping Redis server after 5 attempts")
 		}
 
+		log.Printf("Running test %s", param.TestName)
+
 		start := time.Now()
 
 		// Run the test
@@ -137,6 +144,8 @@ func runTest(param TestParam, idx int) []time.Duration {
 			log.Fatal(err)
 		}
 
+		log.Printf("Test %s finished", param.TestName)
+
 		// Cleanup: Stop and remove the Redis container.
 		if err := cli.ContainerStop(ctx, resp.ID, container.StopOptions{}); err != nil {
 			log.Fatal(err)
@@ -144,6 +153,8 @@ func runTest(param TestParam, idx int) []time.Duration {
 		if err := cli.ContainerRemove(ctx, resp.ID, types.ContainerRemoveOptions{}); err != nil {
 			log.Fatal(err)
 		}
+
+		log.Printf("Container %s stopped and removed", containerName)
 	}
 
 	return durations
