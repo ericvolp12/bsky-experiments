@@ -50,20 +50,20 @@ var backendImageMap = map[string]string{
 
 func main() {
 	params := []TestParam{
-		{TestID: 0, Inserts: 100_000, ValueSize: 5, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 2},
+		{TestID: 0, Inserts: 10_000, ValueSize: 5, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 2},
 		// {TestID: 1, Inserts: 100_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
 		// {TestID: 2, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
 
-		{TestID: 0, Inserts: 100_000, ValueSize: 5, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 2},
+		{TestID: 0, Inserts: 10_000, ValueSize: 5, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 2},
 		// {TestID: 1, Inserts: 100_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
 		// {TestID: 2, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
 
-		{TestID: 3, Inserts: 500_000, ValueSize: 5, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 2},
+		{TestID: 3, Inserts: 50_000, ValueSize: 5, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 2},
 		// {TestID: 4, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
 		// {TestID: 5, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
 		// {TestID: 6, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
 
-		{TestID: 3, Inserts: 500_000, ValueSize: 5, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 2},
+		{TestID: 3, Inserts: 50_000, ValueSize: 5, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 2},
 		// {TestID: 4, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
 		// {TestID: 5, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
 		// {TestID: 6, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
