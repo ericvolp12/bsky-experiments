@@ -29,8 +29,9 @@ type TestParam struct {
 }
 
 type BackendResult struct {
-	BackendName    string
-	AverageRuntime time.Duration
+	BackendName         string
+	AverageWriteRuntime time.Duration
+	AverageReadRuntime  time.Duration
 }
 
 type TestResultRow struct {
@@ -71,10 +72,13 @@ func main() {
 		{TestID: 6, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
 	}
 
-	runtimes := [][]time.Duration{}
+	writeRuntimes := [][]time.Duration{}
+	readRuntimes := [][]time.Duration{}
 
 	for idx, param := range params {
-		runtimes = append(runtimes, runTest(param, idx))
+		writeRuns, readRuns := runTest(param, idx)
+		writeRuntimes = append(writeRuntimes, writeRuns)
+		readRuntimes = append(readRuntimes, readRuns)
 	}
 
 	// Create a file to write the results to.
@@ -86,14 +90,16 @@ func main() {
 	if f != nil {
 		defer f.Close()
 		fmt.Fprintf(f, "|Test Name|Inserts|Value Size|Reads|Pipeline Size|Repetitions|")
-		// Add a column for each Backend
+		// Add a column for each Backend read and write runtime.
 		for _, backend := range backends {
-			fmt.Fprintf(f, "%s|", backend)
+			fmt.Fprintf(f, "%s (write)|", backend)
+			fmt.Fprintf(f, "%s (read)|", backend)
 		}
 		fmt.Fprintf(f, "\n")
 
 		fmt.Fprintf(f, "|---|---|---|---|---|---|")
 		for range backends {
+			fmt.Fprintf(f, "---|")
 			fmt.Fprintf(f, "---|")
 		}
 		fmt.Fprintf(f, "\n")
@@ -113,15 +119,19 @@ func main() {
 	}
 
 	for idx, param := range params {
-		avgRuntime := time.Duration(0)
-		for _, runtime := range runtimes[idx] {
-			avgRuntime += runtime
+		avgWriteRuntime := time.Duration(0)
+		avgReadRuntime := time.Duration(0)
+		for j, runtime := range writeRuntimes[idx] {
+			avgWriteRuntime += runtime
+			avgReadRuntime += readRuntimes[idx][j]
 		}
 
-		avgRuntime /= time.Duration(len(runtimes[idx]))
+		avgWriteRuntime /= time.Duration(len(writeRuntimes[idx]))
+		avgReadRuntime /= time.Duration(len(readRuntimes[idx]))
 
 		testResults[param.TestID].BackendResults[param.RedisBackend] = BackendResult{
-			AverageRuntime: avgRuntime,
+			AverageWriteRuntime: avgWriteRuntime,
+			AverageReadRuntime:  avgReadRuntime,
 		}
 	}
 
@@ -129,7 +139,8 @@ func main() {
 		fmt.Fprintf(f, "|%s|%d|%d|%d|%d|%d|", result.TestName, result.Inserts, result.ValueSize, result.Reads, result.PipelineSize, result.Repetitions)
 		for _, backend := range backends {
 			if backendResult, ok := result.BackendResults[backend]; ok {
-				fmt.Fprintf(f, "%s|", backendResult.AverageRuntime)
+				fmt.Fprintf(f, "%s|", backendResult.AverageWriteRuntime)
+				fmt.Fprintf(f, "%s|", backendResult.AverageReadRuntime)
 			} else {
 				fmt.Fprintf(f, "N/A|")
 			}
@@ -138,12 +149,13 @@ func main() {
 	}
 }
 
-func runTest(param TestParam, idx int) []time.Duration {
+func runTest(param TestParam, idx int) ([]time.Duration, []time.Duration) {
 	// Create a new Redis container for each test.
 	ctx := context.Background()
 	log.SetPrefix(fmt.Sprintf("[%s:%d] ", param.TestName, idx))
 
-	runtimes := []time.Duration{}
+	writeRuntimes := []time.Duration{}
+	readRuntimes := []time.Duration{}
 
 	p := message.NewPrinter(language.English)
 
@@ -203,24 +215,27 @@ func runTest(param TestParam, idx int) []time.Duration {
 
 		log.Printf("Running test ...")
 
-		start := time.Now()
+		testStart := time.Now()
+
+		writeRuntime, readRuntime := time.Duration(0), time.Duration(0)
 
 		// Run the test
 		if param.TestName == "No-Pipeline" {
-			err = TestRedisWithoutPipelines(param)
+			writeRuntime, readRuntime, err = TestRedisWithoutPipelines(param)
 		} else {
-			err = TestRedisWithPipelines(param)
+			writeRuntime, readRuntime, err = TestRedisWithPipelines(param)
 		}
 
-		runtime := time.Since(start)
-
-		runtimes = append(runtimes, runtime)
+		testRuntime := time.Since(testStart)
 
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		log.Printf("Test %s finished in %s", param.TestName, runtime.String())
+		writeRuntimes = append(writeRuntimes, writeRuntime)
+		readRuntimes = append(readRuntimes, readRuntime)
+
+		log.Printf("Test %s finished in %s (%s:%s)", param.TestName, testRuntime.String(), writeRuntime.String(), readRuntime.String())
 
 		// Cleanup: Stop and remove the Redis container.
 		if err := cli.ContainerStop(ctx, resp.ID, container.StopOptions{}); err != nil {
@@ -233,10 +248,10 @@ func runTest(param TestParam, idx int) []time.Duration {
 		log.Printf("Container %s stopped and removed", containerName)
 	}
 
-	return runtimes
+	return writeRuntimes, readRuntimes
 }
 
-func TestRedisWithPipelines(param TestParam) error {
+func TestRedisWithPipelines(param TestParam) (writeRuntime time.Duration, readRuntime time.Duration, err error) {
 	ctx := context.Background()
 
 	n := param.Inserts
@@ -259,6 +274,8 @@ func TestRedisWithPipelines(param TestParam) error {
 		value += fmt.Sprint(rand.Intn(10))
 	}
 
+	writeStart := time.Now()
+
 	// Add keys in batches
 	for i := 0; i < n; i += maxPipelineSize {
 		pipeline := conn.Pipeline()
@@ -268,15 +285,19 @@ func TestRedisWithPipelines(param TestParam) error {
 		}
 
 		// Execute the pipeline
-		_, err := pipeline.Exec(ctx)
+		_, err = pipeline.Exec(ctx)
 		if err != nil {
-			return fmt.Errorf("pipeline.Exec: %v", err)
+			return writeRuntime, readRuntime, fmt.Errorf("pipeline.Exec: %v", err)
 		}
 	}
+
+	writeRuntime = time.Since(writeStart)
 
 	// Read back the keys in goroutines
 	numRoutines := param.ReadAmp
 	errChan := make(chan []error, numRoutines)
+
+	readStart := time.Now()
 
 	for i := 0; i < numRoutines; i++ {
 		go func() {
@@ -318,15 +339,17 @@ func TestRedisWithPipelines(param TestParam) error {
 		errs = append(errs, <-errChan...)
 	}
 
+	readRuntime = time.Since(readStart)
+
 	// Check that there were no errors
 	if len(errs) > 0 {
-		return fmt.Errorf("errs: %v", errs)
+		return writeRuntime, readRuntime, fmt.Errorf("errs: %v", errs)
 	}
 
-	return nil
+	return writeRuntime, readRuntime, nil
 }
 
-func TestRedisWithoutPipelines(param TestParam) error {
+func TestRedisWithoutPipelines(param TestParam) (writeRuntime time.Duration, readRuntime time.Duration, err error) {
 	ctx := context.Background()
 
 	n := param.Inserts
@@ -348,17 +371,23 @@ func TestRedisWithoutPipelines(param TestParam) error {
 		value += fmt.Sprint(rand.Intn(10))
 	}
 
+	writeStart := time.Now()
+
 	// Add keys
 	for i := 0; i < n; i++ {
-		_, err := conn.Set(ctx, keys[i], value, time.Minute*2).Result()
+		_, err = conn.Set(ctx, keys[i], value, time.Minute*2).Result()
 		if err != nil {
-			return fmt.Errorf("conn.Set: %v", err)
+			return writeRuntime, readRuntime, fmt.Errorf("conn.Set: %v", err)
 		}
 	}
+
+	writeRuntime = time.Since(writeStart)
 
 	// Read back the keys in goroutines
 	numRoutines := param.ReadAmp
 	errChan := make(chan []error, numRoutines)
+
+	readStart := time.Now()
 
 	for i := 0; i < numRoutines; i++ {
 		go func() {
@@ -384,10 +413,12 @@ func TestRedisWithoutPipelines(param TestParam) error {
 		errs = append(errs, <-errChan...)
 	}
 
+	readRuntime = time.Since(readStart)
+
 	// Check that there were no errors
 	if len(errs) > 0 {
-		return fmt.Errorf("errs: %v", errs)
+		return writeRuntime, readRuntime, fmt.Errorf("errs: %v", errs)
 	}
 
-	return nil
+	return writeRuntime, readRuntime, nil
 }
