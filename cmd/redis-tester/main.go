@@ -88,6 +88,7 @@ func main() {
 		for _, backend := range backendImageMap {
 			fmt.Fprintf(f, "%s|", backend)
 		}
+		fmt.Fprintf(f, "\n")
 	}
 
 	testResults := map[int]TestResultRow{}
