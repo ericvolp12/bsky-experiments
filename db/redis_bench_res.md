@@ -56,9 +56,16 @@ Times shown are an average of 3 executions with DBs recreated in between each ru
 | Pipeline    | 100k    | 10kb       | 5m    | 1k            | 38.526s     | 40.733s     |
 
 ### `t2d-standard-4`
-|Test Name|Inserts|Value Size|Reads|Pipeline Size|Repetitions|redis-stack|dragonfly|
-|No-Pipeline|10000|5|50|-1|2|2.861513566s|3.708640344s|
-|Pipeline|50000|5|50|10000|2|1.324127283s|2.66660955s|
+
+| Test Name   | Inserts | Value Size | Reads | Pipeline Size | Repetitions | dragonfly | redis-stack |
+|-------------|---------|------------|-------|---------------|-------------|-----------|-------------|
+| No-Pipeline | 100000  | 5          | 50    | -1            | 3           | 29.939s   | 34.744s     |
+| No-Pipeline | 100000  | 1000       | 50    | -1            | 3           | 30.042s   | 38.997s     |
+| No-Pipeline | 100000  | 10000      | 50    | -1            | 3           | 45.174s   | 1m7.683s    |
+| Pipeline    | 500000  | 5          | 50    | 10000         | 3           | 15.088s   | 28.303s     |
+| Pipeline    | 500000  | 1000       | 50    | 10000         | 3           | 36.950s   | 45.275s     |
+| Pipeline    | 500000  | 1000       | 50    | 1000          | 3           | 31.459s   | 1m0.680s    |
+| Pipeline    | 100000  | 10000      | 50    | 1000          | 3           | 38.476s   | 25.192s     |
 
 ### Versions
 Docker Commands

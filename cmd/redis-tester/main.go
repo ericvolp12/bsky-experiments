@@ -48,6 +48,8 @@ var backendImageMap = map[string]string{
 	"dragonfly":   "docker.dragonflydb.io/dragonflydb/dragonfly:latest",
 }
 
+var backends = []string{"redis-stack", "dragonfly"}
+
 func main() {
 	params := []TestParam{
 		{TestID: 0, Inserts: 100_000, ValueSize: 5, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
@@ -85,13 +87,13 @@ func main() {
 		defer f.Close()
 		fmt.Fprintf(f, "|Test Name|Inserts|Value Size|Reads|Pipeline Size|Repetitions|")
 		// Add a column for each Backend
-		for backend := range backendImageMap {
+		for _, backend := range backends {
 			fmt.Fprintf(f, "%s|", backend)
 		}
 		fmt.Fprintf(f, "\n")
 
 		fmt.Fprintf(f, "|---|---|---|---|---|---|")
-		for range backendImageMap {
+		for range backends {
 			fmt.Fprintf(f, "---|")
 		}
 		fmt.Fprintf(f, "\n")
@@ -125,7 +127,7 @@ func main() {
 
 	for _, result := range testResults {
 		fmt.Fprintf(f, "|%s|%d|%d|%d|%d|%d|", result.TestName, result.Inserts, result.ValueSize, result.Reads, result.PipelineSize, result.Repetitions)
-		for backend := range backendImageMap {
+		for _, backend := range backends {
 			if backendResult, ok := result.BackendResults[backend]; ok {
 				fmt.Fprintf(f, "%s|", backendResult.AverageRuntime)
 			} else {

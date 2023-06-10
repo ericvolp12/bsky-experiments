@@ -22,15 +22,7 @@ curl -LO https://golang.org/dl/go1.20.5.linux-amd64.tar.gz
 tar -C /usr/local -xzf go1.20.5.linux-amd64.tar.gz
 rm go1.20.5.linux-amd64.tar.gz
 
-sudo su user
+# Download required docker images
+docker pull redis/redis-stack-server:latest
+docker pull docker.dragonflydb.io/dragonflydb/dragonfly:latest
 
-# Set environment variables for Go
-echo "export PATH=$PATH:/usr/local/go/bin" >> ~/.profile
-source ~/.profile
-
-# Clone the git repository
-git clone https://github.com/ericvolp12/bsky-experiments.git
-
-# Run Go get to fetch all the dependencies for your Go application
-cd bsky-experiments
-go get -d ./...
