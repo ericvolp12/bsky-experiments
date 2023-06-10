@@ -26,13 +26,21 @@ services:
             - POSTGRES_DB=registry
             - POSTGRES_USER=username
             - POSTGRES_PASSWORD=password
+            - PGUSER: "postgres"
         networks:
             - bluesky-net
         ports:
-            - "6543:5432"
+            - "5432:5432"
+        command: postgres
+
         volumes:
             - ./pkg/search/schema:/docker-entrypoint-initdb.d
             - "postgres-data:/data/postgres"
+        healthchech:
+            test: [ "CMD-SHELL", "pg_isready" ]
+            interval: 5s
+            timeout: 5s
+            retries: 5
     bluesky:
         restart: always
         image: bluesky
@@ -67,7 +75,9 @@ services:
             - "postgres_db:postgres_db"
         depends_on:
             - redis
-            - postgres_db
+            postgres_db:
+                condition: service_healthy
+
 
 volumes:
     redis:
