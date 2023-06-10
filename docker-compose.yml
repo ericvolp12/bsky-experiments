@@ -30,6 +30,7 @@ services:
             - "6543:5432"
         volumes:
             - ./pkg/search/schema:/docker-entrypoint-initdb.d
+            - ./postgres-data:/var/lib/postgresql/data
     bluesky:
         restart: always
         image: bluesky
@@ -68,4 +69,6 @@ services:
 
 volumes:
     redis:
+        driver: local
+    postgres-data:
         driver: local
