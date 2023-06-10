@@ -281,7 +281,7 @@ func TestRedisWithPipelines(param TestParam) (writeRuntime time.Duration, readRu
 		pipeline := conn.Pipeline()
 
 		for j := i; j < i+maxPipelineSize; j++ {
-			pipeline.Set(ctx, keys[j], value, time.Minute*2)
+			pipeline.Set(ctx, keys[j], value, time.Minute*30)
 		}
 
 		// Execute the pipeline
@@ -375,7 +375,7 @@ func TestRedisWithoutPipelines(param TestParam) (writeRuntime time.Duration, rea
 
 	// Add keys
 	for i := 0; i < n; i++ {
-		_, err = conn.Set(ctx, keys[i], value, time.Minute*2).Result()
+		_, err = conn.Set(ctx, keys[i], value, time.Minute*30).Result()
 		if err != nil {
 			return writeRuntime, readRuntime, fmt.Errorf("conn.Set: %v", err)
 		}
