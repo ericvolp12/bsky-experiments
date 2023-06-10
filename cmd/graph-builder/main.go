@@ -24,6 +24,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -109,6 +110,16 @@ func main() {
 		DB:       0,
 	})
 
+	// Enable tracing instrumentation.
+	if err := redisotel.InstrumentTracing(redisClient); err != nil {
+		log.Fatalf("failed to instrument redis with tracing: %+v\n", err)
+	}
+
+	// Enable metrics instrumentation.
+	if err := redisotel.InstrumentMetrics(redisClient); err != nil {
+		log.Fatalf("failed to instrument redis with metrics: %+v\n", err)
+	}
+
 	// Test the connection to redis
 	_, err = redisClient.Ping(ctx).Result()
 	if err != nil {
@@ -132,7 +143,7 @@ func main() {
 	binReaderWriter := graph.BinaryGraphReaderWriter{}
 
 	log.Info("reading social graph from binary file...")
-	resumedGraph, err := binReaderWriter.ReadGraph(graphFile)
+	resumedGraph, err := binReaderWriter.ReadGraph(ctx, graphFile)
 	if err != nil {
 		log.Infof("error reading social graph from binary: %s\n", err)
 		log.Info("creating a new graph for this session...")
@@ -219,7 +230,7 @@ func main() {
 
 	// Run a routine that handles the events from the WebSocket
 	log.Info("starting repo sync routine...")
-	err = handleRepoStreamWithRetry(ctx, bsky, log, u, &events.RepoStreamCallbacks{
+	err = handleRepoStreamWithRetry(ctx, bsky, log, u, &intEvents.RepoStreamCtxCallbacks{
 		RepoCommit: bsky.HandleRepoCommit,
 		RepoInfo:   intEvents.HandleRepoInfo,
 		Error:      intEvents.HandleError,
@@ -276,7 +287,7 @@ func saveGraph(
 
 	log.Info("writing social graph to redis...")
 	span.AddEvent("saveGraph:WriteGraphToRedis")
-	err := redisReaderWriter.WriteGraph(*newGraph, "social-graph")
+	err := redisReaderWriter.WriteGraph(ctx, *newGraph, "social-graph")
 	if err != nil {
 		log.Errorf("error writing social graph to redis: %s", err)
 	}
@@ -291,7 +302,7 @@ func saveGraph(
 
 	span.AddEvent("saveGraph:WriteGraphToBinaryFile")
 	// Write the graph to a timestamped file
-	err = binReaderWriter.WriteGraph(*newGraph, timestampedGraphFilePath)
+	err = binReaderWriter.WriteGraph(ctx, *newGraph, timestampedGraphFilePath)
 	if err != nil {
 		log.Errorf("error writing social graph to binary file: %s", err)
 	}
@@ -387,7 +398,7 @@ func handleRepoStreamWithRetry(
 	bsky *intEvents.BSky,
 	log *zap.SugaredLogger,
 	u url.URL,
-	callbacks *events.RepoStreamCallbacks,
+	callbacks *intEvents.RepoStreamCtxCallbacks,
 ) error {
 	var backoff time.Duration
 
@@ -430,7 +441,19 @@ func handleRepoStreamWithRetry(
 			}
 		}()
 
-		err = events.HandleRepoStream(streamCtx, c, callbacks)
+		pool := events.NewConsumerPool(16, 32, func(ctx context.Context, xe *events.XRPCStreamEvent) error {
+			switch {
+			case xe.RepoCommit != nil:
+				callbacks.RepoCommit(ctx, xe.RepoCommit)
+			case xe.RepoInfo != nil:
+				callbacks.RepoInfo(ctx, xe.RepoInfo)
+			case xe.Error != nil:
+				callbacks.Error(ctx, xe.Error)
+			}
+			return nil
+		})
+
+		err = events.HandleRepoStream(streamCtx, c, pool)
 		if err != nil {
 			log.Infof("Error in event handler routine: %v", err)
 			backoff = getNextBackoff(backoff)

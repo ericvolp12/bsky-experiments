@@ -45,15 +45,10 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string, workerID int) 
 	defer span.End()
 	// Check the cache first
 	entry, ok := bsky.profileCache.Get(did)
-	if ok {
-		cacheEntry := entry.(ProfileCacheEntry)
-		if cacheEntry.Expire.After(time.Now()) {
-			if cacheEntry.Expire.After(time.Now()) {
-				cacheHits.WithLabelValues("profile").Inc()
-				span.SetAttributes(attribute.Bool("caches.profiles.hit", true))
-				return cacheEntry.Profile, nil
-			}
-		}
+	if ok && entry.Expire.After(time.Now()) {
+		cacheHits.WithLabelValues("profile").Inc()
+		span.SetAttributes(attribute.Bool("caches.profiles.hit", true))
+		return entry.Profile, nil
 	}
 
 	span.SetAttributes(attribute.Bool("caches.profiles.hit", false))
@@ -104,19 +99,16 @@ func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*b
 	defer span.End()
 	// Check the cache first
 	entry, ok := bsky.postCache.Get(uri)
-	if ok {
-		cacheEntry := entry.(PostCacheEntry)
-		if cacheEntry.Expire.After(time.Now()) {
-			// If we've timed out 5 times in a row trying to get this post, it's probably a hellthread
-			// Return the cached post and don't try to get it again
-			if cacheEntry.TimeoutCount > 5 {
-				span.SetAttributes(attribute.Bool("caches.posts.timeout_present", true))
-				return nil, fmt.Errorf("hellthread detected - returning cached post timeout for: %s", uri)
-			} else if cacheEntry.Post != nil {
-				cacheHits.WithLabelValues("post").Inc()
-				span.SetAttributes(attribute.Bool("caches.post.hit", true))
-				return cacheEntry.Post, nil
-			}
+	if ok && entry.Expire.After(time.Now()) {
+		// If we've timed out 5 times in a row trying to get this post, it's probably a hellthread
+		// Return the cached post and don't try to get it again
+		if entry.TimeoutCount > 5 {
+			span.SetAttributes(attribute.Bool("caches.posts.timeout_present", true))
+			return nil, fmt.Errorf("hellthread detected - returning cached post timeout for: %s", uri)
+		} else if entry.Post != nil {
+			cacheHits.WithLabelValues("post").Inc()
+			span.SetAttributes(attribute.Bool("caches.post.hit", true))
+			return entry.Post, nil
 		}
 	}
 
@@ -139,11 +131,10 @@ func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*b
 			span.SetAttributes(attribute.Bool("post.resolve.timeout", true))
 			entry, ok := bsky.postCache.Get(uri)
 			if ok {
-				cacheEntry := entry.(PostCacheEntry)
 				// If the post is cached, increment the timeout count
-				cacheEntry.TimeoutCount++
-				cacheEntry.Expire = time.Now().Add(bsky.postCacheTTL)
-				bsky.postCache.Add(uri, cacheEntry)
+				entry.TimeoutCount++
+				entry.Expire = time.Now().Add(bsky.postCacheTTL)
+				bsky.postCache.Add(uri, entry)
 			} else {
 				// If the post isn't cached, cache it with a timeout count of 1
 				bsky.postCache.Add(uri, PostCacheEntry{

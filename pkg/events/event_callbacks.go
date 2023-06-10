@@ -12,6 +12,7 @@ import (
 
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
+	"github.com/bluesky-social/indigo/api/label"
 	"github.com/bluesky-social/indigo/events"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/repo"
@@ -20,11 +21,22 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/sentiment"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
-	lru "github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru/arc/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
+
+type RepoStreamCtxCallbacks struct {
+	RepoCommit    func(ctx context.Context, evt *comatproto.SyncSubscribeRepos_Commit) error
+	RepoHandle    func(ctx context.Context, evt *comatproto.SyncSubscribeRepos_Handle) error
+	RepoInfo      func(ctx context.Context, evt *comatproto.SyncSubscribeRepos_Info) error
+	RepoMigrate   func(ctx context.Context, evt *comatproto.SyncSubscribeRepos_Migrate) error
+	RepoTombstone func(ctx context.Context, evt *comatproto.SyncSubscribeRepos_Tombstone) error
+	LabelLabels   func(ctx context.Context, evt *label.SubscribeLabels_Labels) error
+	LabelInfo     func(ctx context.Context, evt *label.SubscribeLabels_Info) error
+	Error         func(ctx context.Context, evt *events.ErrorFrame) error
+}
 
 // RepoRecord holds data needed for processing a RepoRecord
 type RepoRecord struct {
@@ -49,11 +61,11 @@ type BSky struct {
 	LastSeq int64 // LastSeq is the last sequence number processed
 
 	// Generate a Profile Cache with a TTL
-	profileCache    *lru.ARCCache
+	profileCache    *lru.ARCCache[string, ProfileCacheEntry]
 	profileCacheTTL time.Duration
 
 	// Generate a Post Cache with a TTL
-	postCache    *lru.ARCCache
+	postCache    *lru.ARCCache[string, PostCacheEntry]
 	postCacheTTL time.Duration
 
 	RepoRecordQueue chan RepoRecord
@@ -77,12 +89,12 @@ func NewBSky(
 	dbConnectionString, sentimentServiceHost string,
 	workerCount int,
 ) (*BSky, error) {
-	postCache, err := lru.NewARC(5000)
+	postCache, err := lru.NewARC[string, PostCacheEntry](5000)
 	if err != nil {
 		return nil, err
 	}
 
-	profileCache, err := lru.NewARC(15000)
+	profileCache, err := lru.NewARC[string, ProfileCacheEntry](15000)
 	if err != nil {
 		return nil, err
 	}
@@ -165,8 +177,7 @@ func NewBSky(
 }
 
 // HandleRepoCommit is called when a repo commit is received and prints its contents
-func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) error {
-	ctx := context.Background()
+func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubscribeRepos_Commit) error {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "HandleRepoCommit")
 	defer span.End()
@@ -298,10 +309,10 @@ func (bsky *BSky) HandleRepoCommit(evt *comatproto.SyncSubscribeRepos_Commit) er
 	return nil
 }
 
-func HandleRepoInfo(info *comatproto.SyncSubscribeRepos_Info) error {
+func HandleRepoInfo(ctx context.Context, info *comatproto.SyncSubscribeRepos_Info) error {
 	return nil
 }
 
-func HandleError(errf *events.ErrorFrame) error {
+func HandleError(ctx context.Context, errf *events.ErrorFrame) error {
 	return nil
 }

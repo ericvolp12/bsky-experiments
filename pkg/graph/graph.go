@@ -14,6 +14,7 @@ package graph
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -61,8 +62,8 @@ type Graph struct {
 // Implementations should provide methods for exporting a graph to a file and importing a graph
 // from a file.
 type ReaderWriter interface {
-	WriteGraph(g Graph, filename string) error
-	ReadGraph(filename string) (Graph, error)
+	WriteGraph(ctx context.Context, g Graph, filename string) error
+	ReadGraph(ctx context.Context, filename string) (Graph, error)
 }
 
 // NewGraph initializes a new Graph object and returns it.
