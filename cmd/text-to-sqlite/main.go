@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +10,7 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
 	if len(os.Args) != 3 {
 		fmt.Println("Usage: go run main.go inputfile outputfile")
 		return
@@ -31,7 +33,7 @@ func main() {
 	defer rw.DB.Close()
 
 	// Write the graph to the SQLite database
-	err = rw.WriteGraph(g)
+	err = rw.WriteGraph(ctx, g)
 	if err != nil {
 		log.Fatalf("Error writing graph to SQLite database: %v", err)
 	}
