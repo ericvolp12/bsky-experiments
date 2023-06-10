@@ -50,23 +50,23 @@ var backendImageMap = map[string]string{
 
 func main() {
 	params := []TestParam{
-		{TestID: 0, Inserts: 100_000, ValueSize: 5, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
-		{TestID: 1, Inserts: 100_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
-		{TestID: 2, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
+		{TestID: 0, Inserts: 100_000, ValueSize: 5, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 2},
+		// {TestID: 1, Inserts: 100_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
+		// {TestID: 2, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
 
-		{TestID: 0, Inserts: 100_000, ValueSize: 5, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
-		{TestID: 1, Inserts: 100_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
-		{TestID: 2, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
+		{TestID: 0, Inserts: 100_000, ValueSize: 5, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 2},
+		// {TestID: 1, Inserts: 100_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
+		// {TestID: 2, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: -1, TestName: "No-Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
 
-		{TestID: 3, Inserts: 500_000, ValueSize: 5, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
-		{TestID: 4, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
-		{TestID: 5, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
-		{TestID: 6, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
+		{TestID: 3, Inserts: 500_000, ValueSize: 5, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 2},
+		// {TestID: 4, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
+		// {TestID: 5, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
+		// {TestID: 6, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "redis-stack", Repetitions: 3},
 
-		{TestID: 3, Inserts: 500_000, ValueSize: 5, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
-		{TestID: 4, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
-		{TestID: 5, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
-		{TestID: 6, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
+		{TestID: 3, Inserts: 500_000, ValueSize: 5, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 2},
+		// {TestID: 4, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 10_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
+		// {TestID: 5, Inserts: 500_000, ValueSize: 1_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
+		// {TestID: 6, Inserts: 100_000, ValueSize: 10_000, ReadAmp: 50, PipelineSize: 1_000, TestName: "Pipeline", RedisBackend: "dragonfly", Repetitions: 3},
 	}
 
 	runtimes := make([][]time.Duration, len(params))
@@ -85,7 +85,7 @@ func main() {
 		defer f.Close()
 		fmt.Fprintf(f, "|Test Name|Inserts|Value Size|Reads|Pipeline Size|Repetitions|")
 		// Add a column for each Backend
-		for _, backend := range backendImageMap {
+		for backend := range backendImageMap {
 			fmt.Fprintf(f, "%s|", backend)
 		}
 		fmt.Fprintf(f, "\n")
@@ -110,6 +110,8 @@ func main() {
 			avgRuntime += runtime
 		}
 
+		avgRuntime /= time.Duration(len(runtimes[idx]))
+
 		testResults[param.TestID].BackendResults[param.RedisBackend] = BackendResult{
 			AverageRuntime: avgRuntime,
 		}
@@ -133,7 +135,7 @@ func runTest(param TestParam, idx int) []time.Duration {
 	ctx := context.Background()
 	log.SetPrefix(fmt.Sprintf("[%s:%d] ", param.TestName, idx))
 
-	durations := make([]time.Duration, param.Repetitions)
+	runtimes := make([]time.Duration, param.Repetitions)
 
 	p := message.NewPrinter(language.English)
 
@@ -205,7 +207,7 @@ func runTest(param TestParam, idx int) []time.Duration {
 			err = TestRedisWithPipelines(param)
 		}
 
-		durations = append(durations, time.Since(start))
+		runtimes = append(runtimes, time.Since(start))
 
 		if err != nil {
 			log.Fatal(err)
@@ -224,7 +226,7 @@ func runTest(param TestParam, idx int) []time.Duration {
 		log.Printf("Container %s stopped and removed", containerName)
 	}
 
-	return durations
+	return runtimes
 }
 
 func TestRedisWithPipelines(param TestParam) error {
