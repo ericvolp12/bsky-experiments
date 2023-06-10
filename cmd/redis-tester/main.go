@@ -111,7 +111,7 @@ func main() {
 			TestName:       param.TestName,
 			Inserts:        param.Inserts,
 			ValueSize:      param.ValueSize,
-			Reads:          param.ReadAmp,
+			Reads:          param.ReadAmp * param.Inserts,
 			PipelineSize:   param.PipelineSize,
 			Repetitions:    param.Repetitions,
 			BackendResults: map[string]BackendResult{},
