@@ -175,9 +175,6 @@ func runTest(param TestParam, idx int) []time.Duration {
 
 		log.Printf("Checking container %s", containerName)
 
-		// Wait for Redis to start up.
-		time.Sleep(5 * time.Second)
-
 		// Test the connection to Redis.
 		conn := redis.NewClient(&redis.Options{
 			Addr: "localhost:6379",
