@@ -116,13 +116,14 @@ func main() {
 
 	for _, result := range testResults {
 		fmt.Fprintf(f, "|%s|%d|%d|%d|%d|%d|", result.TestName, result.Inserts, result.ValueSize, result.Reads, result.PipelineSize, result.Repetitions)
-		for _, backend := range backendImageMap {
+		for backend := range backendImageMap {
 			if backendResult, ok := result.BackendResults[backend]; ok {
 				fmt.Fprintf(f, "%s|", backendResult.AverageRuntime)
 			} else {
 				fmt.Fprintf(f, "N/A|")
 			}
 		}
+		fmt.Fprintf(f, "\n")
 	}
 }
 
