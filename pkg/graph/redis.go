@@ -19,8 +19,7 @@ func NewRedisReaderWriter(client *redis.Client) *RedisReaderWriter {
 }
 
 // WriteGraph exports the graph to Redis.
-func (rw *RedisReaderWriter) WriteGraph(g Graph, keyPrefix string) error {
-	ctx := context.Background()
+func (rw *RedisReaderWriter) WriteGraph(ctx context.Context, g Graph, keyPrefix string) error {
 	pipeline := rw.Client.Pipeline()
 
 	// Write nodes
@@ -50,9 +49,7 @@ func (rw *RedisReaderWriter) WriteGraph(g Graph, keyPrefix string) error {
 }
 
 // ReadGraph imports a graph from Redis.
-func (rw *RedisReaderWriter) ReadGraph(keyPrefix string) (Graph, error) {
-	ctx := context.Background()
-
+func (rw *RedisReaderWriter) ReadGraph(ctx context.Context, keyPrefix string) (Graph, error) {
 	// Read nodes
 	nodeKey := keyPrefix + ":nodes"
 	nodeMap, err := rw.Client.HGetAll(ctx, nodeKey).Result()

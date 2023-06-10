@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +10,8 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+
 	if len(os.Args) != 3 {
 		fmt.Println("Usage: go run main.go inputfile outputfile")
 		return
@@ -20,13 +23,13 @@ func main() {
 	binReaderWriter := graph.BinaryGraphReaderWriter{}
 
 	// Read the graph from the Binary file
-	g, err := binReaderWriter.ReadGraph(inputFile)
+	g, err := binReaderWriter.ReadGraph(ctx, inputFile)
 	if err != nil {
 		log.Fatalf("Error reading graph from binary file: %v", err)
 	}
 
 	// Write the graph to the new Binary database
-	err = binReaderWriter.WriteGraph(g, outputFile)
+	err = binReaderWriter.WriteGraph(ctx, g, outputFile)
 	if err != nil {
 		log.Fatalf("Error writing graph to binary file: %v", err)
 	}

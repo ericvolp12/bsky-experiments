@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"context"
 	"database/sql"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -50,7 +51,7 @@ CREATE TABLE IF NOT EXISTS edges (
 }
 
 // WriteGraph writes a Graph object to a SQLite database.
-func (rw *SQLiteReaderWriter) WriteGraph(g Graph) error {
+func (rw *SQLiteReaderWriter) WriteGraph(ctx context.Context, g Graph) error {
 	tx, err := rw.DB.Begin()
 	if err != nil {
 		return err
@@ -89,7 +90,7 @@ func (rw *SQLiteReaderWriter) WriteGraph(g Graph) error {
 }
 
 // ReadGraph reads a Graph object from a SQLite database.
-func (rw *SQLiteReaderWriter) ReadGraph() (Graph, error) {
+func (rw *SQLiteReaderWriter) ReadGraph(ctx context.Context) (Graph, error) {
 	rows, err := rw.DB.Query("SELECT n1.id, n1.handle, n2.id, n2.handle, e.weight FROM edges e JOIN nodes n1 ON e.from_id = n1.id JOIN nodes n2 ON e.to_id = n2.id")
 	if err != nil {
 		return Graph{}, err

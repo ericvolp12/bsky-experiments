@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"context"
 	"encoding/binary"
 	"io"
 	"os"
@@ -15,7 +16,7 @@ const maxNodeIDLength = 2147483647
 const maxNodeHandleLength = 2147483647
 
 // WriteGraph writes the graph data to a binary file with the given filename.
-func (rw BinaryGraphReaderWriter) WriteGraph(g Graph, filename string) error {
+func (rw BinaryGraphReaderWriter) WriteGraph(ctx context.Context, g Graph, filename string) error {
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -71,7 +72,7 @@ func (rw BinaryGraphReaderWriter) WriteGraph(g Graph, filename string) error {
 }
 
 // ReadGraph reads the graph data from a binary file with the given filename.
-func (rw BinaryGraphReaderWriter) ReadGraph(filename string) (Graph, error) {
+func (rw BinaryGraphReaderWriter) ReadGraph(ctx context.Context, filename string) (Graph, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return Graph{}, err

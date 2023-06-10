@@ -78,9 +78,10 @@ func NewAPI(
 	statsCacheTTL time.Duration,
 ) (*API, error) {
 	// Read the graph from the Binary file
+	ctx := context.Background()
 	readerWriter := graph.BinaryGraphReaderWriter{}
 
-	g1, err := readerWriter.ReadGraph(socialGraphPath)
+	g1, err := readerWriter.ReadGraph(ctx, socialGraphPath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading graph: %w", err)
 	}
