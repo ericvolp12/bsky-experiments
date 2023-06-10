@@ -43,6 +43,8 @@ Tests below were run on a GCP `t2d-standard-2` (2 Core AMD EPYC Milan, 8GB RAM) 
 
 Times shown are an average of 3 executions with DBs recreated in between each run.
 
+### `t2d-standard-2`
+
 | Test        | Inserts | Value Size | Reads | Pipeline Size | redis-stack | dragonflydb |
 |-------------|---------|------------|-------|---------------|-------------|-------------|
 | No-Pipeline | 100k    | 5b         | 5m    | N/A           | 47.542s     | 85.485s     |
@@ -53,6 +55,10 @@ Times shown are an average of 3 executions with DBs recreated in between each ru
 | Pipeline    | 500k    | 1kb        | 25m   | 1k            | 36.669s     | 83.073s     |
 | Pipeline    | 100k    | 10kb       | 5m    | 1k            | 38.526s     | 40.733s     |
 
+### `t2d-standard-4`
+|Test Name|Inserts|Value Size|Reads|Pipeline Size|Repetitions|redis-stack|dragonfly|
+|No-Pipeline|10000|5|50|-1|2|2.861513566s|3.708640344s|
+|Pipeline|50000|5|50|10000|2|1.324127283s|2.66660955s|
 
 ### Versions
 Docker Commands
