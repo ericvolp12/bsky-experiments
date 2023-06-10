@@ -28,10 +28,9 @@ docker pull docker.dragonflydb.io/dragonflydb/dragonfly:latest
 
 # Clone the git repo for redis testing
 git clone https://github.com/ericvolp12/bsky-experiments.git /home/user/bsky-experiments
-cd /home/user/bsky-experiments
 
 # Build the redis tester
-/usr/local/go/bin/go build -o redis-tester cmd/redis-tester/main.go
+/usr/local/go/bin/go build -o /home/user/redis-tester /home/user/bsky-experiments/cmd/redis-tester/main.go
 
 # Chown the repo to user
-sudo chown -R user:user /home/user/bsky-experiments
+sudo chown -R user:user /home/user
