@@ -37,7 +37,7 @@ var feedAliases = map[string]string{
 	"cl-persian":   "cluster-persian",
 }
 
-func NewLabelFeed(ctx context.Context, feedActorDID string, postRegistry *search.PostRegistry) (*ClusterFeed, []string, error) {
+func NewClusterFeed(ctx context.Context, feedActorDID string, postRegistry *search.PostRegistry) (*ClusterFeed, []string, error) {
 	clusters, err := postRegistry.GetClusters(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error getting clusters: %w", err)

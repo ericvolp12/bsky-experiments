@@ -18,7 +18,7 @@ FROM alpine:latest as certs
 
 RUN apk --update add ca-certificates
 
-FROM alpine:latest
+FROM debian:stable-slim
 
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 

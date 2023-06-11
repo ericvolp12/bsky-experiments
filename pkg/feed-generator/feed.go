@@ -79,10 +79,20 @@ func NewFeedGenerator(
 }
 
 // AddFeed adds a feed to the FeedGenerator
-func (fg *FeedGenerator) AddFeed(feedName string, feed Feed) {
+// Feed precedence for overlapping aliases is determined by the order in which
+// they are added (first added is highest precedence)
+func (fg *FeedGenerator) AddFeed(feedAliases []string, feed Feed) {
 	if fg.Feeds == nil {
 		fg.Feeds = map[string]Feed{}
 	}
 
-	fg.Feeds[feedName] = feed
+	for _, feedAlias := range feedAliases {
+		// Skip the feed if we already have the alias registered so we don't add it twice
+		// Feed precedence is determined by the order in which they are added
+		if _, ok := fg.Feeds[feedAlias]; ok {
+			continue
+		}
+
+		fg.Feeds[feedAlias] = feed
+	}
 }
