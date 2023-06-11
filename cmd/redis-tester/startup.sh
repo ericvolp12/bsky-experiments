@@ -26,3 +26,11 @@ rm go1.20.5.linux-amd64.tar.gz
 docker pull redis/redis-stack-server:latest
 docker pull docker.dragonflydb.io/dragonflydb/dragonfly:latest
 
+# Clone the git repo for redis testing
+git clone https://github.com/ericvolp12/bsky-experiments.git /home/user/bsky-experiments
+
+# Build the redis tester
+/usr/local/go/bin/go build -o /home/user/redis-tester /home/user/bsky-experiments/cmd/redis-tester/main.go
+
+# Chown the repo to user
+sudo chown -R user:user /home/user
