@@ -21,7 +21,8 @@ type FeedGenerator struct {
 	ServiceDID            did.DID         // DID of the FeedGenerator service
 	DIDDocument           did.Document    // DID Document of the FeedGenerator service
 	AcceptableURIPrefixes []string        // URIs that the FeedGenerator is allowed to generate feeds for
-	Feeds                 map[string]Feed // map of FeedName to Feed
+	FeedMap               map[string]Feed // map of FeedName to Feed
+	Feeds                 []Feed
 }
 
 type NotFoundError struct {
@@ -69,7 +70,7 @@ func NewFeedGenerator(
 	}
 
 	return &FeedGenerator{
-		Feeds:                 map[string]Feed{},
+		FeedMap:               map[string]Feed{},
 		FeedActorDID:          feedActorDID,
 		ServiceDID:            serviceDID,
 		DIDDocument:           doc,
@@ -82,17 +83,19 @@ func NewFeedGenerator(
 // Feed precedence for overlapping aliases is determined by the order in which
 // they are added (first added is highest precedence)
 func (fg *FeedGenerator) AddFeed(feedAliases []string, feed Feed) {
-	if fg.Feeds == nil {
-		fg.Feeds = map[string]Feed{}
+	if fg.FeedMap == nil {
+		fg.FeedMap = map[string]Feed{}
 	}
 
 	for _, feedAlias := range feedAliases {
 		// Skip the feed if we already have the alias registered so we don't add it twice
 		// Feed precedence is determined by the order in which they are added
-		if _, ok := fg.Feeds[feedAlias]; ok {
+		if _, ok := fg.FeedMap[feedAlias]; ok {
 			continue
 		}
 
-		fg.Feeds[feedAlias] = feed
+		fg.FeedMap[feedAlias] = feed
 	}
+
+	fg.Feeds = append(fg.Feeds, feed)
 }

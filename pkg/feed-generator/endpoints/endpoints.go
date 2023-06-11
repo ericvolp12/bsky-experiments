@@ -102,7 +102,8 @@ func (ep *Endpoints) DescribeFeedGenerator(c *gin.Context) {
 		}
 
 		for _, newDescription := range newDescriptions {
-			feedDescriptions = append(feedDescriptions, &newDescription)
+			description := newDescription
+			feedDescriptions = append(feedDescriptions, &description)
 		}
 	}
 
@@ -193,12 +194,12 @@ func (ep *Endpoints) GetFeedSkeleton(c *gin.Context) {
 	cursor := c.Query("cursor")
 	c.Set("cursor", cursor)
 
-	if ep.FeedGenerator.Feeds == nil {
+	if ep.FeedGenerator.FeedMap == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "feed generator has no feeds configured"})
 		return
 	}
 
-	feed, ok := ep.FeedGenerator.Feeds[feedName]
+	feed, ok := ep.FeedGenerator.FeedMap[feedName]
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "feed not found"})
 		return
