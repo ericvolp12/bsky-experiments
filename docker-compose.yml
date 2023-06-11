@@ -18,15 +18,19 @@ services:
             - redis:/data
         networks:
             - bluesky-net
+        healthcheck:
+            test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+            interval: 1s
+            timeout: 3s
+            retries: 5
     postgres_db:
         user: root
         image: postgres:10-alpine
         restart: always
         environment:
             - POSTGRES_DB=registry
-            - POSTGRES_USER=username
+            - POSTGRES_USER=root
             - POSTGRES_PASSWORD=password
-            - PGUSER: "postgres"
         networks:
             - bluesky-net
         ports:
@@ -36,7 +40,7 @@ services:
         volumes:
             - ./pkg/search/schema:/docker-entrypoint-initdb.d
             - "postgres-data:/data/postgres"
-        healthchech:
+        healthcheck:
             test: [ "CMD-SHELL", "pg_isready" ]
             interval: 5s
             timeout: 5s
@@ -74,10 +78,10 @@ services:
             - "redis:redis"
             - "postgres_db:postgres_db"
         depends_on:
-            - redis
+            redis:
+                condition: service_healthy
             postgres_db:
                 condition: service_healthy
-
 
 volumes:
     redis:
