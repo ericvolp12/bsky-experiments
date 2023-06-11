@@ -44,6 +44,13 @@ $ make graph-builder-up
 
 The only dependency required for this is Docker.
 
+A docker compose version of the setup preconfigured with redis and postgres can
+be ran with the following command:
+
+```shell
+$ docker compose -f docker-compose.yml up
+```
+
 ### Metrics
 
 Metrics and debug routes exist at `{host}:6060/metrics` and `{host}:6060/debug/pprof/{profile}` for Prometheus metrics on data consumed and `pprof`-based memory and CPU profiling of the graph-builder.
