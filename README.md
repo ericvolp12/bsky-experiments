@@ -50,6 +50,12 @@ be ran with the following command:
 ```shell
 $ docker compose -f docker-compose.yml up
 ```
+the docker compose setup uses a few additional .env file variables:
+   - `REDIS_ADDRESS` is used for the redis instance and is set in the default setup with `REDIS_ADDRESS=redis:6379` `
+   - `POSTGRES_DB` is used for the database name and should match the end of the `REGISTRY_DB_CONNECTION_STRING`, the default sets `POSTGRES_DB=registry`
+   - `POSTGRES_USER` is used for the database user and should match the health check command in the docker-compose file ie. `pg_isready -U $POSTGRES_USER`, the defaults sets `POSTGRES_USER=postgres`
+   - `POSTGRES_PASSWORD` is used for the database user's password, the default setup uses `POSTGRES_PASSWORD=password`
+
 
 ### Metrics
 
