@@ -2,12 +2,12 @@ version: '3.8'
 
 services:
   bsky-feedgen-go:
-    # build:
-    #   context: ../../
-    #   dockerfile: build/feedgen-go/Dockerfile
+    build:
+      context: ../../
+      dockerfile: build/feedgen-go/Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    image: bsky-feedgen-go:stable
+    image: bsky-feedgen-go #:stable
     container_name: bsky-feedgen-go
     environment:
       - GIN_MODE=release
@@ -20,23 +20,23 @@ services:
       - type: bind
         source: ../../keys.json
         target: /keys.json
-  bsky-feedgen-go-test:
-    build:
-      context: ../../
-      dockerfile: build/feedgen-go/Dockerfile
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    image: bsky-feedgen-go
-    container_name: bsky-feedgen-go-test
-    environment:
-      - GIN_MODE=release
-      - KEYS_JSON_PATH=/keys.json
-    env_file:
-      - ../../.env
-    ports:
-      - "8096:8080"
-    volumes:
-      - type: bind
-        source: ../../keys.json
-        target: /keys.json
+  # bsky-feedgen-go-test:
+  #   build:
+  #     context: ../../
+  #     dockerfile: build/feedgen-go/Dockerfile
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   image: bsky-feedgen-go
+  #   container_name: bsky-feedgen-go-test
+  #   environment:
+  #     - GIN_MODE=release
+  #     - KEYS_JSON_PATH=/keys.json
+  #   env_file:
+  #     - ../../.env
+  #   ports:
+  #     - "8096:8080"
+  #   volumes:
+  #     - type: bind
+  #       source: ../../keys.json
+  #       target: /keys.json
 
