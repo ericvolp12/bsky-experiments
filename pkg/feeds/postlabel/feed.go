@@ -64,6 +64,8 @@ func NewPostLabelFeed(ctx context.Context, feedActorDID string, postRegistry *se
 		labels = append(labels, alias)
 	}
 
+	labels = append(labels, "animals", "food")
+
 	return &PostLabelFeed{
 		FeedActorDID:                 feedActorDID,
 		PostRegistry:                 postRegistry,
@@ -146,6 +148,8 @@ func (plf *PostLabelFeed) Describe(ctx context.Context) ([]appbsky.FeedDescribeF
 	for alias := range feedAliases {
 		labels = append(labels, alias)
 	}
+
+	labels = append(labels, "animals", "food")
 
 	feeds := []appbsky.FeedDescribeFeedGenerator_Feed{}
 	for _, label := range labels {
