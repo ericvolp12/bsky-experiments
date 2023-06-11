@@ -1,5 +1,10 @@
 version: '3.8'
 
+networks:
+    bluesky-net:
+        external: true
+        name: bluesky-net
+
 services:
   bsky-search:
     build:
@@ -13,6 +18,9 @@ services:
       - GIN_MODE=release
       - LAYOUT_SERVICE_HOST=http://host.docker.internal:8087
       - BINARY_GRAPH_PATH=/app/graph.bin
+    working_dir: /app
+    networks:
+        - bluesky-net
     env_file:
       - ../../.env
     ports:
