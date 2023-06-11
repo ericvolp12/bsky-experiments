@@ -39,33 +39,39 @@ Redis: 6.2.12 - oss
 
 ## GCP Tests (Host Network)
 
-Tests below were run on a GCP `t2d-standard-2` (2 Core AMD EPYC Milan, 8GB RAM) instance with nothing else running on it, all containers were run in host network mode to avoid docker proxy bottlenecks.
+Tests below were run on GCP `t2d` instances (AMD EPYC Milan) with nothing else running on them, all containers were run in host network mode to avoid docker proxy bottlenecks.
 
 Times shown are an average of 3 executions with DBs recreated in between each run.
 
 ### `t2d-standard-2`
 
-| Test        | Inserts | Value Size | Reads | Pipeline Size | redis-stack | dragonflydb |
-|-------------|---------|------------|-------|---------------|-------------|-------------|
-| No-Pipeline | 100k    | 5b         | 5m    | N/A           | 47.542s     | 85.485s     |
-| No-Pipeline | 100k    | 1kb        | 5m    | N/A           | 51.549s     | 87.573s     |
-| No-Pipeline | 100k    | 10kb       | 5m    | N/A           | 84.431s     | 144.253s    |
-| Pipeline    | 500k    | 5b         | 25m   | 10k           | 16.049s     | 41.891s     |
-| Pipeline    | 500k    | 1kb        | 25m   | 10k           | 38.239s     | 69.168s     |
-| Pipeline    | 500k    | 1kb        | 25m   | 1k            | 36.669s     | 83.073s     |
-| Pipeline    | 100k    | 10kb       | 5m    | 1k            | 38.526s     | 40.733s     |
 
 ### `t2d-standard-4`
 
-| Test Name   | Inserts | Value Size | Reads | Pipeline Size | Repetitions | dragonfly | redis-stack |
-|-------------|---------|------------|-------|---------------|-------------|-----------|-------------|
-| No-Pipeline | 100000  | 5          | 50    | -1            | 3           | 29.939s   | 34.744s     |
-| No-Pipeline | 100000  | 1000       | 50    | -1            | 3           | 30.042s   | 38.997s     |
-| No-Pipeline | 100000  | 10000      | 50    | -1            | 3           | 45.174s   | 1m7.683s    |
-| Pipeline    | 500000  | 5          | 50    | 10000         | 3           | 15.088s   | 28.303s     |
-| Pipeline    | 500000  | 1000       | 50    | 10000         | 3           | 36.950s   | 45.275s     |
-| Pipeline    | 500000  | 1000       | 50    | 1000          | 3           | 31.459s   | 1m0.680s    |
-| Pipeline    | 100000  | 10000      | 50    | 1000          | 3           | 38.476s   | 25.192s     |
+| Test Name   | Inserts | Value Size | Reads | Pipeline Size | Repetitions | redis-stack (write) | redis-stack (read) | dragonfly (write) | dragonfly (read) |
+|-------------|---------|------------|-------|---------------|-------------|---------------------|--------------------|-------------------|------------------|
+| No-Pipeline | 100k    | 5b         | 5m    | -1            | 3           | 4.307s              | 46.0463s           | 7.780s            | 1m25.603s        |
+| No-Pipeline | 100k    | 1kb        | 5m    | -1            | 3           | 4.482s              | 50.594s            | 7.989s            | 1m30.717s        |
+| No-Pipeline | 100k    | 10kb       | 5m    | -1            | 3           | 6.260s              | 1m25.990s          | 9.310s            | 2m22.115s        |
+| Pipeline    | 500k    | 5b         | 25m   | 10k           | 3           | 1.538s              | 15.214s            | 12.625s           | 37.685s          |
+| Pipeline    | 500k    | 1kb        | 25m   | 10k           | 3           | 2.290s              | 37.069s            | 14.342s           | 1m4.967s         |
+| Pipeline    | 500k    | 1kb        | 25m   | 1k            | 3           | 2.470s              | 35.964s            | 12.218s           | 1m22.487s        |
+| Pipeline    | 100k    | 10kb       | 5m    | 1k            | 3           | 1.644s              | 37.156s            | 4.160s            | 41.889s          |
+
+
+
+### `t2d-standard-8`
+
+| Test Name   | Inserts | Value Size | Reads | Pipeline Size | Repetitions | redis-stack (write) | redis-stack (read) | dragonfly (write) | dragonfly (read) |
+|-------------|---------|------------|-------|---------------|-------------|---------------------|--------------------|-------------------|------------------|
+| No-Pipeline | 100k    | 5b         | 5m    | -1            | 3           | 3.602s              | 27.297s            | 7.468s            | 22.250s          |
+| No-Pipeline | 100k    | 1kb        | 5m    | -1            | 3           | 3.678s              | 29.751s            | 7.619s            | 24.723s          |
+| No-Pipeline | 100k    | 10kb       | 5m    | -1            | 3           | 4.765s              | 43.024s            | 8.887s            | 40.605s          |
+| Pipeline    | 500k    | 5b         | 25m   | 10k           | 3           | 1.480s              | 13.444s            | 15.327s           | 12.918s          |
+| Pipeline    | 500k    | 1kb        | 25m   | 10k           | 3           | 2.266s              | 32.299s            | 17.051s           | 21.063s          |
+| Pipeline    | 500k    | 1kb        | 25m   | 1k            | 3           | 2.332s              | 30.711s            | 14.921s           | 39.722s          |
+| Pipeline    | 100k    | 10kb       | 5m    | 1k            | 3           | 1.472s              | 38.814s            | 3.873s            | 14.283s          |
+
 
 ### Versions
 Docker Commands
