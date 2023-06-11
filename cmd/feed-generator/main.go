@@ -12,8 +12,11 @@ import (
 
 	"github.com/ericvolp12/bsky-experiments/pkg/auth"
 	feedgenerator "github.com/ericvolp12/bsky-experiments/pkg/feed-generator"
+	"github.com/ericvolp12/bsky-experiments/pkg/feed-generator/endpoints"
+	"github.com/ericvolp12/bsky-experiments/pkg/feeds/authorlabel"
+	"github.com/ericvolp12/bsky-experiments/pkg/feeds/cluster"
+	"github.com/ericvolp12/bsky-experiments/pkg/feeds/postlabel"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
-	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	ginprometheus "github.com/ericvolp12/go-gin-prometheus"
 	"github.com/gin-contrib/cors"
 	ginzap "github.com/gin-contrib/zap"
@@ -86,15 +89,60 @@ func main() {
 	}
 	defer postRegistry.Close()
 
-	client, err := intXRPC.GetXRPCClient(ctx)
-	if err != nil {
-		log.Fatalf("Failed to create XRPC client: %v", err)
+	feedActorDID := os.Getenv("FEED_ACTOR_DID")
+	if feedActorDID == "" {
+		log.Fatal("FEED_ACTOR_DID environment variable must be set")
 	}
 
-	feedGenerator, err := feedgenerator.NewFeedGenerator(ctx, postRegistry, client, graphJSONUrl)
+	// serviceEndpoint is a URL that the feed generator will be available at
+	serviceEndpoint := os.Getenv("SERVICE_ENDPOINT")
+	if serviceEndpoint == "" {
+		log.Fatal("SERVICE_ENDPOINT environment variable must be set")
+	}
+
+	// Set the acceptable DIDs for the feed generator to respond to
+	// We'll default to the feedActorDID and the Service Endpoint as a did:web
+	serviceURL, err := url.Parse(serviceEndpoint)
+	if err != nil {
+		log.Fatal(fmt.Errorf("error parsing service endpoint: %w", err))
+	}
+
+	serviceWebDID := "did:web:" + serviceURL.Hostname()
+
+	log.Printf("service DID Web: %s", serviceWebDID)
+
+	acceptableDIDs := []string{feedActorDID, serviceWebDID}
+
+	feedGenerator, err := feedgenerator.NewFeedGenerator(ctx, feedActorDID, serviceWebDID, acceptableDIDs, serviceEndpoint)
 	if err != nil {
 		log.Fatalf("Failed to create FeedGenerator: %v", err)
 	}
+
+	endpoints, err := endpoints.NewEndpoints(feedGenerator, graphJSONUrl, postRegistry)
+	if err != nil {
+		log.Fatalf("Failed to create Endpoints: %v", err)
+	}
+
+	// Create a cluster feed
+	clustersFeed, clusterFeedAliases, err := cluster.NewClusterFeed(ctx, feedActorDID, postRegistry)
+	if err != nil {
+		log.Fatalf("Failed to create ClusterFeed: %v", err)
+	}
+	feedGenerator.AddFeed(clusterFeedAliases, clustersFeed)
+
+	// Create a postlabel feed
+	postLabelFeed, postLabelFeedAliases, err := postlabel.NewPostLabelFeed(ctx, feedActorDID, postRegistry)
+	if err != nil {
+		log.Fatalf("Failed to create PostLabelFeed: %v", err)
+	}
+	feedGenerator.AddFeed(postLabelFeedAliases, postLabelFeed)
+
+	// Create an authorlabel feed
+	authorLabelFeed, authorLabelFeedAliases, err := authorlabel.NewAuthorLabelFeed(ctx, feedActorDID, postRegistry)
+	if err != nil {
+		log.Fatalf("Failed to create AuthorLabelFeed: %v", err)
+	}
+	feedGenerator.AddFeed(authorLabelFeedAliases, authorLabelFeed)
 
 	router := gin.New()
 
@@ -209,20 +257,20 @@ func main() {
 		auther.UpdateAPIKeyFeedMapping(entity.APIKey, entity)
 	}
 
-	router.GET("/update_cluster_assignments", feedGenerator.UpdateClusterAssignments)
-	router.GET("/.well-known/did.json", feedGenerator.GetWellKnownDID)
+	router.GET("/update_cluster_assignments", endpoints.UpdateClusterAssignments)
+	router.GET("/.well-known/did.json", endpoints.GetWellKnownDID)
 
 	// JWT Auth middleware
 	router.Use(auther.AuthenticateGinRequestViaJWT)
 
-	router.GET("/xrpc/app.bsky.feed.getFeedSkeleton", feedGenerator.GetFeedSkeleton)
-	router.GET("/xrpc/app.bsky.feed.describeFeedGenerator", feedGenerator.DescribeFeedGenerator)
+	router.GET("/xrpc/app.bsky.feed.getFeedSkeleton", endpoints.GetFeedSkeleton)
+	router.GET("/xrpc/app.bsky.feed.describeFeedGenerator", endpoints.DescribeFeedGenerator)
 
 	// API Key Auth Middleware
 	router.Use(auther.AuthenticateGinRequestViaAPIKey)
-	router.PUT("/assign_user_to_feed", feedGenerator.AssignUserToFeed)
-	router.PUT("/unassign_user_from_feed", feedGenerator.UnassignUserFromFeed)
-	router.GET("/feed_members", feedGenerator.GetFeedMembers)
+	router.PUT("/assign_user_to_feed", endpoints.AssignUserToFeed)
+	router.PUT("/unassign_user_from_feed", endpoints.UnassignUserFromFeed)
+	router.GET("/feed_members", endpoints.GetFeedMembers)
 
 	port := os.Getenv("PORT")
 	if port == "" {

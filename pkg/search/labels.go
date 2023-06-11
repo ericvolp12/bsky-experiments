@@ -51,6 +51,31 @@ func (pr *PostRegistry) CreateLabel(ctx context.Context, labelAlias string, labe
 	}, nil
 }
 
+func (pr *PostRegistry) GetAllLabels(ctx context.Context, limit int32, offset int32) ([]Label, error) {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetAllLabels")
+	defer span.End()
+
+	labels, err := pr.queries.GetAllLabels(ctx, search_queries.GetAllLabelsParams{
+		Limit:  limit,
+		Offset: offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	retLabels := make([]Label, len(labels))
+	for i, label := range labels {
+		retLabels[i] = Label{
+			ID:          fmt.Sprintf("%d", label.ID),
+			LookupAlias: label.LookupAlias,
+			Name:        label.Name,
+		}
+	}
+
+	return retLabels, nil
+}
+
 func (pr *PostRegistry) AssignLabelToAuthorByAlias(ctx context.Context, authorDID string, labelAlias string) error {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AssignLabelToAuthorByAlias")

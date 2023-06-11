@@ -87,7 +87,7 @@ image-processor-up:
 # Build the Feedgen Go binary
 build-feedgen-go:
 	@echo "Building Feed Generator Go binary..."
-	$(GO_CMD) build -o feedgen cmd/feed-generator/*.go
+	$(GO_CMD_W_CGO) build -o feedgen cmd/feed-generator/*.go
 
 feedgen-go-up:
 	@echo "Starting Go Feed Generator..."
