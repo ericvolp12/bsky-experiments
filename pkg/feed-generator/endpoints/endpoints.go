@@ -166,6 +166,9 @@ func (ep *Endpoints) GetFeedSkeleton(c *gin.Context) {
 		return
 	}
 
+	// Count the user
+	ep.ProcessUser(feedName, userDID)
+
 	span.SetAttributes(attribute.String("feed.name", feedName))
 	c.Set("feedName", feedName)
 	feedRequestCounter.WithLabelValues(feedName).Inc()
