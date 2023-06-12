@@ -416,6 +416,77 @@ func (pr *PostRegistry) GetPostsPageForPostLabelByHotness(
 	return retPosts, nil
 }
 
+func (pr *PostRegistry) GetPostsPageForPostLabelChronological(
+	ctx context.Context,
+	postLabel string,
+	limit int32,
+	cursor string,
+) ([]*Post, error) {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetPostsPageForPostLabelChronological")
+	defer span.End()
+
+	posts, err := pr.queries.GetPostsPageWithPostLabelChronological(ctx, search_queries.GetPostsPageWithPostLabelChronologicalParams{
+		Label:  postLabel,
+		Limit:  limit,
+		Cursor: cursor,
+	})
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, NotFoundError{fmt.Errorf("posts not found")}
+		}
+		return nil, err
+	}
+
+	retPosts := make([]*Post, len(posts))
+	for i, p := range posts {
+		var parentPostIDPtr *string
+		if p.ParentPostID.Valid {
+			parentPostIDPtr = &p.ParentPostID.String
+		}
+
+		var rootPostIDPtr *string
+		if p.RootPostID.Valid {
+			rootPostIDPtr = &p.RootPostID.String
+		}
+
+		var parentRelationshipPtr *string
+		if p.ParentRelationship.Valid {
+			parentRelationshipPtr = &p.ParentRelationship.String
+		}
+
+		var sentiment *string
+		if p.Sentiment.Valid {
+			sentiment = &p.Sentiment.String
+		}
+
+		var sentimentConfidence *float64
+		if p.SentimentConfidence.Valid {
+			sentimentConfidence = &p.SentimentConfidence.Float64
+		}
+
+		hotness := p.Hotness
+
+		retPosts[i] = &Post{
+			ID:                  p.ID,
+			Text:                p.Text,
+			ParentPostID:        parentPostIDPtr,
+			RootPostID:          rootPostIDPtr,
+			AuthorDID:           p.AuthorDid,
+			CreatedAt:           p.CreatedAt,
+			HasEmbeddedMedia:    p.HasEmbeddedMedia,
+			ParentRelationship:  parentRelationshipPtr,
+			Sentiment:           sentiment,
+			SentimentConfidence: sentimentConfidence,
+			Hotness:             &hotness,
+		}
+
+	}
+
+	return retPosts, nil
+}
+
 func (pr *PostRegistry) GetUniquePostLabels(ctx context.Context) ([]string, error) {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetUniquePostLabels")

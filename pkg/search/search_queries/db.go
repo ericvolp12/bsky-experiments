@@ -130,6 +130,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPostsPageWithPostLabelStmt, err = db.PrepareContext(ctx, getPostsPageWithPostLabel); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsPageWithPostLabel: %w", err)
 	}
+	if q.getPostsPageWithPostLabelChronologicalStmt, err = db.PrepareContext(ctx, getPostsPageWithPostLabelChronological); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsPageWithPostLabelChronological: %w", err)
+	}
 	if q.getPostsPageWithPostLabelSortedByHotnessStmt, err = db.PrepareContext(ctx, getPostsPageWithPostLabelSortedByHotness); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsPageWithPostLabelSortedByHotness: %w", err)
 	}
@@ -339,6 +342,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPostsPageWithPostLabelStmt: %w", cerr)
 		}
 	}
+	if q.getPostsPageWithPostLabelChronologicalStmt != nil {
+		if cerr := q.getPostsPageWithPostLabelChronologicalStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsPageWithPostLabelChronologicalStmt: %w", cerr)
+		}
+	}
 	if q.getPostsPageWithPostLabelSortedByHotnessStmt != nil {
 		if cerr := q.getPostsPageWithPostLabelSortedByHotnessStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostsPageWithPostLabelSortedByHotnessStmt: %w", cerr)
@@ -454,6 +462,7 @@ type Queries struct {
 	getPostsPageWithAnyPostLabelStmt                *sql.Stmt
 	getPostsPageWithAnyPostLabelSortedByHotnessStmt *sql.Stmt
 	getPostsPageWithPostLabelStmt                   *sql.Stmt
+	getPostsPageWithPostLabelChronologicalStmt      *sql.Stmt
 	getPostsPageWithPostLabelSortedByHotnessStmt    *sql.Stmt
 	getThreadViewStmt                               *sql.Stmt
 	getTopPostersStmt                               *sql.Stmt
@@ -504,6 +513,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getPostsPageWithAnyPostLabelStmt:                q.getPostsPageWithAnyPostLabelStmt,
 		getPostsPageWithAnyPostLabelSortedByHotnessStmt: q.getPostsPageWithAnyPostLabelSortedByHotnessStmt,
 		getPostsPageWithPostLabelStmt:                   q.getPostsPageWithPostLabelStmt,
+		getPostsPageWithPostLabelChronologicalStmt:      q.getPostsPageWithPostLabelChronologicalStmt,
 		getPostsPageWithPostLabelSortedByHotnessStmt:    q.getPostsPageWithPostLabelSortedByHotnessStmt,
 		getThreadViewStmt:                               q.getThreadViewStmt,
 		getTopPostersStmt:                               q.getTopPostersStmt,
