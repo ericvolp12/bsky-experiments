@@ -99,7 +99,7 @@ func (alf *AuthorLabelFeed) GetPage(ctx context.Context, feed string, userDID st
 		return unauthorizedResponse, nil, nil
 	}
 
-	postsFromRegistry, err := alf.PostRegistry.GetPostsPageForAuthorLabel(ctx, authorLabel, alf.DefaultLookbackHours, int32(limit), postID)
+	postsFromRegistry, err := alf.PostRegistry.GetPostsPageForAuthorLabelFromView(ctx, authorLabel, alf.DefaultLookbackHours, int32(limit), postID)
 	if err != nil {
 		if errors.As(err, &search.NotFoundError{}) {
 			return nil, nil, NotFoundError{fmt.Errorf("posts not found for feed %s", feed)}

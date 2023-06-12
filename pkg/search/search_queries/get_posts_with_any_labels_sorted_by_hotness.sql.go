@@ -12,14 +12,38 @@ import (
 )
 
 const getPostsPageWithAnyPostLabelSortedByHotness = `-- name: GetPostsPageWithAnyPostLabelSortedByHotness :many
-SELECT h.id, h.text, h.parent_post_id, h.root_post_id, h.author_did, h.created_at, 
-       h.has_embedded_media, h.parent_relationship, h.sentiment, h.sentiment_confidence, MAX(h.hotness)::float as hotness
+SELECT h.id,
+       h.text,
+       h.parent_post_id,
+       h.root_post_id,
+       h.author_did,
+       h.created_at,
+       h.has_embedded_media,
+       h.parent_relationship,
+       h.sentiment,
+       h.sentiment_confidence,
+       MAX(h.hotness)::float as hotness
 FROM post_hotness h
-WHERE h.label = ANY($1::varchar[])
-GROUP BY h.id, h.text, h.parent_post_id, h.root_post_id, h.author_did, h.created_at, 
-         h.has_embedded_media, h.parent_relationship, h.sentiment, h.sentiment_confidence, hotness
-HAVING (CASE WHEN $2::float = -1 THEN TRUE ELSE hotness < $2::float END)
-ORDER BY hotness DESC, h.id DESC
+WHERE h.post_labels && $1::text []
+GROUP BY h.id,
+       h.text,
+       h.parent_post_id,
+       h.root_post_id,
+       h.author_did,
+       h.created_at,
+       h.has_embedded_media,
+       h.parent_relationship,
+       h.sentiment,
+       h.sentiment_confidence,
+       hotness
+HAVING (
+              CASE
+                     WHEN $2::float = -1 THEN TRUE
+                     ELSE MAX(hotness) < $2::float
+              END
+       )
+ORDER BY MAX(hotness) DESC,
+       h.id DESC
 LIMIT $3
 `
 

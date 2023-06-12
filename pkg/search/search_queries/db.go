@@ -112,8 +112,14 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPostsPageByAuthorLabelAliasStmt, err = db.PrepareContext(ctx, getPostsPageByAuthorLabelAlias); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsPageByAuthorLabelAlias: %w", err)
 	}
+	if q.getPostsPageByAuthorLabelAliasFromViewStmt, err = db.PrepareContext(ctx, getPostsPageByAuthorLabelAliasFromView); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsPageByAuthorLabelAliasFromView: %w", err)
+	}
 	if q.getPostsPageByClusterAliasStmt, err = db.PrepareContext(ctx, getPostsPageByClusterAlias); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsPageByClusterAlias: %w", err)
+	}
+	if q.getPostsPageByClusterAliasFromViewStmt, err = db.PrepareContext(ctx, getPostsPageByClusterAliasFromView); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsPageByClusterAliasFromView: %w", err)
 	}
 	if q.getPostsPageWithAnyPostLabelStmt, err = db.PrepareContext(ctx, getPostsPageWithAnyPostLabel); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsPageWithAnyPostLabel: %w", err)
@@ -303,9 +309,19 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPostsPageByAuthorLabelAliasStmt: %w", cerr)
 		}
 	}
+	if q.getPostsPageByAuthorLabelAliasFromViewStmt != nil {
+		if cerr := q.getPostsPageByAuthorLabelAliasFromViewStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsPageByAuthorLabelAliasFromViewStmt: %w", cerr)
+		}
+	}
 	if q.getPostsPageByClusterAliasStmt != nil {
 		if cerr := q.getPostsPageByClusterAliasStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostsPageByClusterAliasStmt: %w", cerr)
+		}
+	}
+	if q.getPostsPageByClusterAliasFromViewStmt != nil {
+		if cerr := q.getPostsPageByClusterAliasFromViewStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsPageByClusterAliasFromViewStmt: %w", cerr)
 		}
 	}
 	if q.getPostsPageWithAnyPostLabelStmt != nil {
@@ -432,7 +448,9 @@ type Queries struct {
 	getOldestPresentParentStmt                      *sql.Stmt
 	getPostStmt                                     *sql.Stmt
 	getPostsPageByAuthorLabelAliasStmt              *sql.Stmt
+	getPostsPageByAuthorLabelAliasFromViewStmt      *sql.Stmt
 	getPostsPageByClusterAliasStmt                  *sql.Stmt
+	getPostsPageByClusterAliasFromViewStmt          *sql.Stmt
 	getPostsPageWithAnyPostLabelStmt                *sql.Stmt
 	getPostsPageWithAnyPostLabelSortedByHotnessStmt *sql.Stmt
 	getPostsPageWithPostLabelStmt                   *sql.Stmt
@@ -480,8 +498,10 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getOldestPresentParentStmt:         q.getOldestPresentParentStmt,
 		getPostStmt:                        q.getPostStmt,
 		getPostsPageByAuthorLabelAliasStmt: q.getPostsPageByAuthorLabelAliasStmt,
-		getPostsPageByClusterAliasStmt:     q.getPostsPageByClusterAliasStmt,
-		getPostsPageWithAnyPostLabelStmt:   q.getPostsPageWithAnyPostLabelStmt,
+		getPostsPageByAuthorLabelAliasFromViewStmt:      q.getPostsPageByAuthorLabelAliasFromViewStmt,
+		getPostsPageByClusterAliasStmt:                  q.getPostsPageByClusterAliasStmt,
+		getPostsPageByClusterAliasFromViewStmt:          q.getPostsPageByClusterAliasFromViewStmt,
+		getPostsPageWithAnyPostLabelStmt:                q.getPostsPageWithAnyPostLabelStmt,
 		getPostsPageWithAnyPostLabelSortedByHotnessStmt: q.getPostsPageWithAnyPostLabelSortedByHotnessStmt,
 		getPostsPageWithPostLabelStmt:                   q.getPostsPageWithPostLabelStmt,
 		getPostsPageWithPostLabelSortedByHotnessStmt:    q.getPostsPageWithPostLabelSortedByHotnessStmt,

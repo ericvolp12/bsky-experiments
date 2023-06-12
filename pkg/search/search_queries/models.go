@@ -81,7 +81,9 @@ type PostHotness struct {
 	ParentRelationship  sql.NullString  `json:"parent_relationship"`
 	Sentiment           sql.NullString  `json:"sentiment"`
 	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
-	Label               string          `json:"label"`
+	PostLabels          interface{}     `json:"post_labels"`
+	ClusterLabel        sql.NullString  `json:"cluster_label"`
+	AuthorLabels        interface{}     `json:"author_labels"`
 	Hotness             float64         `json:"hotness"`
 }
 
