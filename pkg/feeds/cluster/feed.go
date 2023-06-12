@@ -79,7 +79,7 @@ func (cf *ClusterFeed) GetPage(ctx context.Context, feed string, userDID string,
 	// Slice the cluster feed prefix off the feed name
 	clusterName := strings.TrimPrefix(feed, "cluster-")
 
-	postsFromRegistry, err := cf.PostRegistry.GetPostsPageForCluster(ctx, clusterName, cf.DefaultLookbackHours, int32(limit), postID)
+	postsFromRegistry, err := cf.PostRegistry.GetPostsPageFromViewForCluster(ctx, clusterName, cf.DefaultLookbackHours, int32(limit), postID)
 	if err != nil {
 		if errors.As(err, &search.NotFoundError{}) {
 			return nil, nil, NotFoundError{fmt.Errorf("posts not found for feed %s", feed)}

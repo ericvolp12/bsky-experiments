@@ -79,7 +79,7 @@ func (plf *PostLabelFeed) GetPage(ctx context.Context, feed string, userDID stri
 	ctx, span := tracer.Start(ctx, "PostLabelFeed:GetPage")
 	defer span.End()
 
-	_, cursorBloomFilter, cursorHotness, err := feeds.ParseCursor(cursor, plf.BloomFilterSize, plf.BloomFilterFalsePositiveRate)
+	postID, cursorBloomFilter, cursorHotness, err := feeds.ParseCursor(cursor, plf.BloomFilterSize, plf.BloomFilterFalsePositiveRate)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error parsing cursor: %w", err)
 	}
@@ -96,6 +96,9 @@ func (plf *PostLabelFeed) GetPage(ctx context.Context, feed string, userDID stri
 		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelsByHotness(ctx, animalLabels, int32(limit), cursorHotness)
 	case "food":
 		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelsByHotness(ctx, foodLabels, int32(limit), cursorHotness)
+	case "hellthread":
+		// Sort hellthread by chronological order instead of hotness
+		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelChronological(ctx, feed, int32(limit), postID)
 	default:
 		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelByHotness(ctx, feed, int32(limit), cursorHotness)
 	}
