@@ -23,5 +23,5 @@ var uniqueFeedUserCounter = promauto.NewCounter(prometheus.CounterOpts{
 var feedRequestLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    "feed_request_latency",
 	Help:    "The latency of feed requests",
-	Buckets: []float64{.01, .05, .1, .25, .5, 1, 2.5, 5, 10},
+	Buckets: []float64{.001, .005, .01, .05, .1, .25, .5, 1, 2.5, 5, 10},
 }, []string{"feed_name"})
