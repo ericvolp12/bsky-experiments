@@ -70,6 +70,7 @@ services:
               source: .env
               target: /app/.env
         command: ["sh", "-c", "service docker start && make graph-builder-up && sleep infinity"]
+        privileged: true
         build:
             context: .
             dockerfile: Dockerfile
