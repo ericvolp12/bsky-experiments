@@ -69,7 +69,7 @@ services:
             - type: bind
               source: .env
               target: /app/.env
-        command: ["sh", "-c", "service docker start && make graph-builder-up && sleep infinity"]
+        command: ["sh", "-c", "make graph-builder-up && sleep infinity"]
         privileged: true
         build:
             context: .

@@ -8,5 +8,4 @@ RUN bash docker_install.sh
 
 #RUN go install github.com/kyleconroy/sqlc/cmd/sqlc@latest
 
-COPY . .
 

@@ -21,16 +21,16 @@ services:
     container_name: bsky-graph-builder
     env_file:
       - ../../.env
+    privileged: true
     ports:
       - "6060:6060"
     working_dir: /app
     networks:
         - bluesky-net
-    volumes:
-      - type: bind
-        source: ../../data/
-        target: /app/data/
-      - type: bind
-        source: ../../.env
-        target: /app/.env
-
+    # volumes:
+    #   - type: bind
+    #     source: ../../data/
+    #     target: /app/data/
+    #   - type: bind
+    #     source: ../../.env
+    #     target: /app/.env
