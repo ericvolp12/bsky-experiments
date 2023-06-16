@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  meilisearch:
+    image: 'getmeili/meilisearch:v1.2'
+    ports:
+      - "7700:7700"
+    volumes:
+      - type: bind
+        source: ../../meilisearch_data/
+        target: /meili_data/
+    environment:
+      MEILI_EXPERIMENTAL_ENABLE_METRICS: "true"

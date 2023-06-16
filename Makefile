@@ -103,6 +103,11 @@ dragonfly-up:
 	@echo "Starting DragonflyDB..."
 	docker compose -f build/dragonfly/docker-compose.yml up -d
 
+# Start up the Meilisearch Database
+meili-up:
+	@echo "Starting Meilisearch..."
+	docker compose -f build/meilisearch/docker-compose.yml up -d
+
 # Generate SQLC Code
 sqlc:
 	@echo "Generating SQLC code..."
