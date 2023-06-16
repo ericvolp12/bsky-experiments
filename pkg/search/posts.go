@@ -36,6 +36,7 @@ type Post struct {
 	SentimentConfidence *float64  `json:"sentiment_confidence"`
 	Images              []*Image  `json:"images,omitempty"`
 	Hotness             *float64  `json:"hotness,omitempty"`
+	Labels              []string  `json:"labels,omitempty"`
 }
 
 type PostView struct {
@@ -253,6 +254,38 @@ func (pr *PostRegistry) GetOldestPresentParent(ctx context.Context, postID strin
 	}, nil
 }
 
+func (pr *PostRegistry) GetPostPage(ctx context.Context, limit int32, offset int32) ([]Post, error) {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetPostPage")
+	defer span.End()
+
+	posts, err := pr.queries.GetPostPage(ctx, search_queries.GetPostPageParams{
+		Limit:  limit,
+		Offset: offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	retPosts := []Post{}
+	for _, post := range posts {
+		newPost, err := postFromPagePost(post)
+		if err != nil {
+			return nil, err
+		}
+		if newPost == nil {
+			continue
+		}
+		retPosts = append(retPosts, *newPost)
+	}
+
+	if len(retPosts) == 0 {
+		return nil, NotFoundError{fmt.Errorf("no posts found")}
+	}
+
+	return retPosts, nil
+}
+
 // postFromQueryPost turns a queries.Post into a search.Post
 func postFromQueryPost(p search_queries.GetPostRow) (*Post, error) {
 	var parentPostIDPtr *string
@@ -315,5 +348,57 @@ func postFromQueryPost(p search_queries.GetPostRow) (*Post, error) {
 		Sentiment:           sentiment,
 		SentimentConfidence: sentimentConfidence,
 		Images:              images,
+	}, nil
+}
+
+func postFromPagePost(p search_queries.GetPostPageRow) (*Post, error) {
+	var parentPostIDPtr *string
+	if p.ParentPostID.Valid {
+		parentPostIDPtr = &p.ParentPostID.String
+	}
+
+	var rootPostIDPtr *string
+	if p.RootPostID.Valid {
+		rootPostIDPtr = &p.RootPostID.String
+	}
+
+	var parentRelationshipPtr *string
+	if p.ParentRelationship.Valid {
+		parentRelationshipPtr = &p.ParentRelationship.String
+	}
+
+	var sentiment *string
+	if p.Sentiment.Valid {
+		sentiment = &p.Sentiment.String
+	}
+
+	var sentimentConfidence *float64
+	if p.SentimentConfidence.Valid {
+		sentimentConfidence = &p.SentimentConfidence.Float64
+	}
+
+	var labels []string
+	switch v := p.Labels.(type) {
+	case []byte:
+		// Convert labels from an array of strings to a slice of strings
+		if err := json.Unmarshal(v, &labels); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal labels: %v", err)
+		}
+	default:
+		return nil, fmt.Errorf("unexpected type for labels: %T", v)
+	}
+
+	return &Post{
+		ID:                  p.ID,
+		Text:                p.Text,
+		ParentPostID:        parentPostIDPtr,
+		RootPostID:          rootPostIDPtr,
+		AuthorDID:           p.AuthorDid,
+		CreatedAt:           p.CreatedAt,
+		HasEmbeddedMedia:    p.HasEmbeddedMedia,
+		ParentRelationship:  parentRelationshipPtr,
+		Sentiment:           sentiment,
+		SentimentConfidence: sentimentConfidence,
+		Labels:              labels,
 	}, nil
 }

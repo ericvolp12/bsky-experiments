@@ -109,6 +109,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPostStmt, err = db.PrepareContext(ctx, getPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPost: %w", err)
 	}
+	if q.getPostPageStmt, err = db.PrepareContext(ctx, getPostPage); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostPage: %w", err)
+	}
 	if q.getPostsPageByAuthorLabelAliasStmt, err = db.PrepareContext(ctx, getPostsPageByAuthorLabelAlias); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsPageByAuthorLabelAlias: %w", err)
 	}
@@ -307,6 +310,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPostStmt: %w", cerr)
 		}
 	}
+	if q.getPostPageStmt != nil {
+		if cerr := q.getPostPageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostPageStmt: %w", cerr)
+		}
+	}
 	if q.getPostsPageByAuthorLabelAliasStmt != nil {
 		if cerr := q.getPostsPageByAuthorLabelAliasStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostsPageByAuthorLabelAliasStmt: %w", cerr)
@@ -455,6 +463,7 @@ type Queries struct {
 	getMembersOfClusterStmt                         *sql.Stmt
 	getOldestPresentParentStmt                      *sql.Stmt
 	getPostStmt                                     *sql.Stmt
+	getPostPageStmt                                 *sql.Stmt
 	getPostsPageByAuthorLabelAliasStmt              *sql.Stmt
 	getPostsPageByAuthorLabelAliasFromViewStmt      *sql.Stmt
 	getPostsPageByClusterAliasStmt                  *sql.Stmt
@@ -506,6 +515,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getMembersOfClusterStmt:            q.getMembersOfClusterStmt,
 		getOldestPresentParentStmt:         q.getOldestPresentParentStmt,
 		getPostStmt:                        q.getPostStmt,
+		getPostPageStmt:                    q.getPostPageStmt,
 		getPostsPageByAuthorLabelAliasStmt: q.getPostsPageByAuthorLabelAliasStmt,
 		getPostsPageByAuthorLabelAliasFromViewStmt:      q.getPostsPageByAuthorLabelAliasFromViewStmt,
 		getPostsPageByClusterAliasStmt:                  q.getPostsPageByClusterAliasStmt,
