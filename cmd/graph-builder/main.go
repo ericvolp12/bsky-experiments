@@ -22,6 +22,7 @@ import (
 	"github.com/bluesky-social/indigo/events"
 	intEvents "github.com/ericvolp12/bsky-experiments/pkg/events"
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
+	"github.com/ericvolp12/bsky-experiments/pkg/persistedgraph"
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/extra/redisotel/v9"
@@ -126,7 +127,10 @@ func main() {
 		log.Fatalf("failed to connect to redis: %+v\n", err)
 	}
 
-	redisReaderWriter := graph.NewRedisReaderWriter(redisClient)
+	redisGraph, err := persistedgraph.NewPersistedGraph(ctx, redisClient, "social-graph")
+	if err != nil {
+		log.Fatalf("failed to initialize persisted graph: %+v\n", err)
+	}
 
 	log.Info("initializing BSky Event Handler...")
 	bsky, err := intEvents.NewBSky(
@@ -134,6 +138,7 @@ func main() {
 		log,
 		includeLinks, postRegistryEnabled, sentimentAnalysisEnabled,
 		dbConnectionString, sentimentServiceHost,
+		redisGraph,
 		workerCount,
 	)
 	if err != nil {
@@ -188,7 +193,7 @@ func main() {
 		for {
 			select {
 			case <-graphTicker.C:
-				saveGraph(ctx, log, bsky, &binReaderWriter, redisReaderWriter, graphFile)
+				saveGraph(ctx, log, bsky, &binReaderWriter, graphFile)
 			case <-quit:
 				graphTicker.Stop()
 				wg.Done()
@@ -265,7 +270,6 @@ func saveGraph(
 	log *zap.SugaredLogger,
 	bsky *intEvents.BSky,
 	binReaderWriter *graph.BinaryGraphReaderWriter,
-	redisReaderWriter *graph.RedisReaderWriter,
 	graphFileFromEnv string,
 ) {
 	tracer := otel.Tracer("graph-builder")
@@ -285,14 +289,6 @@ func saveGraph(
 	span.AddEvent("saveGraph:ReleaseGraphLock")
 	bsky.SocialGraphMux.RUnlock()
 
-	log.Info("writing social graph to redis...")
-	span.AddEvent("saveGraph:WriteGraphToRedis")
-	err := redisReaderWriter.WriteGraph(ctx, *newGraph, "social-graph")
-	if err != nil {
-		log.Errorf("error writing social graph to redis: %s", err)
-	}
-	span.AddEvent("saveGraph:FinishedWritingGraphToRedis")
-
 	logMsg := fmt.Sprintf("writing social graph to binary file, last updated: %s",
 		bsky.SocialGraph.LastUpdate.Format("02.01.06 15:04:05"))
 
@@ -302,7 +298,7 @@ func saveGraph(
 
 	span.AddEvent("saveGraph:WriteGraphToBinaryFile")
 	// Write the graph to a timestamped file
-	err = binReaderWriter.WriteGraph(ctx, *newGraph, timestampedGraphFilePath)
+	err := binReaderWriter.WriteGraph(ctx, *newGraph, timestampedGraphFilePath)
 	if err != nil {
 		log.Errorf("error writing social graph to binary file: %s", err)
 	}
