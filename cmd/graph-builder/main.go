@@ -1,19 +1,13 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,7 +15,6 @@ import (
 
 	"github.com/bluesky-social/indigo/events"
 	intEvents "github.com/ericvolp12/bsky-experiments/pkg/events"
-	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/ericvolp12/bsky-experiments/pkg/persistedgraph"
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -83,11 +76,6 @@ func main() {
 
 	workerCount := 5
 
-	graphFile := os.Getenv("BINARY_GRAPH_FILE")
-	if graphFile == "" {
-		graphFile = "social-graph.bin"
-	}
-
 	postRegistryEnabled := false
 	dbConnectionString := os.Getenv("REGISTRY_DB_CONNECTION_STRING")
 	if dbConnectionString != "" {
@@ -145,62 +133,16 @@ func main() {
 		log.Fatal(err)
 	}
 
-	binReaderWriter := graph.BinaryGraphReaderWriter{}
-
-	log.Info("reading social graph from binary file...")
-	resumedGraph, err := binReaderWriter.ReadGraph(ctx, graphFile)
-	if err != nil {
-		log.Infof("error reading social graph from binary: %s\n", err)
-		log.Info("creating a new graph for this session...")
-	} else {
-		log.Info("social graph resumed successfully")
-		bsky.SocialGraph = resumedGraph
+	// Try to read the seq number from Redis
+	cursor := redisGraph.Cursor
+	if cursor != "" {
+		log.Infof("found cursor in redis: %s", cursor)
+		u.RawQuery = fmt.Sprintf("cursor=%s", cursor)
 	}
 
-	// Try to read the seq number from file
-	seqFile, err := os.Open(graphFile + ".seq")
-	if err != nil {
-		log.Infof("error reading seq number from file: %s\n", err)
-		log.Info("starting from latest seq")
-	} else {
-		log.Info("reading seq number from file...")
-		scanner := bufio.NewScanner(seqFile)
-		scanner.Scan()
-		seq, err := strconv.ParseInt(scanner.Text(), 10, 64)
-		if err != nil {
-			log.Infof("error reading seq number from file: %s\n", err)
-			log.Info("starting from latest seq")
-		} else {
-			if seq != 0 {
-				log.Infof("starting from seq %d", seq)
-				bsky.LastSeq = seq
-				u.RawQuery = fmt.Sprintf("cursor=%d", seq)
-			}
-		}
-	}
-
-	graphTicker := time.NewTicker(5 * time.Minute)
 	quit := make(chan struct{})
 
 	wg := &sync.WaitGroup{}
-
-	// Run a routine that dumps graph data to a file every 5 minutes
-	wg.Add(1)
-	go func() {
-		ctx := context.Background()
-		log = log.With("source", "graph_dump")
-		log.Info("starting graph dump routine...")
-		for {
-			select {
-			case <-graphTicker.C:
-				saveGraph(ctx, log, bsky, &binReaderWriter, graphFile)
-			case <-quit:
-				graphTicker.Stop()
-				wg.Done()
-				return
-			}
-		}
-	}()
 
 	// Server for pprof and prometheus via promhttp
 	go func() {
@@ -209,8 +151,6 @@ func main() {
 		// Create a handler to write out the plaintext graph
 		http.HandleFunc("/graph", func(w http.ResponseWriter, r *http.Request) {
 			log.Info("writing graph to HTTP Response...")
-			bsky.SocialGraphMux.Lock()
-			defer bsky.SocialGraphMux.Unlock()
 
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("Content-Disposition", "attachment; filename=social-graph.txt")
@@ -219,7 +159,7 @@ func main() {
 			w.Header().Set("Cache-Control", "must-revalidate")
 			w.Header().Set("Pragma", "public")
 
-			err := bsky.SocialGraph.Write(w)
+			err := bsky.PersistedGraph.Write(ctx, w)
 			if err != nil {
 				log.Errorf("error writing graph: %s", err)
 			} else {
@@ -249,98 +189,6 @@ func main() {
 	close(quit)
 	wg.Wait()
 	log.Info("routines finished, exiting...")
-}
-
-func getHalfHourFileName(baseName string) string {
-	now := time.Now()
-	min := now.Minute()
-	halfHourSuffix := "00"
-	if min >= 30 {
-		halfHourSuffix = "30"
-	}
-
-	fileExt := filepath.Ext(baseName)
-	fileName := strings.TrimSuffix(baseName, fileExt)
-
-	return fmt.Sprintf("%s-%s_%s%s", fileName, now.Format("2006_01_02_15"), halfHourSuffix, fileExt)
-}
-
-func saveGraph(
-	ctx context.Context,
-	log *zap.SugaredLogger,
-	bsky *intEvents.BSky,
-	binReaderWriter *graph.BinaryGraphReaderWriter,
-	graphFileFromEnv string,
-) {
-	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "SaveGraph")
-	defer span.End()
-
-	timestampedGraphFilePath := getHalfHourFileName(graphFileFromEnv)
-
-	// Acquire a lock on the graph before we write it
-	span.AddEvent("saveGraph:AcquireGraphLock")
-	bsky.SocialGraphMux.RLock()
-	span.AddEvent("saveGraph:GraphLockAcquired")
-	// Copy the graph to a new memory buffer to save it without holding the lock
-	newGraph := bsky.SocialGraph.DeepCopy()
-
-	// Release the lock after we're done copying the graph
-	span.AddEvent("saveGraph:ReleaseGraphLock")
-	bsky.SocialGraphMux.RUnlock()
-
-	logMsg := fmt.Sprintf("writing social graph to binary file, last updated: %s",
-		bsky.SocialGraph.LastUpdate.Format("02.01.06 15:04:05"))
-
-	log.Infow(logMsg,
-		"graph_last_updated_at", newGraph.LastUpdate,
-	)
-
-	span.AddEvent("saveGraph:WriteGraphToBinaryFile")
-	// Write the graph to a timestamped file
-	err := binReaderWriter.WriteGraph(ctx, *newGraph, timestampedGraphFilePath)
-	if err != nil {
-		log.Errorf("error writing social graph to binary file: %s", err)
-	}
-	span.AddEvent("saveGraph:FinishedWritingGraphToBinaryFile")
-
-	// Write the last seq number to a file
-	span.AddEvent("saveGraph:WriteLastSeqNumber")
-	err = ioutil.WriteFile(graphFileFromEnv+".seq", []byte(fmt.Sprintf("%d", bsky.LastSeq)), 0644)
-	if err != nil {
-		log.Errorf("error writing last seq number to file: %s", err)
-	}
-
-	// Copy the file to the "latest" path, we don't need to lock the graph for this
-	span.AddEvent("saveGraph:CopyGraphFile")
-	err = copyFile(timestampedGraphFilePath, graphFileFromEnv)
-	if err != nil {
-		log.Errorf("error copying binary file: %s", err)
-	}
-	span.AddEvent("saveGraph:FinishedCopyingGraphFile")
-
-	log.Info("social graph written to binary file successfully")
-}
-
-func copyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destinationFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destinationFile.Close()
-
-	_, err = io.Copy(destinationFile, sourceFile)
-	if err != nil {
-		return err
-	}
-
-	return destinationFile.Sync()
 }
 
 func installExportPipeline(ctx context.Context) (func(context.Context) error, error) {
@@ -421,16 +269,16 @@ func handleRepoStreamWithRetry(
 			for {
 				select {
 				case <-updateCheckTimer.C:
-					bsky.SocialGraphMux.RLock()
-					if bsky.SocialGraph.LastUpdate.Add(updateCheckDuration).Before(time.Now()) {
+					bsky.PersistedGraph.CursorMux.RLock()
+					if bsky.PersistedGraph.LastUpdated.Add(updateCheckDuration).Before(time.Now()) {
 						log.Infof("The graph hasn't been updated in the past %v seconds, exiting the graph builder (docker should restart it and get us in a good state)", updateCheckDuration)
-						bsky.SocialGraphMux.RUnlock()
+						bsky.PersistedGraph.CursorMux.RUnlock()
 						os.Exit(1)
 						cancel()
 						c.Close()
 						return
 					}
-					bsky.SocialGraphMux.RUnlock()
+					bsky.PersistedGraph.CursorMux.RUnlock()
 				case <-streamCtx.Done():
 					return
 				}

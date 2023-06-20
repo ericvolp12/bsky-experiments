@@ -17,7 +17,6 @@ import (
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/repomgr"
-	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/ericvolp12/bsky-experiments/pkg/persistedgraph"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/sentiment"
@@ -53,9 +52,6 @@ type RepoRecord struct {
 // authenticated XRPC client
 type BSky struct {
 	IncludeLinks bool
-
-	SocialGraph    graph.Graph
-	SocialGraphMux sync.RWMutex
 
 	PersistedGraph *persistedgraph.PersistedGraph
 
@@ -122,9 +118,6 @@ func NewBSky(
 
 	bsky := &BSky{
 		IncludeLinks: includeLinks,
-
-		SocialGraph:    graph.NewGraph(),
-		SocialGraphMux: sync.RWMutex{},
 
 		PersistedGraph: persistedGraph,
 

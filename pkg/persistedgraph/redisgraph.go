@@ -3,15 +3,20 @@ package persistedgraph
 import (
 	"context"
 	"fmt"
+	"io"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
 )
 
 type PersistedGraph struct {
 	Client *redis.Client
 
+	CursorMux   sync.RWMutex
 	LastUpdated time.Time
 	Cursor      string
 
@@ -70,20 +75,26 @@ func NewPersistedGraph(ctx context.Context, client *redis.Client, prefix string)
 		CursorKey:      cursorKey,
 		LastUpdated:    lastUpdatedTime,
 		Cursor:         cursor,
+		CursorMux:      sync.RWMutex{},
 	}, nil
 }
 
 // AddNode adds a new node with the given NodeID to the graph.
 // The method takes a NodeID as an argument and inserts it into the Nodes map.
 func (g *PersistedGraph) AddNode(ctx context.Context, node graph.Node) error {
+	tracer := otel.Tracer("persistentgraph")
+	ctx, span := tracer.Start(ctx, "AddNode")
+	defer span.End()
 	cmd := g.Client.HSet(ctx, g.NodeKey, string(node.DID), node.Handle)
 	if cmd.Err() != nil {
 		return fmt.Errorf("error setting node in Redis: %w", cmd.Err())
 	}
 
 	// Update the last updated time
+	g.CursorMux.Lock()
 	g.LastUpdated = time.Now()
 	g.Client.Set(ctx, g.LastUpdatedKey, g.LastUpdated, 0)
+	g.CursorMux.Unlock()
 	return nil
 }
 
@@ -91,6 +102,9 @@ func (g *PersistedGraph) AddNode(ctx context.Context, node graph.Node) error {
 // The method takes two NodeIDs (from and to) and an integer weight as arguments.
 // If the edge already exists, the weight is updated with the new value.
 func (g *PersistedGraph) AddEdge(ctx context.Context, from, to graph.Node, weight int) error {
+	tracer := otel.Tracer("persistentgraph")
+	ctx, span := tracer.Start(ctx, "AddEdge")
+	defer span.End()
 	// Set the nodes in the graph to ensure they exist
 	err := g.AddNode(ctx, from)
 	if err != nil {
@@ -120,14 +134,19 @@ func (g *PersistedGraph) AddEdge(ctx context.Context, from, to graph.Node, weigh
 	}
 
 	// Update the last updated time
+	g.CursorMux.Lock()
 	g.LastUpdated = time.Now()
 	g.Client.Set(ctx, g.LastUpdatedKey, g.LastUpdated, 0)
+	g.CursorMux.Unlock()
 
 	return nil
 }
 
 // GetNodeCount returns the number of nodes in the graph.
 func (g *PersistedGraph) GetNodeCount(ctx context.Context) int {
+	tracer := otel.Tracer("persistentgraph")
+	ctx, span := tracer.Start(ctx, "GetNodeCount")
+	defer span.End()
 	// Get the number of nodes in the graph
 	count, err := g.Client.HLen(ctx, g.NodeKey).Result()
 	if err != nil {
@@ -139,6 +158,9 @@ func (g *PersistedGraph) GetNodeCount(ctx context.Context) int {
 
 // GetEdgeCount returns the total number of directed edges in the graph.
 func (g *PersistedGraph) GetEdgeCount(ctx context.Context) int {
+	tracer := otel.Tracer("persistentgraph")
+	ctx, span := tracer.Start(ctx, "GetEdgeCount")
+	defer span.End()
 	// Get the number of edges in the graph
 	count, err := g.Client.HLen(ctx, g.EdgeKey).Result()
 	if err != nil {
@@ -151,6 +173,9 @@ func (g *PersistedGraph) GetEdgeCount(ctx context.Context) int {
 // IncrementEdge increments the weight of an edge between two nodes by the specified value.
 // If the edge does not exist, it is created with the given weight.
 func (g *PersistedGraph) IncrementEdge(ctx context.Context, from, to graph.Node, weight int) error {
+	tracer := otel.Tracer("persistentgraph")
+	ctx, span := tracer.Start(ctx, "IncrementEdge")
+	defer span.End()
 	// Set the nodes in the graph to ensure they exist
 	err := g.AddNode(ctx, from)
 	if err != nil {
@@ -180,14 +205,19 @@ func (g *PersistedGraph) IncrementEdge(ctx context.Context, from, to graph.Node,
 	}
 
 	// Update the last updated time
+	g.CursorMux.Lock()
 	g.LastUpdated = time.Now()
 	g.Client.Set(ctx, g.LastUpdatedKey, g.LastUpdated, 0)
+	g.CursorMux.Unlock()
 
 	return nil
 }
 
 // SetCursor sets the cursor for the graph.
 func (g *PersistedGraph) SetCursor(ctx context.Context, cursor string) error {
+	tracer := otel.Tracer("persistentgraph")
+	ctx, span := tracer.Start(ctx, "SetCursor")
+	defer span.End()
 	// Set the cursor
 	cmd := g.Client.Set(ctx, g.CursorKey, cursor, 0)
 	if cmd.Err() != nil {
@@ -195,8 +225,55 @@ func (g *PersistedGraph) SetCursor(ctx context.Context, cursor string) error {
 	}
 
 	// Update the last updated time
+	g.CursorMux.Lock()
+	g.Cursor = cursor
 	g.LastUpdated = time.Now()
 	g.Client.Set(ctx, g.LastUpdatedKey, g.LastUpdated, 0)
+	g.CursorMux.Unlock()
+
+	return nil
+}
+
+// GetCursor returns the cursor for the graph.
+func (g *PersistedGraph) GetCursor(ctx context.Context) string {
+	tracer := otel.Tracer("persistentgraph")
+	ctx, span := tracer.Start(ctx, "GetCursor")
+	defer span.End()
+	// Get the cursor
+	cursor, err := g.Client.Get(ctx, g.CursorKey).Result()
+	if err != nil {
+		return ""
+	}
+
+	return cursor
+}
+
+// Write exports the graph structure to a Golang Writer interface
+// The method takes a Writer interface as an argument and writes the graph data to the writer.
+// Each line of the writer contains the source node, destination node, and weight of an edge.
+func (g *PersistedGraph) Write(ctx context.Context, writer io.Writer) error {
+	tracer := otel.Tracer("persistentgraph")
+	ctx, span := tracer.Start(ctx, "Write")
+	defer span.End()
+	// Get all nodes from Redis
+	nodes, err := g.Client.HGetAll(ctx, g.NodeKey).Result()
+	if err != nil {
+		return fmt.Errorf("error getting nodes from Redis: %w", err)
+	}
+
+	// Get all edges from Redis
+	edges, err := g.Client.HGetAll(ctx, g.EdgeKey).Result()
+	if err != nil {
+		return fmt.Errorf("error getting edges from Redis: %w", err)
+	}
+
+	// Write each edge to the writer
+	for edgeIdentifier, weight := range edges {
+		edge := strings.Split(edgeIdentifier, "-")
+		from := edge[0]
+		to := edge[1]
+		fmt.Fprintf(writer, "%s %s %s %s %s\n", from, nodes[from], to, nodes[to], weight)
+	}
 
 	return nil
 }
