@@ -54,6 +54,13 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string, workerID int) 
 	span.SetAttributes(attribute.Bool("caches.profiles.hit", false))
 	cacheMisses.WithLabelValues("profile").Inc()
 
+	// Wait on the rate limiter
+	span.AddEvent("ResolveProfile:WaitOnRateLimiter")
+	err := bsky.bskyLimiter.Wait(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rate limiter error: %w", err)
+	}
+
 	//Lock the client
 	span.AddEvent("ResolveProfile:AcquireClientRLock")
 	worker.ClientMux.RLock()
@@ -114,6 +121,13 @@ func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*b
 
 	span.SetAttributes(attribute.Bool("caches.post.hit", false))
 	cacheMisses.WithLabelValues("post").Inc()
+
+	span.AddEvent("ResolvePost:WaitOnRateLimiter")
+	// Wait on the rate limiter
+	err := bsky.bskyLimiter.Wait(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rate limiter error: %w", err)
+	}
 
 	//Lock the client
 	span.AddEvent("ResolvePost:AcquireClientRLock")

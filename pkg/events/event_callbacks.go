@@ -25,6 +25,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
+	"golang.org/x/time/rate"
 )
 
 type RepoStreamCtxCallbacks struct {
@@ -68,6 +69,9 @@ type BSky struct {
 	postCacheTTL time.Duration
 
 	RepoRecordQueue chan RepoRecord
+
+	// Rate Limiter for requests against the BSky API
+	bskyLimiter *rate.Limiter
 
 	WorkerCount int
 	Workers     []*Worker
@@ -131,8 +135,10 @@ func NewBSky(
 		postCacheTTL:    time.Minute * 60,
 
 		RepoRecordQueue: make(chan RepoRecord, 100),
-		WorkerCount:     workerCount,
-		Workers:         make([]*Worker, workerCount),
+		bskyLimiter:     rate.NewLimiter(rate.Every(time.Millisecond*110), 1),
+
+		WorkerCount: workerCount,
+		Workers:     make([]*Worker, workerCount),
 
 		PostRegistryEnabled: postRegistryEnabled,
 		PostRegistry:        postRegistry,
