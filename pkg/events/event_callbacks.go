@@ -17,7 +17,7 @@ import (
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/repomgr"
-	"github.com/ericvolp12/bsky-experiments/pkg/graph"
+	"github.com/ericvolp12/bsky-experiments/pkg/persistedgraph"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/sentiment"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
@@ -53,8 +53,7 @@ type RepoRecord struct {
 type BSky struct {
 	IncludeLinks bool
 
-	SocialGraph    graph.Graph
-	SocialGraphMux sync.RWMutex
+	PersistedGraph *persistedgraph.PersistedGraph
 
 	Logger *zap.SugaredLogger
 
@@ -87,6 +86,7 @@ func NewBSky(
 	log *zap.SugaredLogger,
 	includeLinks, postRegistryEnabled, sentimentAnalysisEnabled bool,
 	dbConnectionString, sentimentServiceHost string,
+	persistedGraph *persistedgraph.PersistedGraph,
 	workerCount int,
 ) (*BSky, error) {
 	postCache, err := lru.NewARC[string, PostCacheEntry](5000)
@@ -119,8 +119,7 @@ func NewBSky(
 	bsky := &BSky{
 		IncludeLinks: includeLinks,
 
-		SocialGraph:    graph.NewGraph(),
-		SocialGraphMux: sync.RWMutex{},
+		PersistedGraph: persistedGraph,
 
 		Logger: log,
 
@@ -206,6 +205,11 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 				e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
 				log.Errorf("failed to get a record from the event: %+v\n", e)
 				return nil
+			}
+
+			err = bsky.PersistedGraph.SetCursor(ctx, fmt.Sprintf("%d", evt.Seq))
+			if err != nil {
+				log.Errorf("failed to set cursor: %+v\n", err)
 			}
 
 			// Verify that the record cid matches the cid in the event

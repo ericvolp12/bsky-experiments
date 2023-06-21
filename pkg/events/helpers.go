@@ -61,10 +61,6 @@ func (bsky *BSky) DecodeFacets(
 
 	mentions := []string{}
 	links := []string{}
-	// Lock the graph
-	span.AddEvent("DecodeFacets:AcquireGraphLock")
-	bsky.SocialGraphMux.Lock()
-	span.AddEvent("DecodeFacets:GraphLockAcquired")
 
 	failedLookups := 0
 
@@ -96,15 +92,12 @@ func (bsky *BSky) DecodeFacets(
 						}
 
 						// Increment the edge in the graph
-						bsky.SocialGraph.IncrementEdge(from, to, 1)
+						bsky.PersistedGraph.IncrementEdge(ctx, from, to, 1)
 					}
 				}
 			}
 		}
 	}
-
-	span.AddEvent("DecodeFacets:ReleaseGraphLock")
-	bsky.SocialGraphMux.Unlock()
 
 	if failedLookups > 0 {
 		span.SetAttributes(attribute.Int("lookups.failed", failedLookups))

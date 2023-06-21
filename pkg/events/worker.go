@@ -356,12 +356,12 @@ func (bsky *BSky) ProcessRelation(
 		DID:    graph.NodeID(parentAuthorDID),
 		Handle: parentAuthorHandle,
 	}
-	span.AddEvent("ProcessRelation:AcquireGraphLock")
-	bsky.SocialGraphMux.Lock()
-	span.AddEvent("ProcessRelation:GraphLockAcquired")
-	bsky.SocialGraph.IncrementEdge(from, to, 1)
-	span.AddEvent("ProcessRelation:ReleaseGraphLock")
-	bsky.SocialGraphMux.Unlock()
+
+	err = bsky.PersistedGraph.IncrementEdge(ctx, from, to, 1)
+	if err != nil {
+		span.SetAttributes(attribute.String("persisted_graph.error", err.Error()))
+		log.Errorf("error incrementing edge in persisted graph: %+v\n", err)
+	}
 
 	return parentAuthorDID, parentAuthorHandle, nil
 }

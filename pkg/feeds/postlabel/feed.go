@@ -99,6 +99,9 @@ func (plf *PostLabelFeed) GetPage(ctx context.Context, feed string, userDID stri
 	case "hellthread":
 		// Sort hellthread by chronological order instead of hotness
 		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelChronological(ctx, feed, int32(limit), postID)
+	case "hellthread:pics":
+		// Sort hellthread by chronological order instead of hotness
+		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelChronological(ctx, feed, int32(limit), postID)
 	default:
 		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelByHotness(ctx, feed, int32(limit), cursorHotness)
 	}

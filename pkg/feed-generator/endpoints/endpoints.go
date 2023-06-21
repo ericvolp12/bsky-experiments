@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bits-and-blooms/bloom/v3"
@@ -29,7 +30,7 @@ type DescriptionCacheItem struct {
 
 type Endpoints struct {
 	FeedGenerator   *feedgenerator.FeedGenerator
-	ClusterManager  *clusters.ClusterManager
+	GraphJSONUrl    string
 	FeedUsers       map[string][]string
 	UniqueSeenUsers *bloom.BloomFilter
 
@@ -46,16 +47,11 @@ type DidResponse struct {
 }
 
 func NewEndpoints(feedGenerator *feedgenerator.FeedGenerator, graphJSONUrl string, postRegistry *search.PostRegistry) (*Endpoints, error) {
-	clusterManager, err := clusters.NewClusterManager(graphJSONUrl)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cluster manager: %w", err)
-	}
-
 	uniqueSeenUsers := bloom.NewWithEstimates(1000000, 0.01)
 
 	return &Endpoints{
 		FeedGenerator:       feedGenerator,
-		ClusterManager:      clusterManager,
+		GraphJSONUrl:        graphJSONUrl,
 		UniqueSeenUsers:     uniqueSeenUsers,
 		FeedUsers:           map[string][]string{},
 		PostRegistry:        postRegistry,
@@ -259,27 +255,35 @@ func (ep *Endpoints) ProcessUser(feedName string, userDID string) {
 //
 //
 
+type assignment struct {
+	ClusterID int32
+	AuthorDID string
+}
+
 func (ep *Endpoints) UpdateClusterAssignments(c *gin.Context) {
 	tracer := otel.Tracer("feed-generator")
 	ctx, span := tracer.Start(c.Request.Context(), "FeedGenerator:Endpoints:UpdateClusterAssignments")
 	defer span.End()
 
 	log.Println("Updating cluster assignments...")
+	clusterManager, err := clusters.NewClusterManager(ep.GraphJSONUrl)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to create cluster manager: %s", err.Error())})
+		return
+	}
+
 	// Iterate over all authors in the Manager and update them in the registry
 	errs := make([]error, 0)
 	errStrings := make([]string, 0)
 
-	span.SetAttributes(attribute.Int("authors.length", len(ep.ClusterManager.DIDClusterMap)))
-	span.SetAttributes(attribute.Int("clusters.length", len(ep.ClusterManager.Clusters)))
+	span.SetAttributes(attribute.Int("authors.length", len(clusterManager.DIDClusterMap)))
+	span.SetAttributes(attribute.Int("clusters.length", len(clusterManager.Clusters)))
 
-	count := 0
-	for _, author := range ep.ClusterManager.DIDClusterMap {
-		if count%1000 == 0 {
-			log.Printf("Updated %d/%d authors", count, len(ep.ClusterManager.DIDClusterMap))
-		}
+	assignmentChan := make(chan assignment, len(clusterManager.DIDClusterMap))
 
-		count++
+	log.Printf("Enqueueing %d authors...\n", len(clusterManager.DIDClusterMap))
 
+	for _, author := range clusterManager.DIDClusterMap {
 		clusterID, err := strconv.ParseInt(author.ClusterID, 10, 64)
 		if err != nil {
 			newErr := fmt.Errorf("failed to parse cluster ID %s: %w", author.ClusterID, err)
@@ -287,14 +291,43 @@ func (ep *Endpoints) UpdateClusterAssignments(c *gin.Context) {
 			log.Println(newErr.Error())
 			continue
 		}
-		err = ep.PostRegistry.AssignAuthorToCluster(ctx, author.UserDID, int32(clusterID))
-		if err != nil {
-			newErr := fmt.Errorf("failed to assign author %s to cluster %d: %w", author.UserDID, clusterID, err)
-			errs = append(errs, newErr)
-			errStrings = append(errStrings, newErr.Error())
-			log.Println(newErr.Error())
-			continue
+
+		assignmentChan <- assignment{
+			ClusterID: int32(clusterID),
+			AuthorDID: author.UserDID,
 		}
+	}
+
+	log.Printf("Enqueued %d authors, closing channel...\n", len(clusterManager.DIDClusterMap))
+
+	close(assignmentChan)
+
+	errChan := make(chan error)
+	concurrency := 20
+	wg := sync.WaitGroup{}
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			for assignment := range assignmentChan {
+				err := ep.PostRegistry.AssignAuthorToCluster(ctx, assignment.AuthorDID, assignment.ClusterID)
+				if err != nil {
+					errChan <- fmt.Errorf("failed to assign author %s to cluster %d: %w", assignment.AuthorDID, assignment.ClusterID, err)
+				}
+			}
+			wg.Done()
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(errChan)
+		log.Printf("Finished processing %d authors\n", len(clusterManager.DIDClusterMap))
+	}()
+
+	for err := range errChan {
+		errs = append(errs, err)
+		errStrings = append(errStrings, err.Error())
 	}
 
 	log.Println("Finished updating cluster assignments")
@@ -302,7 +335,11 @@ func (ep *Endpoints) UpdateClusterAssignments(c *gin.Context) {
 	span.SetAttributes(attribute.Int("errors.length", len(errs)))
 	span.SetAttributes(attribute.StringSlice("errors", errStrings))
 
-	c.JSON(http.StatusOK, gin.H{"message": "cluster assignments updated", "errors": errs})
+	c.JSON(http.StatusOK, gin.H{
+		"message":                "cluster assignments updated",
+		"successful_assignments": len(clusterManager.DIDClusterMap) - len(errs),
+		"errors":                 errStrings,
+	})
 }
 
 func (ep *Endpoints) AssignUserToFeed(c *gin.Context) {
