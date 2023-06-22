@@ -58,7 +58,7 @@ func getHandle(ctx context.Context, did string, limiter *rate.Limiter, progress 
 	// If the didLookup has a handle, return it
 	if len(didLookup.AlsoKnownAs) > 0 {
 		// Handles from the DID service look like: "at://jaz.bsky.social", replace the at:// with an @
-		handle = strings.Replace(didLookup.AlsoKnownAs[0], "at://", "@", 1)
+		handle = strings.Replace(didLookup.AlsoKnownAs[0], "at://", "", 1)
 	}
 
 	// Increment the progress bar

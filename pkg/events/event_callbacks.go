@@ -21,10 +21,12 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/sentiment"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
-	lru "github.com/hashicorp/golang-lru/arc/v2"
+	"github.com/meilisearch/meilisearch-go"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
+	"golang.org/x/time/rate"
 )
 
 type RepoStreamCtxCallbacks struct {
@@ -59,15 +61,15 @@ type BSky struct {
 
 	LastSeq int64 // LastSeq is the last sequence number processed
 
-	// Generate a Profile Cache with a TTL
-	profileCache    *lru.ARCCache[string, ProfileCacheEntry]
+	redisClient     *redis.Client
+	cachesPrefix    string
 	profileCacheTTL time.Duration
-
-	// Generate a Post Cache with a TTL
-	postCache    *lru.ARCCache[string, PostCacheEntry]
-	postCacheTTL time.Duration
+	postCacheTTL    time.Duration
 
 	RepoRecordQueue chan RepoRecord
+
+	// Rate Limiter for requests against the BSky API
+	bskyLimiter *rate.Limiter
 
 	WorkerCount int
 	Workers     []*Worker
@@ -77,6 +79,8 @@ type BSky struct {
 
 	SentimentAnalysisEnabled bool
 	SentimentAnalysis        *sentiment.Sentiment
+
+	MeiliClient *meilisearch.Client
 }
 
 // NewBSky creates a new BSky struct with an authenticated XRPC client
@@ -85,21 +89,14 @@ func NewBSky(
 	ctx context.Context,
 	log *zap.SugaredLogger,
 	includeLinks, postRegistryEnabled, sentimentAnalysisEnabled bool,
-	dbConnectionString, sentimentServiceHost string,
+	dbConnectionString, sentimentServiceHost, meilisearchHost string,
 	persistedGraph *persistedgraph.PersistedGraph,
+	redisClient *redis.Client,
 	workerCount int,
 ) (*BSky, error) {
-	postCache, err := lru.NewARC[string, PostCacheEntry](5000)
-	if err != nil {
-		return nil, err
-	}
-
-	profileCache, err := lru.NewARC[string, ProfileCacheEntry](15000)
-	if err != nil {
-		return nil, err
-	}
 
 	var postRegistry *search.PostRegistry
+	var err error
 
 	if postRegistryEnabled {
 		postRegistry, err = search.NewPostRegistry(dbConnectionString)
@@ -114,6 +111,16 @@ func NewBSky(
 		sentimentAnalysis = sentiment.NewSentiment(sentimentServiceHost)
 	}
 
+	meiliClient := meilisearch.NewClient(meilisearch.ClientConfig{
+		Host: meilisearchHost,
+	})
+
+	// Check connection to MeiliSearch
+	_, err = meiliClient.Health()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to MeiliSearch: %w", err)
+	}
+
 	log = log.With("source", "event_handler")
 
 	bsky := &BSky{
@@ -123,22 +130,25 @@ func NewBSky(
 
 		Logger: log,
 
-		profileCache: profileCache,
-		postCache:    postCache,
-
 		// 60 minute Cache TTLs
-		profileCacheTTL: time.Minute * 60,
+		cachesPrefix:    "graph_builder",
+		redisClient:     redisClient,
+		profileCacheTTL: time.Hour * 6,
 		postCacheTTL:    time.Minute * 60,
 
 		RepoRecordQueue: make(chan RepoRecord, 100),
-		WorkerCount:     workerCount,
-		Workers:         make([]*Worker, workerCount),
+		bskyLimiter:     rate.NewLimiter(rate.Every(time.Millisecond*125), 1),
+
+		WorkerCount: workerCount,
+		Workers:     make([]*Worker, workerCount),
 
 		PostRegistryEnabled: postRegistryEnabled,
 		PostRegistry:        postRegistry,
 
 		SentimentAnalysisEnabled: sentimentAnalysisEnabled,
 		SentimentAnalysis:        sentimentAnalysis,
+
+		MeiliClient: meiliClient,
 	}
 
 	// Initialize the workers, each with their own BSky Client and Mutex

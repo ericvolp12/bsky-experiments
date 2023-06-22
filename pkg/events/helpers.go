@@ -71,14 +71,14 @@ func (bsky *BSky) DecodeFacets(
 					if feature.RichtextFacet_Link != nil {
 						links = append(links, feature.RichtextFacet_Link.Uri)
 					} else if feature.RichtextFacet_Mention != nil {
-						mentionedUser, err := bsky.ResolveProfile(ctx, feature.RichtextFacet_Mention.Did, workerID)
+						mentionedHandle, err := bsky.ResolveDID(ctx, feature.RichtextFacet_Mention.Did)
 						if err != nil {
-							log.Printf("error getting profile for %s: %s", feature.RichtextFacet_Mention.Did, err)
+							log.Printf("error getting handle for %s: %s", feature.RichtextFacet_Mention.Did, err)
 							mentions = append(mentions, fmt.Sprintf("[failed-lookup]@%s", feature.RichtextFacet_Mention.Did))
 							failedLookups++
 							continue
 						}
-						mentions = append(mentions, fmt.Sprintf("@%s", mentionedUser.Handle))
+						mentions = append(mentions, fmt.Sprintf("@%s", mentionedHandle))
 
 						// Track mentions in the social graph
 						from := graph.Node{
@@ -87,8 +87,8 @@ func (bsky *BSky) DecodeFacets(
 						}
 
 						to := graph.Node{
-							DID:    graph.NodeID(mentionedUser.Did),
-							Handle: mentionedUser.Handle,
+							DID:    graph.NodeID(feature.RichtextFacet_Mention.Did),
+							Handle: mentionedHandle,
 						}
 
 						// Increment the edge in the graph
