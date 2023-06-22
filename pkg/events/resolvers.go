@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/bluesky-social/indigo/api/bsky"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -103,6 +106,102 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string, workerID int) 
 	}
 
 	return profile, nil
+}
+
+type didLookup struct {
+	Did                 string `json:"did"`
+	VerificationMethods struct {
+		Atproto string `json:"atproto"`
+	} `json:"verificationMethods"`
+	RotationKeys []string `json:"rotationKeys"`
+	AlsoKnownAs  []string `json:"alsoKnownAs"`
+	Services     struct {
+		AtprotoPds struct {
+			Type     string `json:"type"`
+			Endpoint string `json:"endpoint"`
+		} `json:"atproto_pds"`
+	} `json:"services"`
+}
+
+func (bsky *BSky) getHandleFromDirectory(ctx context.Context, did string) (handle string, err error) {
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "getHandleFromDirectory")
+	defer span.End()
+
+	// Use rate limiter before each request
+	err = bsky.bskyLimiter.Wait(ctx)
+	if err != nil {
+		span.SetAttributes(attribute.String("rate.limiter.error", err.Error()))
+		return handle, fmt.Errorf("error waiting for rate limiter: %w", err)
+	}
+
+	// HTTP GET to https://plc.directory/{did}/data
+	req, err := http.NewRequest("GET", fmt.Sprintf("https://plc.directory/%s/data", did), nil)
+	if err != nil {
+		span.SetAttributes(attribute.String("request.create.error", err.Error()))
+		return handle, fmt.Errorf("error creating request for %s: %w", did, err)
+	}
+
+	resp, err := otelhttp.DefaultClient.Do(req.WithContext(ctx))
+	if err != nil {
+		span.SetAttributes(attribute.String("request.do.error", err.Error()))
+		return handle, fmt.Errorf("error getting handle for %s: %w", did, err)
+	}
+
+	// Read the response body into a didLookup
+	didLookup := didLookup{}
+	err = json.NewDecoder(resp.Body).Decode(&didLookup)
+	if err != nil {
+		span.SetAttributes(attribute.String("response.decode.error", err.Error()))
+		return handle, fmt.Errorf("error decoding response body for %s: %w", did, err)
+	}
+
+	// If the didLookup has a handle, return it
+	if len(didLookup.AlsoKnownAs) > 0 {
+		// Handles from the DID service look like: "at://jaz.bsky.social", remove the "at://" prefix
+		handle = strings.TrimPrefix(didLookup.AlsoKnownAs[0], "at://")
+		span.SetAttributes(attribute.String("handle", handle))
+	}
+
+	return handle, nil
+}
+
+func (bsky *BSky) ResolveDID(ctx context.Context, uri string, workerID int) (did string, handle string, err error) {
+	tracer := otel.Tracer("graph-builder")
+	ctx, span := tracer.Start(ctx, "ResolveDID")
+	defer span.End()
+
+	sliced := strings.TrimPrefix(uri, "at://")
+	did = sliced[0:strings.Index(sliced, "/")]
+
+	cacheKey := bsky.cachesPrefix + ":did:" + did
+
+	// Check the cache first
+	handleFromCache, err := bsky.redisClient.Get(ctx, cacheKey).Result()
+	if err == nil {
+		span.SetAttributes(attribute.Bool("caches.did.hit", true))
+		cacheHits.WithLabelValues("did").Inc()
+		return did, handleFromCache, nil
+	} else if err != redis.Nil {
+		span.SetAttributes(attribute.String("caches.did.get.error", err.Error()))
+	}
+
+	span.SetAttributes(attribute.Bool("caches.did.hit", false))
+	cacheMisses.WithLabelValues("did").Inc()
+
+	// Get the handle from the DID service
+	handle, err = bsky.getHandleFromDirectory(ctx, did)
+	if err != nil {
+		span.SetAttributes(attribute.String("did.get.error", err.Error()))
+		return did, handle, fmt.Errorf("error getting handle for %s: %w", did, err)
+	}
+
+	setCmd := bsky.redisClient.Set(ctx, cacheKey, handle, bsky.profileCacheTTL)
+	if setCmd.Err() != nil {
+		span.SetAttributes(attribute.String("caches.did.set.error", setCmd.Err().Error()))
+	}
+
+	return did, handle, nil
 }
 
 // ResolvePost resolves a post from a URI using the cache or the API

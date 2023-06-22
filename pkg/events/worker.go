@@ -325,22 +325,12 @@ func (bsky *BSky) ProcessRelation(
 
 	log := bsky.Workers[workerID].Logger
 
-	parentAuthorDID := ""
-	parentAuthorHandle := ""
-
-	post, err := bsky.ResolvePost(ctx, parentPostURI, workerID)
+	parentAuthorDID, parentAuthorHandle, err := bsky.ResolveDID(ctx, parentPostURI, workerID)
 	if err != nil {
-		errmsg := fmt.Sprintf("error resolving replying-to post (%s): %+v\n", parentPostURI, err)
+		errmsg := fmt.Sprintf("error resolving replying-to post author (%s): %+v\n", parentPostURI, err)
 		log.Errorf("%s\n", errmsg)
 		return "", "", errors.Wrap(err, errmsg)
-	} else if post == nil {
-		errmsg := fmt.Sprintf("replying-to post (%s) not found", parentPostURI)
-		log.Errorf("%s\n", errmsg)
-		return "", "", fmt.Errorf(errmsg)
 	}
-
-	parentAuthorDID = post.Author.Did
-	parentAuthorHandle = post.Author.Handle
 
 	span.SetAttributes(attribute.String("parent.uri", parentPostURI))
 	span.SetAttributes(attribute.String("parent.author_handle", parentAuthorHandle))

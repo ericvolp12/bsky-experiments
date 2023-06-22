@@ -112,6 +112,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPostPageStmt, err = db.PrepareContext(ctx, getPostPage); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostPage: %w", err)
 	}
+	if q.getPostWithAuthorHandleStmt, err = db.PrepareContext(ctx, getPostWithAuthorHandle); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostWithAuthorHandle: %w", err)
+	}
 	if q.getPostsPageByAuthorLabelAliasStmt, err = db.PrepareContext(ctx, getPostsPageByAuthorLabelAlias); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsPageByAuthorLabelAlias: %w", err)
 	}
@@ -315,6 +318,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPostPageStmt: %w", cerr)
 		}
 	}
+	if q.getPostWithAuthorHandleStmt != nil {
+		if cerr := q.getPostWithAuthorHandleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostWithAuthorHandleStmt: %w", cerr)
+		}
+	}
 	if q.getPostsPageByAuthorLabelAliasStmt != nil {
 		if cerr := q.getPostsPageByAuthorLabelAliasStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostsPageByAuthorLabelAliasStmt: %w", cerr)
@@ -464,6 +472,7 @@ type Queries struct {
 	getOldestPresentParentStmt                      *sql.Stmt
 	getPostStmt                                     *sql.Stmt
 	getPostPageStmt                                 *sql.Stmt
+	getPostWithAuthorHandleStmt                     *sql.Stmt
 	getPostsPageByAuthorLabelAliasStmt              *sql.Stmt
 	getPostsPageByAuthorLabelAliasFromViewStmt      *sql.Stmt
 	getPostsPageByClusterAliasStmt                  *sql.Stmt
@@ -516,6 +525,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getOldestPresentParentStmt:         q.getOldestPresentParentStmt,
 		getPostStmt:                        q.getPostStmt,
 		getPostPageStmt:                    q.getPostPageStmt,
+		getPostWithAuthorHandleStmt:        q.getPostWithAuthorHandleStmt,
 		getPostsPageByAuthorLabelAliasStmt: q.getPostsPageByAuthorLabelAliasStmt,
 		getPostsPageByAuthorLabelAliasFromViewStmt:      q.getPostsPageByAuthorLabelAliasFromViewStmt,
 		getPostsPageByClusterAliasStmt:                  q.getPostsPageByClusterAliasStmt,

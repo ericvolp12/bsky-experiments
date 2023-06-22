@@ -29,6 +29,7 @@ type Post struct {
 	ParentPostID        *string   `json:"parent_post_id"`
 	RootPostID          *string   `json:"root_post_id"`
 	AuthorDID           string    `json:"author_did"`
+	AuthorHandle        *string   `json:"author_handle"`
 	CreatedAt           time.Time `json:"created_at"`
 	HasEmbeddedMedia    bool      `json:"has_embedded_media"`
 	ParentRelationship  *string   `json:"parent_relationship"` // null, "r", "q"
@@ -123,6 +124,23 @@ func (pr *PostRegistry) GetPost(ctx context.Context, postID string) (*Post, erro
 	}
 
 	enrichedPost, err := postFromQueryPost(post)
+
+	return enrichedPost, err
+}
+
+func (pr *PostRegistry) GetPostWithAuthorHandle(ctx context.Context, postID string) (*Post, error) {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetPostWithAuthorHandle")
+	defer span.End()
+	post, err := pr.queries.GetPostWithAuthorHandle(ctx, postID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, NotFoundError{fmt.Errorf("post not found")}
+		}
+		return nil, err
+	}
+
+	enrichedPost, err := postWithAuthorHandleFromQueryPost(post)
 
 	return enrichedPost, err
 }
@@ -400,5 +418,76 @@ func postFromPagePost(p search_queries.GetPostPageRow) (*Post, error) {
 		Sentiment:           sentiment,
 		SentimentConfidence: sentimentConfidence,
 		Labels:              labels,
+	}, nil
+}
+
+// postFromQueryPost turns a queries.Post into a search.Post
+func postWithAuthorHandleFromQueryPost(p search_queries.GetPostWithAuthorHandleRow) (*Post, error) {
+	var parentPostIDPtr *string
+	if p.ParentPostID.Valid {
+		parentPostIDPtr = &p.ParentPostID.String
+	}
+
+	var rootPostIDPtr *string
+	if p.RootPostID.Valid {
+		rootPostIDPtr = &p.RootPostID.String
+	}
+
+	var parentRelationshipPtr *string
+	if p.ParentRelationship.Valid {
+		parentRelationshipPtr = &p.ParentRelationship.String
+	}
+
+	var sentiment *string
+	if p.Sentiment.Valid {
+		sentiment = &p.Sentiment.String
+	}
+
+	var sentimentConfidence *float64
+	if p.SentimentConfidence.Valid {
+		sentimentConfidence = &p.SentimentConfidence.Float64
+	}
+
+	var authorHandle *string
+	if p.Handle.Valid {
+		authorHandle = &p.Handle.String
+	}
+
+	var images []*Image
+	switch v := p.Images.(type) {
+	case []byte:
+		// Try to unmarshal if it's a slice of bytes
+		var imagesData []map[string]interface{}
+		if err := json.Unmarshal(v, &imagesData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal images: %v", err)
+		}
+		// If unmarshaling is successful, loop through the data and convert each item to an Image
+		for _, data := range imagesData {
+			imageData, _ := json.Marshal(data)
+			var image Image
+			if err := json.Unmarshal(imageData, &image); err != nil {
+				log.Printf("failed to convert data to image: %v", err)
+				continue
+			}
+			images = append(images, &image)
+		}
+
+	default:
+		return nil, fmt.Errorf("unexpected type for images: %T", v)
+	}
+
+	return &Post{
+		ID:                  p.ID,
+		Text:                p.Text,
+		ParentPostID:        parentPostIDPtr,
+		RootPostID:          rootPostIDPtr,
+		AuthorDID:           p.AuthorDid,
+		AuthorHandle:        authorHandle,
+		CreatedAt:           p.CreatedAt,
+		HasEmbeddedMedia:    p.HasEmbeddedMedia,
+		ParentRelationship:  parentRelationshipPtr,
+		Sentiment:           sentiment,
+		SentimentConfidence: sentimentConfidence,
+		Images:              images,
 	}, nil
 }
