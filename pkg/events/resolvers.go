@@ -128,6 +128,8 @@ func (bsky *BSky) getHandleFromDirectory(ctx context.Context, did string) (handl
 	ctx, span := tracer.Start(ctx, "getHandleFromDirectory")
 	defer span.End()
 
+	start := time.Now()
+
 	// Use rate limiter before each request
 	err = bsky.bskyLimiter.Wait(ctx)
 	if err != nil {
@@ -147,6 +149,7 @@ func (bsky *BSky) getHandleFromDirectory(ctx context.Context, did string) (handl
 		span.SetAttributes(attribute.String("request.do.error", err.Error()))
 		return handle, fmt.Errorf("error getting handle for %s: %w", did, err)
 	}
+	defer resp.Body.Close()
 
 	// Read the response body into a didLookup
 	didLookup := didLookup{}
@@ -155,6 +158,9 @@ func (bsky *BSky) getHandleFromDirectory(ctx context.Context, did string) (handl
 		span.SetAttributes(attribute.String("response.decode.error", err.Error()))
 		return handle, fmt.Errorf("error decoding response body for %s: %w", did, err)
 	}
+
+	// Record the duration of the request
+	apiCallDurationHistogram.WithLabelValues("LookupDID").Observe(time.Since(start).Seconds())
 
 	// If the didLookup has a handle, return it
 	if len(didLookup.AlsoKnownAs) > 0 {
