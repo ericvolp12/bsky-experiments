@@ -82,7 +82,7 @@ func (bsky *BSky) ProcessRepoRecord(
 	ctx context.Context,
 	pst appbsky.FeedPost,
 	opPath string,
-	repoName string,
+	authorDID string,
 	eventTime string,
 	workerID int,
 ) error {
@@ -97,27 +97,27 @@ func (bsky *BSky) ProcessRepoRecord(
 
 	log := bsky.Workers[workerID].Logger
 
-	span.SetAttributes(attribute.String("repo.name", repoName))
+	span.SetAttributes(attribute.String("repo.name", authorDID))
 	span.SetAttributes(attribute.String("record.type.id", pst.LexiconTypeID))
 
 	log = log.With(
-		"repo_name", repoName,
+		"repo_name", authorDID,
 		"record_type_id", pst.LexiconTypeID,
 		"trace_id", span.SpanContext().TraceID().String(),
 	)
 
-	span.AddEvent("HandleRepoCommit:ResolveProfile")
-	authorProfile, err := bsky.ResolveProfile(ctx, repoName, workerID)
+	span.AddEvent("HandleRepoCommit:ResolveDid")
+	authorHandle, err := bsky.ResolveDID(ctx, authorDID)
 	if err != nil {
-		log.Errorf("error getting profile for %s: %+v\n", repoName, err)
+		log.Errorf("error getting DID for %s: %+v\n", authorDID, err)
 		return nil
 	}
 
-	span.SetAttributes(attribute.String("author.did", authorProfile.Did))
-	span.SetAttributes(attribute.String("author.handle", authorProfile.Handle))
+	span.SetAttributes(attribute.String("author.did", authorDID))
+	span.SetAttributes(attribute.String("author.handle", authorHandle))
 
 	span.AddEvent("HandleRepoCommit:DecodeFacets")
-	mentions, links, err := bsky.DecodeFacets(ctx, authorProfile.Did, authorProfile.Handle, pst.Facets, workerID)
+	mentions, links, err := bsky.DecodeFacets(ctx, authorDID, authorHandle, pst.Facets, workerID)
 	if err != nil {
 		log.Errorf("error decoding post facets: %+v\n", err)
 	}
@@ -144,7 +144,7 @@ func (bsky *BSky) ProcessRepoRecord(
 	// Handle direct replies
 	if pst.Reply != nil && pst.Reply.Parent != nil {
 		replyingToURI := pst.Reply.Parent.Uri
-		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, authorProfile, replyingToURI, workerID)
+		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, authorDID, authorHandle, replyingToURI, workerID)
 		if err != nil {
 			log.Errorf("error processing reply relation: %+v\n", err)
 			return nil
@@ -166,7 +166,7 @@ func (bsky *BSky) ProcessRepoRecord(
 	// Handle quote reposts
 	if pst.Embed != nil && pst.Embed.EmbedRecord != nil && pst.Embed.EmbedRecord.Record != nil {
 		quotingURI := pst.Embed.EmbedRecord.Record.Uri
-		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, authorProfile, quotingURI, workerID)
+		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, authorDID, authorHandle, quotingURI, workerID)
 		if err != nil {
 			log.Errorf("error processing quote relation: %+v\n", err)
 			return nil
@@ -185,7 +185,7 @@ func (bsky *BSky) ProcessRepoRecord(
 
 	if pst.Embed != nil && pst.Embed.EmbedImages != nil && pst.Embed.EmbedImages.Images != nil {
 		// Fetch the post with metadata from the BSky API (this includes signed URLs for the images)
-		postPath := fmt.Sprintf("at://%s/%s", repoName, opPath)
+		postPath := fmt.Sprintf("at://%s/%s", authorDID, opPath)
 		postMeta, err := bsky.ResolvePost(ctx, postPath, workerID)
 		if err != nil {
 			log.Errorf("error fetching post with metadata: %+v\n", err)
@@ -212,19 +212,19 @@ func (bsky *BSky) ProcessRepoRecord(
 		}
 	}
 
-	postLink := fmt.Sprintf("https://bsky.app/profile/%s/post/%s", authorProfile.Handle, postID)
+	postLink := fmt.Sprintf("https://bsky.app/profile/%s/post/%s", authorHandle, postID)
 
 	// Write the post to the Post Registry if enabled
 	if bsky.PostRegistryEnabled {
 		author := search.Author{
-			DID:    authorProfile.Did,
-			Handle: authorProfile.Handle,
+			DID:    authorDID,
+			Handle: authorHandle,
 		}
 
 		post := search.Post{
 			ID:        postID,
 			Text:      pst.Text,
-			AuthorDID: authorProfile.Did,
+			AuthorDID: authorDID,
 			CreatedAt: t,
 		}
 
@@ -272,7 +272,7 @@ func (bsky *BSky) ProcessRepoRecord(
 				registryImage := search.Image{
 					CID:          image.CID,
 					PostID:       postID,
-					AuthorDID:    authorProfile.Did,
+					AuthorDID:    authorDID,
 					MimeType:     image.MimeType,
 					AltText:      &altText,
 					FullsizeURL:  image.FullsizeURL,
@@ -294,8 +294,8 @@ func (bsky *BSky) ProcessRepoRecord(
 		"mentions", mentions,
 		"image_count", len(images),
 		"links", links,
-		"author_handle", authorProfile.Handle,
-		"author_did", authorProfile.Did,
+		"author_handle", authorHandle,
+		"author_did", authorDID,
 		"quoting_handle", quotingHandle,
 		"replying_to_handle", replyingToHandle,
 		"parent_id", parentID,
@@ -315,8 +315,7 @@ func (bsky *BSky) ProcessRepoRecord(
 // It also updates the graph with the relation by incrementing the edge weight
 func (bsky *BSky) ProcessRelation(
 	ctx context.Context,
-	authorProfile *appbsky.ActorDefs_ProfileViewDetailed,
-	parentPostURI string,
+	authorDID, authorHandle, parentPostURI string,
 	workerID int,
 ) (string, string, error) {
 	tracer := otel.Tracer("graph-builder")
@@ -341,8 +340,8 @@ func (bsky *BSky) ProcessRelation(
 
 	// Update the graph
 	from := graph.Node{
-		DID:    graph.NodeID(authorProfile.Did),
-		Handle: authorProfile.Handle,
+		DID:    graph.NodeID(authorDID),
+		Handle: authorHandle,
 	}
 
 	to := graph.Node{
