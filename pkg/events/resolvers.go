@@ -172,7 +172,7 @@ func (bsky *BSky) getHandleFromDirectory(ctx context.Context, did string) (handl
 	return handle, nil
 }
 
-func (bsky *BSky) ResolveDID(ctx context.Context, did string, workerID int) (handle string, err error) {
+func (bsky *BSky) ResolveDID(ctx context.Context, did string) (handle string, err error) {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "ResolveDID")
 	defer span.End()
