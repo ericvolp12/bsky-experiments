@@ -93,6 +93,11 @@ func main() {
 		redisAddress = "localhost:6379"
 	}
 
+	meiliAddress := os.Getenv("MEILI_ADDRESS")
+	if meiliAddress == "" {
+		meiliAddress = "http://localhost:7700"
+	}
+
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     redisAddress,
 		Password: "",
@@ -125,7 +130,7 @@ func main() {
 		ctx,
 		log,
 		includeLinks, postRegistryEnabled, sentimentAnalysisEnabled,
-		dbConnectionString, sentimentServiceHost,
+		dbConnectionString, sentimentServiceHost, meiliAddress,
 		redisGraph,
 		redisClient,
 		workerCount,

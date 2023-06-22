@@ -21,6 +21,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/sentiment"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
+	"github.com/meilisearch/meilisearch-go"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -78,6 +79,8 @@ type BSky struct {
 
 	SentimentAnalysisEnabled bool
 	SentimentAnalysis        *sentiment.Sentiment
+
+	MeiliClient *meilisearch.Client
 }
 
 // NewBSky creates a new BSky struct with an authenticated XRPC client
@@ -86,7 +89,7 @@ func NewBSky(
 	ctx context.Context,
 	log *zap.SugaredLogger,
 	includeLinks, postRegistryEnabled, sentimentAnalysisEnabled bool,
-	dbConnectionString, sentimentServiceHost string,
+	dbConnectionString, sentimentServiceHost, meilisearchHost string,
 	persistedGraph *persistedgraph.PersistedGraph,
 	redisClient *redis.Client,
 	workerCount int,
@@ -106,6 +109,16 @@ func NewBSky(
 
 	if sentimentAnalysisEnabled {
 		sentimentAnalysis = sentiment.NewSentiment(sentimentServiceHost)
+	}
+
+	meiliClient := meilisearch.NewClient(meilisearch.ClientConfig{
+		Host: meilisearchHost,
+	})
+
+	// Check connection to MeiliSearch
+	_, err = meiliClient.Health()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to MeiliSearch: %w", err)
 	}
 
 	log = log.With("source", "event_handler")
@@ -134,6 +147,8 @@ func NewBSky(
 
 		SentimentAnalysisEnabled: sentimentAnalysisEnabled,
 		SentimentAnalysis:        sentimentAnalysis,
+
+		MeiliClient: meiliClient,
 	}
 
 	// Initialize the workers, each with their own BSky Client and Mutex

@@ -265,6 +265,14 @@ func (bsky *BSky) ProcessRepoRecord(
 			log.Errorf("error writing post to registry: %+v\n", err)
 		}
 
+		ti, err := bsky.MeiliClient.Index("posts").UpdateDocuments([]search.Post{post}, "id")
+		if err != nil {
+			log.Errorf("error indexing post: %+v\n", err)
+		}
+		if ti != nil {
+			span.SetAttributes(attribute.Int64("meili.task_uid", ti.TaskUID))
+		}
+
 		// If there are images, write them to the registry
 		if len(images) > 0 {
 			for _, image := range images {
