@@ -41,8 +41,11 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string, workerID int) 
 	ctx, span := tracer.Start(ctx, "ResolveProfile")
 	defer span.End()
 
+	profileCacheKey := bsky.cachesPrefix + ":profile:" + did
+	didCacheKey := bsky.cachesPrefix + ":did:" + did
+
 	// Check the cache first
-	profString, err := bsky.redisClient.Get(ctx, bsky.cachesPrefix+":profile:"+did).Result()
+	profString, err := bsky.redisClient.Get(ctx, profileCacheKey).Result()
 	if err == nil {
 		// If the profile is in the cache, return it
 		profile := &appbsky.ActorDefs_ProfileViewDetailed{}
@@ -100,9 +103,15 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string, workerID int) 
 	}
 
 	// Cache the profile
-	setCmd := bsky.redisClient.Set(ctx, bsky.cachesPrefix+":profile:"+did, profAsJSON, bsky.profileCacheTTL)
+	setCmd := bsky.redisClient.Set(ctx, profileCacheKey, profAsJSON, bsky.profileCacheTTL)
 	if setCmd.Err() != nil {
 		span.SetAttributes(attribute.String("caches.profiles.set.error", setCmd.Err().Error()))
+	}
+
+	// Any time we resolve a profile, we also resolve the handle for free, so we might as well cache it
+	setCmd = bsky.redisClient.Set(ctx, didCacheKey, profile.Handle, bsky.profileCacheTTL)
+	if setCmd.Err() != nil {
+		span.SetAttributes(attribute.String("caches.handles.set.error", setCmd.Err().Error()))
 	}
 
 	return profile, nil
