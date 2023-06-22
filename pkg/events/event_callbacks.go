@@ -135,7 +135,7 @@ func NewBSky(
 		postCacheTTL:    time.Minute * 60,
 
 		RepoRecordQueue: make(chan RepoRecord, 100),
-		bskyLimiter:     rate.NewLimiter(rate.Every(time.Millisecond*110), 1),
+		bskyLimiter:     rate.NewLimiter(rate.Every(time.Millisecond*125), 1),
 
 		WorkerCount: workerCount,
 		Workers:     make([]*Worker, workerCount),
