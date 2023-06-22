@@ -325,7 +325,10 @@ func (bsky *BSky) ProcessRelation(
 
 	log := bsky.Workers[workerID].Logger
 
-	parentAuthorDID, parentAuthorHandle, err := bsky.ResolveDID(ctx, parentPostURI, workerID)
+	slicedURI := strings.TrimPrefix(parentPostURI, "at://")
+	parentAuthorDID := slicedURI[0:strings.Index(slicedURI, "/")]
+
+	parentAuthorHandle, err := bsky.ResolveDID(ctx, parentAuthorDID, workerID)
 	if err != nil {
 		errmsg := fmt.Sprintf("error resolving replying-to post author (%s): %+v\n", parentPostURI, err)
 		log.Errorf("%s\n", errmsg)

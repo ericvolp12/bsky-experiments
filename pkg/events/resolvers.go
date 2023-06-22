@@ -172,13 +172,10 @@ func (bsky *BSky) getHandleFromDirectory(ctx context.Context, did string) (handl
 	return handle, nil
 }
 
-func (bsky *BSky) ResolveDID(ctx context.Context, uri string, workerID int) (did string, handle string, err error) {
+func (bsky *BSky) ResolveDID(ctx context.Context, did string, workerID int) (handle string, err error) {
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "ResolveDID")
 	defer span.End()
-
-	sliced := strings.TrimPrefix(uri, "at://")
-	did = sliced[0:strings.Index(sliced, "/")]
 
 	cacheKey := bsky.cachesPrefix + ":did:" + did
 
@@ -187,7 +184,7 @@ func (bsky *BSky) ResolveDID(ctx context.Context, uri string, workerID int) (did
 	if err == nil {
 		span.SetAttributes(attribute.Bool("caches.did.hit", true))
 		cacheHits.WithLabelValues("did").Inc()
-		return did, handleFromCache, nil
+		return handleFromCache, nil
 	} else if err != redis.Nil {
 		span.SetAttributes(attribute.String("caches.did.get.error", err.Error()))
 	}
@@ -199,7 +196,7 @@ func (bsky *BSky) ResolveDID(ctx context.Context, uri string, workerID int) (did
 	handle, err = bsky.getHandleFromDirectory(ctx, did)
 	if err != nil {
 		span.SetAttributes(attribute.String("did.get.error", err.Error()))
-		return did, handle, fmt.Errorf("error getting handle for %s: %w", did, err)
+		return handle, fmt.Errorf("error getting handle for %s: %w", did, err)
 	}
 
 	setCmd := bsky.redisClient.Set(ctx, cacheKey, handle, bsky.profileCacheTTL)
@@ -207,7 +204,7 @@ func (bsky *BSky) ResolveDID(ctx context.Context, uri string, workerID int) (did
 		span.SetAttributes(attribute.String("caches.did.set.error", setCmd.Err().Error()))
 	}
 
-	return did, handle, nil
+	return handle, nil
 }
 
 // ResolvePost resolves a post from a URI using the cache or the API
