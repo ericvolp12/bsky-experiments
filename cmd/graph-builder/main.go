@@ -127,6 +127,7 @@ func main() {
 		includeLinks, postRegistryEnabled, sentimentAnalysisEnabled,
 		dbConnectionString, sentimentServiceHost,
 		redisGraph,
+		redisClient,
 		workerCount,
 	)
 	if err != nil {

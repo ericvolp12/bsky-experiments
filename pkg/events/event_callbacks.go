@@ -21,7 +21,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/sentiment"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
-	lru "github.com/hashicorp/golang-lru/arc/v2"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
@@ -60,13 +60,10 @@ type BSky struct {
 
 	LastSeq int64 // LastSeq is the last sequence number processed
 
-	// Generate a Profile Cache with a TTL
-	profileCache    *lru.ARCCache[string, ProfileCacheEntry]
+	redisClient     *redis.Client
+	cachesPrefix    string
 	profileCacheTTL time.Duration
-
-	// Generate a Post Cache with a TTL
-	postCache    *lru.ARCCache[string, PostCacheEntry]
-	postCacheTTL time.Duration
+	postCacheTTL    time.Duration
 
 	RepoRecordQueue chan RepoRecord
 
@@ -91,19 +88,12 @@ func NewBSky(
 	includeLinks, postRegistryEnabled, sentimentAnalysisEnabled bool,
 	dbConnectionString, sentimentServiceHost string,
 	persistedGraph *persistedgraph.PersistedGraph,
+	redisClient *redis.Client,
 	workerCount int,
 ) (*BSky, error) {
-	postCache, err := lru.NewARC[string, PostCacheEntry](5000)
-	if err != nil {
-		return nil, err
-	}
-
-	profileCache, err := lru.NewARC[string, ProfileCacheEntry](15000)
-	if err != nil {
-		return nil, err
-	}
 
 	var postRegistry *search.PostRegistry
+	var err error
 
 	if postRegistryEnabled {
 		postRegistry, err = search.NewPostRegistry(dbConnectionString)
@@ -127,10 +117,9 @@ func NewBSky(
 
 		Logger: log,
 
-		profileCache: profileCache,
-		postCache:    postCache,
-
 		// 60 minute Cache TTLs
+		cachesPrefix:    "graph_builder",
+		redisClient:     redisClient,
 		profileCacheTTL: time.Minute * 60,
 		postCacheTTL:    time.Minute * 60,
 

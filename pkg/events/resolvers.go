@@ -2,29 +2,23 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
-	"unsafe"
 
 	"github.com/bluesky-social/indigo/api/bsky"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
-
-// ProfileCacheEntry is a struct that holds a profile and an expiration time
-type ProfileCacheEntry struct {
-	Profile *bsky.ActorDefs_ProfileViewDetailed
-	Expire  time.Time
-}
 
 // PostCacheEntry is a struct that holds a PostView and an expiration time
 type PostCacheEntry struct {
 	Post         *bsky.FeedDefs_PostView
 	TimeoutCount int
-	Expire       time.Time
 }
 
 // RefreshAuthToken refreshes the auth token for the client
@@ -43,35 +37,46 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string, workerID int) 
 	tracer := otel.Tracer("graph-builder")
 	ctx, span := tracer.Start(ctx, "ResolveProfile")
 	defer span.End()
+
 	// Check the cache first
-	entry, ok := bsky.profileCache.Get(did)
-	if ok && entry.Expire.After(time.Now()) {
-		cacheHits.WithLabelValues("profile").Inc()
-		span.SetAttributes(attribute.Bool("caches.profiles.hit", true))
-		return entry.Profile, nil
+	profString, err := bsky.redisClient.Get(ctx, bsky.cachesPrefix+":profile:"+did).Result()
+	if err == nil {
+		// If the profile is in the cache, return it
+		profile := &appbsky.ActorDefs_ProfileViewDetailed{}
+		err := json.Unmarshal([]byte(profString), profile)
+		if err == nil {
+			span.SetAttributes(attribute.Bool("caches.profiles.hit", true))
+			cacheHits.WithLabelValues("profile").Inc()
+			return profile, nil
+		}
+
+		// If there was an error scanning the profile, add attributes to the span
+		span.SetAttributes(attribute.String("caches.profiles.scan.error", err.Error()))
+	} else if err != redis.Nil {
+		span.SetAttributes(attribute.String("caches.profiles.get.error", err.Error()))
 	}
 
 	span.SetAttributes(attribute.Bool("caches.profiles.hit", false))
 	cacheMisses.WithLabelValues("profile").Inc()
 
 	// Wait on the rate limiter
-	span.AddEvent("ResolveProfile:WaitOnRateLimiter")
-	err := bsky.bskyLimiter.Wait(ctx)
+	span.AddEvent("WaitOnRateLimiter")
+	err = bsky.bskyLimiter.Wait(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("rate limiter error: %w", err)
 	}
 
 	//Lock the client
-	span.AddEvent("ResolveProfile:AcquireClientRLock")
+	span.AddEvent("AcquireClientRLock")
 	worker.ClientMux.RLock()
-	span.AddEvent("ResolveProfile:ClientRLockAcquired")
+	span.AddEvent("ClientRLockAcquired")
 	// Get the profile from the API
 	start := time.Now()
 	profile, err := appbsky.ActorGetProfile(ctx, worker.Client, did)
 	elapsed := time.Since(start)
 	apiCallDurationHistogram.WithLabelValues("ActorGetProfile").Observe(elapsed.Seconds())
 	// Unlock the client
-	span.AddEvent("ResolveProfile:ReleaseClientRLock")
+	span.AddEvent("ReleaseClientRLock")
 	worker.ClientMux.RUnlock()
 	if err != nil {
 		return nil, err
@@ -84,16 +89,18 @@ func (bsky *BSky) ResolveProfile(ctx context.Context, did string, workerID int) 
 
 	span.SetAttributes(attribute.Bool("profile.found", true))
 
-	newEntry := ProfileCacheEntry{
-		Profile: profile,
-		Expire:  time.Now().Add(bsky.profileCacheTTL),
+	// Marshal the profile as JSON
+	profAsJSON, err := json.Marshal(profile)
+	if err != nil {
+		span.SetAttributes(attribute.String("profile.marshal.error", err.Error()))
+		return profile, nil
 	}
 
 	// Cache the profile
-	bsky.profileCache.Add(did, newEntry)
-
-	// Update the cache size metric
-	cacheSize.WithLabelValues("profile").Add(float64(unsafe.Sizeof(newEntry)))
+	setCmd := bsky.redisClient.Set(ctx, bsky.cachesPrefix+":profile:"+did, profAsJSON, bsky.profileCacheTTL)
+	if setCmd.Err() != nil {
+		span.SetAttributes(attribute.String("caches.profiles.set.error", setCmd.Err().Error()))
+	}
 
 	return profile, nil
 }
@@ -105,58 +112,70 @@ func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*b
 	ctx, span := tracer.Start(ctx, "ResolvePost")
 	defer span.End()
 	// Check the cache first
-	entry, ok := bsky.postCache.Get(uri)
-	if ok && entry.Expire.After(time.Now()) {
-		// If we've timed out 5 times in a row trying to get this post, it's probably a hellthread
-		// Return the cached post and don't try to get it again
-		if entry.TimeoutCount > 5 {
-			span.SetAttributes(attribute.Bool("caches.posts.timeout_present", true))
-			return nil, fmt.Errorf("hellthread detected - returning cached post timeout for: %s", uri)
-		} else if entry.Post != nil {
-			cacheHits.WithLabelValues("post").Inc()
-			span.SetAttributes(attribute.Bool("caches.post.hit", true))
-			return entry.Post, nil
+	var cacheEntry *PostCacheEntry
+	postString, err := bsky.redisClient.Get(ctx, bsky.cachesPrefix+":post:"+uri).Result()
+	if err == nil {
+		// If the post is in the cache, return it
+		cacheEntry = &PostCacheEntry{}
+		err := json.Unmarshal([]byte(postString), cacheEntry)
+		if err == nil {
+			if cacheEntry.TimeoutCount > 5 {
+				span.SetAttributes(attribute.Bool("caches.posts.timeout_present", true))
+				return nil, fmt.Errorf("hellthread detected - returning cached post timeout for: %s", uri)
+			} else if cacheEntry.Post != nil {
+				span.SetAttributes(attribute.Bool("caches.post.hit", true))
+				cacheHits.WithLabelValues("post").Inc()
+				return cacheEntry.Post, nil
+			}
 		}
+		// If there was an error scanning the post, add attributes to the span
+		span.SetAttributes(attribute.String("caches.post.scan.error", err.Error()))
+	} else if err != redis.Nil {
+		span.SetAttributes(attribute.String("caches.post.get.error", err.Error()))
 	}
 
 	span.SetAttributes(attribute.Bool("caches.post.hit", false))
 	cacheMisses.WithLabelValues("post").Inc()
 
-	span.AddEvent("ResolvePost:WaitOnRateLimiter")
+	span.AddEvent("WaitOnRateLimiter")
 	// Wait on the rate limiter
-	err := bsky.bskyLimiter.Wait(ctx)
+	err = bsky.bskyLimiter.Wait(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("rate limiter error: %w", err)
 	}
 
 	//Lock the client
-	span.AddEvent("ResolvePost:AcquireClientRLock")
+	span.AddEvent("AcquireClientRLock")
 	worker.ClientMux.RLock()
-	span.AddEvent("ResolvePost:ClientRLockAcquired")
+	span.AddEvent("ClientRLockAcquired")
 	// Get the post from the API
 	posts, err := FeedGetPostsWithTimeout(ctx, worker.Client, []string{uri}, time.Second*2)
 	// Unlock the client
-	span.AddEvent("ResolvePost:ReleaseClientRLock")
+	span.AddEvent("ReleaseClientRLock")
 	worker.ClientMux.RUnlock()
 	if err != nil {
 		// Check if the error is a timeout
 		var timeoutErr *TimeoutError
 		if errors.As(err, &timeoutErr) {
 			span.SetAttributes(attribute.Bool("post.resolve.timeout", true))
-			entry, ok := bsky.postCache.Get(uri)
-			if ok {
+			if cacheEntry != nil {
 				// If the post is cached, increment the timeout count
-				entry.TimeoutCount++
-				entry.Expire = time.Now().Add(bsky.postCacheTTL)
-				bsky.postCache.Add(uri, entry)
+				cacheEntry.TimeoutCount++
 			} else {
-				// If the post isn't cached, cache it with a timeout count of 1
-				bsky.postCache.Add(uri, PostCacheEntry{
+				cacheEntry = &PostCacheEntry{
 					Post:         nil,
 					TimeoutCount: 1,
-					Expire:       time.Now().Add(bsky.postCacheTTL),
-				})
+				}
 			}
+			// Marshal the cacheEntry as JSON
+			entryJSON, err := json.Marshal(cacheEntry)
+			if err != nil {
+				span.SetAttributes(attribute.String("post.marshal.error", err.Error()))
+				return nil, err
+			}
+
+			// Cache the profile
+			bsky.redisClient.Set(ctx, bsky.cachesPrefix+":post:"+uri, entryJSON, bsky.postCacheTTL)
 		}
 		return nil, err
 	}
@@ -166,18 +185,21 @@ func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*b
 		len(posts.Posts) > 0 &&
 		posts.Posts[0].Author != nil {
 
-		span.SetAttributes(attribute.Bool("profile.found", true))
+		span.SetAttributes(attribute.Bool("post.found", true))
 
-		newEntry := PostCacheEntry{
-			Post:   posts.Posts[0],
-			Expire: time.Now().Add(bsky.postCacheTTL),
+		cacheEntry = &PostCacheEntry{
+			Post: posts.Posts[0],
+		}
+
+		// Marshal the cacheEntry as JSON
+		entryJSON, err := json.Marshal(cacheEntry)
+		if err != nil {
+			span.SetAttributes(attribute.String("post.marshal.error", err.Error()))
+			return posts.Posts[0], nil
 		}
 
 		// Cache the profile
-		bsky.postCache.Add(uri, newEntry)
-
-		// Update the cache size metric
-		cacheSize.WithLabelValues("post").Add(float64(unsafe.Sizeof(newEntry)))
+		bsky.redisClient.Set(ctx, bsky.cachesPrefix+":post:"+uri, entryJSON, bsky.postCacheTTL)
 
 		return posts.Posts[0], nil
 	}
