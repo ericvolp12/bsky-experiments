@@ -209,6 +209,12 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 		switch ek {
 		case repomgr.EvtKindCreateRecord, repomgr.EvtKindUpdateRecord:
 			span.SetAttributes(attribute.String("op.path", op.Path))
+			// Check if this record is modifying the user's profile
+			if op.Path == "app.bsky.actor.profile/self" {
+				log.Infof("found profile update for %s", evt.Repo)
+				return nil
+			}
+
 			// Grab the record from the merkel tree
 			rc, rec, err := rr.GetRecord(ctx, op.Path)
 			if err != nil {
