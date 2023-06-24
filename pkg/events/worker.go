@@ -265,10 +265,12 @@ func (bsky *BSky) ProcessRepoRecord(
 			log.Errorf("error writing post to registry: %+v\n", err)
 		}
 
+		span.AddEvent("IndexPost")
 		ti, err := bsky.MeiliClient.Index("posts").UpdateDocuments([]search.Post{post}, "id")
 		if err != nil {
 			log.Errorf("error indexing post: %+v\n", err)
 		}
+		span.AddEvent("IndexPostDone")
 		if ti != nil {
 			span.SetAttributes(attribute.Int64("meili.task_uid", ti.TaskUID))
 		}
@@ -287,6 +289,7 @@ func (bsky *BSky) ProcessRepoRecord(
 					ThumbnailURL: image.ThumbnailURL,
 					CreatedAt:    t,
 				}
+				span.AddEvent("AddImageToRegistry")
 				err = bsky.PostRegistry.AddImage(ctx, &registryImage)
 				if err != nil {
 					log.Errorf("error writing image to registry: %+v\n", err)
@@ -295,6 +298,7 @@ func (bsky *BSky) ProcessRepoRecord(
 		}
 	}
 
+	span.AddEvent("LogResult")
 	log.Infow("post processed",
 		"post_id", postID,
 		"post_link", postLink,
