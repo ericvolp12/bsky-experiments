@@ -69,7 +69,7 @@ func main() {
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
 		log.Println("initializing tracer...")
 		// Start tracer with 20% sampling rate
-		shutdown, err := tracing.InstallExportPipeline(ctx, 0.2)
+		shutdown, err := tracing.InstallExportPipeline(ctx, "BSky-Feed-Generator-Go", 0.2)
 		if err != nil {
 			log.Fatal(err)
 		}

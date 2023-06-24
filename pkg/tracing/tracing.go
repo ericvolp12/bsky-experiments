@@ -12,26 +12,26 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 )
 
-func InstallExportPipeline(ctx context.Context, ratio float64) (func(context.Context) error, error) {
+func InstallExportPipeline(ctx context.Context, serviceName string, sampleRatio float64) (func(context.Context) error, error) {
 	client := otlptracehttp.NewClient()
 	exporter, err := otlptrace.New(ctx, client)
 	if err != nil {
 		return nil, fmt.Errorf("creating OTLP trace exporter: %w", err)
 	}
 
-	tracerProvider := newTraceProvider(exporter, ratio)
+	tracerProvider := newTraceProvider(exporter, serviceName, sampleRatio)
 	otel.SetTracerProvider(tracerProvider)
 
 	return tracerProvider.Shutdown, nil
 }
 
-func newTraceProvider(exp sdktrace.SpanExporter, ratio float64) *sdktrace.TracerProvider {
+func newTraceProvider(exp sdktrace.SpanExporter, serviceName string, sampleRatio float64) *sdktrace.TracerProvider {
 	// Ensure default SDK resources and the required service name are set.
 	r, err := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
-			semconv.ServiceName("BSky-Feed-Generator-Go"),
+			semconv.ServiceName(serviceName),
 		),
 	)
 
@@ -40,7 +40,7 @@ func newTraceProvider(exp sdktrace.SpanExporter, ratio float64) *sdktrace.Tracer
 	}
 
 	// initialize the traceIDRatioBasedSampler
-	traceIDRatioBasedSampler := sdktrace.TraceIDRatioBased(ratio)
+	traceIDRatioBasedSampler := sdktrace.TraceIDRatioBased(sampleRatio)
 
 	return sdktrace.NewTracerProvider(
 		sdktrace.WithSampler(traceIDRatioBasedSampler),
