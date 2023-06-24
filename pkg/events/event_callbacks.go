@@ -311,6 +311,7 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 				return nil
 			}
 
+			span.AddEvent("Adding to Queue")
 			// Add the RepoRecord to the Queue
 			bsky.RepoRecordQueue <- RepoRecord{
 				ctx:       ctx,
@@ -319,6 +320,7 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 				opPath:    op.Path,
 				eventTime: evt.Time,
 			}
+			span.AddEvent("Added to Queue")
 		case repomgr.EvtKindDeleteRecord:
 			deleteRecordsProcessed.Inc()
 			span.SetAttributes(attribute.String("evt.kind", "delete"))

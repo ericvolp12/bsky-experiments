@@ -68,7 +68,7 @@ func main() {
 
 	includeLinks := os.Getenv("INCLUDE_LINKS") == "true"
 
-	workerCount := 5
+	workerCount := 10
 
 	postRegistryEnabled := false
 	dbConnectionString := os.Getenv("REGISTRY_DB_CONNECTION_STRING")

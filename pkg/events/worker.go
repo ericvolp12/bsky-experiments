@@ -265,15 +265,17 @@ func (bsky *BSky) ProcessRepoRecord(
 			log.Errorf("error writing post to registry: %+v\n", err)
 		}
 
-		span.AddEvent("IndexPost")
-		ti, err := bsky.MeiliClient.Index("posts").UpdateDocuments([]search.Post{post}, "id")
-		if err != nil {
-			log.Errorf("error indexing post: %+v\n", err)
-		}
-		span.AddEvent("IndexPostDone")
-		if ti != nil {
-			span.SetAttributes(attribute.Int64("meili.task_uid", ti.TaskUID))
-		}
+		// iStart := time.Now()
+		// span.AddEvent("IndexPost")
+		// ti, err := bsky.MeiliClient.Index("posts").UpdateDocuments([]search.Post{post}, "id")
+		// if err != nil {
+		// 	log.Errorf("error indexing post: %+v\n", err)
+		// }
+		// span.AddEvent("IndexPostDone")
+		// if ti != nil {
+		// 	span.SetAttributes(attribute.Int64("meili.task_uid", ti.TaskUID))
+		// }
+		// indexingLatency.Observe(time.Since(iStart).Seconds())
 
 		// If there are images, write them to the registry
 		if len(images) > 0 {
