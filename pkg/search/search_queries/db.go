@@ -112,6 +112,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPostPageStmt, err = db.PrepareContext(ctx, getPostPage); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostPage: %w", err)
 	}
+	if q.getPostPageCursorStmt, err = db.PrepareContext(ctx, getPostPageCursor); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostPageCursor: %w", err)
+	}
 	if q.getPostWithAuthorHandleStmt, err = db.PrepareContext(ctx, getPostWithAuthorHandle); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostWithAuthorHandle: %w", err)
 	}
@@ -318,6 +321,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPostPageStmt: %w", cerr)
 		}
 	}
+	if q.getPostPageCursorStmt != nil {
+		if cerr := q.getPostPageCursorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostPageCursorStmt: %w", cerr)
+		}
+	}
 	if q.getPostWithAuthorHandleStmt != nil {
 		if cerr := q.getPostWithAuthorHandleStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostWithAuthorHandleStmt: %w", cerr)
@@ -472,6 +480,7 @@ type Queries struct {
 	getOldestPresentParentStmt                      *sql.Stmt
 	getPostStmt                                     *sql.Stmt
 	getPostPageStmt                                 *sql.Stmt
+	getPostPageCursorStmt                           *sql.Stmt
 	getPostWithAuthorHandleStmt                     *sql.Stmt
 	getPostsPageByAuthorLabelAliasStmt              *sql.Stmt
 	getPostsPageByAuthorLabelAliasFromViewStmt      *sql.Stmt
@@ -525,6 +534,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getOldestPresentParentStmt:         q.getOldestPresentParentStmt,
 		getPostStmt:                        q.getPostStmt,
 		getPostPageStmt:                    q.getPostPageStmt,
+		getPostPageCursorStmt:              q.getPostPageCursorStmt,
 		getPostWithAuthorHandleStmt:        q.getPostWithAuthorHandleStmt,
 		getPostsPageByAuthorLabelAliasStmt: q.getPostsPageByAuthorLabelAliasStmt,
 		getPostsPageByAuthorLabelAliasFromViewStmt:      q.getPostsPageByAuthorLabelAliasFromViewStmt,

@@ -15,6 +15,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/feed-generator/endpoints"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/authorlabel"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/cluster"
+	"github.com/ericvolp12/bsky-experiments/pkg/feeds/firehose"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/postlabel"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
@@ -139,6 +140,13 @@ func main() {
 		log.Fatalf("Failed to create AuthorLabelFeed: %v", err)
 	}
 	feedGenerator.AddFeed(authorLabelFeedAliases, authorLabelFeed)
+
+	// Create a firehose feed
+	firehoseFeed, firehoseFeedAliases, err := firehose.NewFirehoseFeed(ctx, feedActorDID, postRegistry)
+	if err != nil {
+		log.Fatalf("Failed to create FirehoseFeed: %v", err)
+	}
+	feedGenerator.AddFeed(firehoseFeedAliases, firehoseFeed)
 
 	router := gin.New()
 
