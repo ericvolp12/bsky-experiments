@@ -17,8 +17,17 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	"github.com/meilisearch/meilisearch-go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
+
+type Indexer struct {
+	PostRegistry *search.PostRegistry
+	MeiliClient  *meilisearch.Client
+	Detection    *objectdetection.ObjectDetectionImpl
+	Logger       *zap.SugaredLogger
+}
 
 func main() {
 	ctx := context.Background()
@@ -94,6 +103,13 @@ func main() {
 		log.Info(http.ListenAndServe("0.0.0.0:8094", nil))
 	}()
 
+	indexer := &Indexer{
+		PostRegistry: postRegistry,
+		MeiliClient:  meiliClient,
+		Detection:    detection,
+		Logger:       log,
+	}
+
 	// Create a cancellable context
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -113,95 +129,9 @@ func main() {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
-		log = log.With("source", "image_processor")
 		defer wg.Done()
 		for {
-			log.Info("Processing images...")
-			start := time.Now()
-			unprocessedImages, err := postRegistry.GetUnprocessedImages(ctx, 50)
-			if err != nil {
-				if errors.As(err, &search.NotFoundError{}) {
-					log.Info("No unprocessed images found, skipping process cycle...")
-
-				} else {
-					log.Errorf("Failed to get unprocessed images, skipping process cycle: %v", err)
-				}
-				time.Sleep(5 * time.Second)
-				continue
-			}
-
-			if len(unprocessedImages) == 0 {
-				log.Info("No unprocessed images found, skipping process cycle...")
-				time.Sleep(5 * time.Second)
-				continue
-			}
-
-			imageMetas := make([]*objectdetection.ImageMeta, len(unprocessedImages))
-			for i, image := range unprocessedImages {
-				imageMetas[i] = &objectdetection.ImageMeta{
-					CID:       image.CID,
-					URL:       image.FullsizeURL,
-					MimeType:  image.MimeType,
-					CreatedAt: image.CreatedAt,
-				}
-			}
-
-			results, err := detection.ProcessImages(ctx, imageMetas)
-			if err != nil {
-				log.Errorf("Failed to process images: %v", err)
-				time.Sleep(5 * time.Second)
-				continue
-			}
-
-			executionTime := time.Now()
-
-			successCount := 0
-
-			for idx, result := range results {
-				if len(result.Results) > 0 {
-					successCount++
-				}
-
-				cvClasses, err := json.Marshal(result.Results)
-				if err != nil {
-					log.Errorf("Failed to marshal classes: %v", err)
-					continue
-				}
-
-				err = postRegistry.AddCVDataToImage(
-					ctx,
-					result.Meta.CID,
-					unprocessedImages[idx].PostID,
-					executionTime,
-					cvClasses,
-				)
-				if err != nil {
-					log.Errorf("Failed to update image: %v", err)
-					continue
-				}
-
-				imageLabels := []string{}
-				for _, class := range result.Results {
-					if class.Confidence >= 0.75 {
-						imageLabels = append(imageLabels, class.Label)
-					}
-				}
-
-				for _, label := range imageLabels {
-					postLabel := fmt.Sprintf("%s:%s", "cv", label)
-					err = postRegistry.AddPostLabel(ctx, unprocessedImages[idx].PostID, postLabel)
-					if err != nil {
-						log.Errorf("Failed to add label to post: %v", err)
-						continue
-					}
-				}
-			}
-
-			log.Infow("Finished processing images...",
-				"batch_size", len(unprocessedImages),
-				"successfully_processed_image_count", successCount,
-				"processing_time", time.Since(start),
-			)
+			indexer.ProcessImages(ctx)
 			select {
 			case <-ctx.Done():
 				log.Info("Context cancelled, exiting...")
@@ -218,6 +148,7 @@ func main() {
 		log = log.With("source", "meilisearch_indexer")
 		defer wg.Done()
 		for {
+			indexer.IndexPosts(ctx)
 			select {
 			case <-ctx.Done():
 				log.Info("Context cancelled, exiting...")
@@ -225,56 +156,7 @@ func main() {
 			default:
 				time.Sleep(30 * time.Second)
 			}
-			log.Info("index loop waking up...")
-			start := time.Now()
-			log.Info("getting unindexed posts...")
-			posts, err := postRegistry.GetUnindexedPostPage(ctx, 10000, 0)
-			if err != nil {
-				// Check if error is a not found error
-				if errors.Is(err, search.PostsNotFound) {
-					log.Info("no posts to index, sleeping...")
-					continue
-				}
-				log.Errorf("error getting posts: %v", err)
-				continue
-			}
 
-			fetchDone := time.Now()
-
-			log.Info("submitting %d posts to meilisearch...", len(posts))
-
-			ti, err := meiliClient.Index("posts").UpdateDocuments(posts, "id")
-			if err != nil {
-				log.Errorf("error indexing posts: %v", err)
-				continue
-			}
-
-			indexDone := time.Now()
-
-			log.Infof("...%d posts queued for index in meilisearch: %d", len(posts), ti.TaskUID)
-
-			// Set indexed at timestamp on posts
-			postIds := make([]string, len(posts))
-			for i, post := range posts {
-				postIds[i] = post.ID
-			}
-
-			log.Infof("setting indexed at timestamp on %d posts...", len(postIds))
-			err = postRegistry.SetIndexedAtTimestamp(ctx, postIds, time.Now())
-			if err != nil {
-				log.Errorf("error setting indexed at timestamp: %v", err)
-				continue
-			}
-
-			updateDone := time.Now()
-
-			log.Infow("finished indexing posts, sleeping...",
-				"posts_indexed", len(posts),
-				"indexing_time", time.Since(start),
-				"fetch_time", fetchDone.Sub(start),
-				"index_time", indexDone.Sub(fetchDone),
-				"update_time", updateDone.Sub(indexDone),
-			)
 		}
 	}()
 
@@ -282,4 +164,169 @@ func main() {
 	wg.Wait()
 
 	log.Info("Exiting...")
+}
+
+func (indexer *Indexer) IndexPosts(ctx context.Context) {
+	tracer := otel.Tracer("MeilisearchIndexer")
+	ctx, span := tracer.Start(ctx, "IndexPosts")
+	defer span.End()
+
+	log := indexer.Logger.With("source", "meilisearch_indexer")
+	log.Info("index loop waking up...")
+	start := time.Now()
+	log.Info("getting unindexed posts...")
+	posts, err := indexer.PostRegistry.GetUnindexedPostPage(ctx, 10000, 0)
+	if err != nil {
+		// Check if error is a not found error
+		if errors.Is(err, search.PostsNotFound) {
+			log.Info("no posts to index, sleeping...")
+			return
+		}
+		log.Errorf("error getting posts: %v", err)
+		return
+	}
+
+	fetchDone := time.Now()
+
+	log.Info("submitting %d posts to meilisearch...", len(posts))
+
+	span.AddEvent("Submitting posts to Meilisearch")
+	ti, err := indexer.MeiliClient.Index("posts").UpdateDocuments(posts, "id")
+	if err != nil {
+		log.Errorf("error indexing posts: %v", err)
+		return
+	}
+	span.AddEvent("Posts submitted to Meilisearch")
+
+	indexDone := time.Now()
+
+	log.Infof("...%d posts queued for index in meilisearch: %d", len(posts), ti.TaskUID)
+
+	// Set indexed at timestamp on posts
+	postIds := make([]string, len(posts))
+	for i, post := range posts {
+		postIds[i] = post.ID
+	}
+
+	log.Infof("setting indexed at timestamp on %d posts...", len(postIds))
+	err = indexer.PostRegistry.SetIndexedAtTimestamp(ctx, postIds, time.Now())
+	if err != nil {
+		log.Errorf("error setting indexed at timestamp: %v", err)
+		return
+	}
+
+	updateDone := time.Now()
+
+	span.SetAttributes(
+		attribute.Int("posts_indexed", len(posts)),
+		attribute.String("indexing_time", time.Since(start).String()),
+		attribute.String("fetch_time", fetchDone.Sub(start).String()),
+		attribute.String("index_time", indexDone.Sub(fetchDone).String()),
+		attribute.String("update_time", updateDone.Sub(indexDone).String()),
+	)
+
+	log.Infow("finished indexing posts, sleeping...",
+		"posts_indexed", len(posts),
+		"indexing_time", time.Since(start),
+		"fetch_time", fetchDone.Sub(start),
+		"index_time", indexDone.Sub(fetchDone),
+		"update_time", updateDone.Sub(indexDone),
+	)
+}
+
+func (indexer *Indexer) ProcessImages(ctx context.Context) {
+	tracer := otel.Tracer("ImageProcessor")
+	ctx, span := tracer.Start(ctx, "ProcessImages")
+	defer span.End()
+
+	log := indexer.Logger.With("source", "image_processor")
+	log.Info("Processing images...")
+	start := time.Now()
+	unprocessedImages, err := indexer.PostRegistry.GetUnprocessedImages(ctx, 50)
+	if err != nil {
+		if errors.As(err, &search.NotFoundError{}) {
+			log.Info("No unprocessed images found, skipping process cycle...")
+
+		} else {
+			log.Errorf("Failed to get unprocessed images, skipping process cycle: %v", err)
+		}
+		return
+	}
+
+	if len(unprocessedImages) == 0 {
+		log.Info("No unprocessed images found, skipping process cycle...")
+		return
+	}
+
+	imageMetas := make([]*objectdetection.ImageMeta, len(unprocessedImages))
+	for i, image := range unprocessedImages {
+		imageMetas[i] = &objectdetection.ImageMeta{
+			CID:       image.CID,
+			URL:       image.FullsizeURL,
+			MimeType:  image.MimeType,
+			CreatedAt: image.CreatedAt,
+		}
+	}
+
+	results, err := indexer.Detection.ProcessImages(ctx, imageMetas)
+	if err != nil {
+		log.Errorf("Failed to process images: %v", err)
+		return
+	}
+
+	executionTime := time.Now()
+
+	successCount := 0
+
+	for idx, result := range results {
+		if len(result.Results) > 0 {
+			successCount++
+		}
+
+		cvClasses, err := json.Marshal(result.Results)
+		if err != nil {
+			log.Errorf("Failed to marshal classes: %v", err)
+			continue
+		}
+
+		err = indexer.PostRegistry.AddCVDataToImage(
+			ctx,
+			result.Meta.CID,
+			unprocessedImages[idx].PostID,
+			executionTime,
+			cvClasses,
+		)
+		if err != nil {
+			log.Errorf("Failed to update image: %v", err)
+			continue
+		}
+
+		imageLabels := []string{}
+		for _, class := range result.Results {
+			if class.Confidence >= 0.75 {
+				imageLabels = append(imageLabels, class.Label)
+			}
+		}
+
+		for _, label := range imageLabels {
+			postLabel := fmt.Sprintf("%s:%s", "cv", label)
+			err = indexer.PostRegistry.AddPostLabel(ctx, unprocessedImages[idx].PostID, postLabel)
+			if err != nil {
+				log.Errorf("Failed to add label to post: %v", err)
+				continue
+			}
+		}
+	}
+
+	span.SetAttributes(
+		attribute.Int("batch_size", len(unprocessedImages)),
+		attribute.Int("successful_image_count", successCount),
+		attribute.String("processing_time", time.Since(start).String()),
+	)
+
+	log.Infow("Finished processing images...",
+		"batch_size", len(unprocessedImages),
+		"successfully_processed_image_count", successCount,
+		"processing_time", time.Since(start),
+	)
 }

@@ -49,8 +49,8 @@ func NewObjectDetection(objectDetectionServiceHost string) *ObjectDetectionImpl 
 }
 
 func (o *ObjectDetectionImpl) ProcessImages(ctx context.Context, imageMetas []*ImageMeta) ([]*ImageResult, error) {
-	tracer := otel.Tracer("image-processor")
-	ctx, span := tracer.Start(ctx, "ObjectDetection:ProcessImages")
+	tracer := otel.Tracer("ObjectDetection")
+	ctx, span := tracer.Start(ctx, "ProcessImages")
 	defer span.End()
 
 	url := fmt.Sprintf("%s/detect_objects", o.ObjectDetectionServiceHost)
