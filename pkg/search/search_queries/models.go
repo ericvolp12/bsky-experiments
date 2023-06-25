@@ -68,6 +68,7 @@ type Post struct {
 	ParentRelationship  sql.NullString  `json:"parent_relationship"`
 	Sentiment           sql.NullString  `json:"sentiment"`
 	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
+	IndexedAt           sql.NullTime    `json:"indexed_at"`
 }
 
 type PostHotness struct {

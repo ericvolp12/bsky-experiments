@@ -5,6 +5,8 @@ package search_queries
 
 import (
 	"context"
+	"database/sql"
+	"time"
 )
 
 const getPostsPageWithPostLabel = `-- name: GetPostsPageWithPostLabel :many
@@ -26,7 +28,20 @@ type GetPostsPageWithPostLabelParams struct {
 	Limit    int32       `json:"limit"`
 }
 
-func (q *Queries) GetPostsPageWithPostLabel(ctx context.Context, arg GetPostsPageWithPostLabelParams) ([]Post, error) {
+type GetPostsPageWithPostLabelRow struct {
+	ID                  string          `json:"id"`
+	Text                string          `json:"text"`
+	ParentPostID        sql.NullString  `json:"parent_post_id"`
+	RootPostID          sql.NullString  `json:"root_post_id"`
+	AuthorDid           string          `json:"author_did"`
+	CreatedAt           time.Time       `json:"created_at"`
+	HasEmbeddedMedia    bool            `json:"has_embedded_media"`
+	ParentRelationship  sql.NullString  `json:"parent_relationship"`
+	Sentiment           sql.NullString  `json:"sentiment"`
+	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
+}
+
+func (q *Queries) GetPostsPageWithPostLabel(ctx context.Context, arg GetPostsPageWithPostLabelParams) ([]GetPostsPageWithPostLabelRow, error) {
 	rows, err := q.query(ctx, q.getPostsPageWithPostLabelStmt, getPostsPageWithPostLabel,
 		arg.Label,
 		arg.Cursor,
@@ -37,9 +52,9 @@ func (q *Queries) GetPostsPageWithPostLabel(ctx context.Context, arg GetPostsPag
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Post
+	var items []GetPostsPageWithPostLabelRow
 	for rows.Next() {
-		var i Post
+		var i GetPostsPageWithPostLabelRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Text,

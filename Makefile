@@ -75,14 +75,14 @@ object-detection-gpu-up:
 	@echo "Starting Object Detection API with GPU Acceleration..."
 	docker compose -f build/object-detection/gpu.docker-compose.yml up --build -d
 
-# Build the Image Processor Go binary
-build-image-processor:
-	@echo "Building Image Processor Go binary..."
-	$(GO_CMD_W_CGO) build -o image-processor cmd/image-processor/*.go
+# Build the Indexer Go binary
+build-indexer:
+	@echo "Building Indexer Go binary..."
+	$(GO_CMD_W_CGO) build -o indexer cmd/indexer/*.go
 
-image-processor-up:
-	@echo "Starting Image Processor..."
-	docker compose -f build/image-processor/docker-compose.yml up --build -d
+indexer-up:
+	@echo "Starting Indexer..."
+	docker compose -f build/indexer/docker-compose.yml up --build -d
 
 # Build the Feedgen Go binary
 build-feedgen-go:
@@ -113,4 +113,4 @@ sqlc:
 	@echo "Generating SQLC code..."
 	sqlc generate -f pkg/search/sqlc.yaml
 
-.PHONY: build-graph-builder docker-build-graph-builder build-search docker-build-search sqlc graph-builder-up search-up graph-builder-restart search-restart layout-up ts-layout-up sentiment-up sentiment-gpu-up feedgen-up object-detection-up object-detection-gpu-up build-image-processor image-processor-up build-feedgen-go feedgen-go-up
+.PHONY: build-graph-builder docker-build-graph-builder build-search docker-build-search sqlc graph-builder-up search-up graph-builder-restart search-restart layout-up ts-layout-up sentiment-up sentiment-gpu-up feedgen-up object-detection-up object-detection-gpu-up build-indexer indexer-up build-feedgen-go feedgen-go-up

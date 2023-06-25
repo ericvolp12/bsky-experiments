@@ -1,4 +1,4 @@
--- name: GetPostPageCursor :many
+-- name: GetUnindexedPostPage :many
 SELECT p.id,
     p.text,
     p.parent_post_id,
@@ -18,10 +18,7 @@ SELECT p.id,
     ) as labels
 FROM posts p
     LEFT JOIN post_labels l on l.post_id = p.id
-WHERE CASE
-        WHEN sqlc.arg('cursor') = '' THEN TRUE
-        ELSE p.id < sqlc.arg('cursor')
-    END
+WHERE p.indexed_at IS NULL
 GROUP BY p.id
-ORDER BY p.id DESC
-LIMIT $1;
+ORDER BY p.id
+LIMIT $1 OFFSET $2;

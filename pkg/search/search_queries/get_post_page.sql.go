@@ -20,6 +20,7 @@ SELECT p.id,
     p.parent_relationship,
     p.sentiment,
     p.sentiment_confidence,
+    p.indexed_at,
     COALESCE(
         json_agg(l.label) FILTER (
             WHERE l.label IS NOT NULL
@@ -49,6 +50,7 @@ type GetPostPageRow struct {
 	ParentRelationship  sql.NullString  `json:"parent_relationship"`
 	Sentiment           sql.NullString  `json:"sentiment"`
 	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
+	IndexedAt           sql.NullTime    `json:"indexed_at"`
 	Labels              interface{}     `json:"labels"`
 }
 
@@ -72,6 +74,7 @@ func (q *Queries) GetPostPage(ctx context.Context, arg GetPostPageParams) ([]Get
 			&i.ParentRelationship,
 			&i.Sentiment,
 			&i.SentimentConfidence,
+			&i.IndexedAt,
 			&i.Labels,
 		); err != nil {
 			return nil, err

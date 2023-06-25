@@ -9,6 +9,7 @@ SELECT p.id,
     p.parent_relationship,
     p.sentiment,
     p.sentiment_confidence,
+    p.indexed_at,
     COALESCE(
         json_agg(l.label) FILTER (
             WHERE l.label IS NOT NULL

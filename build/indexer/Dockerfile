@@ -8,11 +8,11 @@ RUN go mod download
 
 COPY pkg ./pkg
 
-COPY cmd/image-processor ./cmd/image-processor
+COPY cmd/indexer ./cmd/indexer
 
 COPY Makefile ./
 
-RUN make build-image-processor
+RUN make build-indexer
 
 FROM alpine:latest as certs
 
@@ -22,8 +22,8 @@ FROM debian:stable-slim
 
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /app/image-processor .
+COPY --from=builder /app/indexer .
 
 RUN mkdir -p /app/data
 
-CMD ["./image-processor"]
+CMD ["./indexer"]

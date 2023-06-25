@@ -10,6 +10,7 @@ SELECT p.id,
     p.parent_relationship,
     p.sentiment,
     p.sentiment_confidence,
+    p.indexed_at,
     COALESCE(
         json_agg(
             json_build_object(

@@ -21,6 +21,7 @@ SELECT p.id,
     p.parent_relationship,
     p.sentiment,
     p.sentiment_confidence,
+    p.indexed_at,
     COALESCE(
         json_agg(
             json_build_object(
@@ -72,6 +73,7 @@ type GetPostWithAuthorHandleRow struct {
 	ParentRelationship  sql.NullString  `json:"parent_relationship"`
 	Sentiment           sql.NullString  `json:"sentiment"`
 	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
+	IndexedAt           sql.NullTime    `json:"indexed_at"`
 	Images              interface{}     `json:"images"`
 }
 
@@ -90,6 +92,7 @@ func (q *Queries) GetPostWithAuthorHandle(ctx context.Context, id string) (GetPo
 		&i.ParentRelationship,
 		&i.Sentiment,
 		&i.SentimentConfidence,
+		&i.IndexedAt,
 		&i.Images,
 	)
 	return i, err

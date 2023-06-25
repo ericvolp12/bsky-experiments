@@ -5,6 +5,8 @@ package search_queries
 
 import (
 	"context"
+	"database/sql"
+	"time"
 )
 
 const getPostsPageByClusterAlias = `-- name: GetPostsPageByClusterAlias :many
@@ -27,7 +29,20 @@ type GetPostsPageByClusterAliasParams struct {
 	Limit       int32       `json:"limit"`
 }
 
-func (q *Queries) GetPostsPageByClusterAlias(ctx context.Context, arg GetPostsPageByClusterAliasParams) ([]Post, error) {
+type GetPostsPageByClusterAliasRow struct {
+	ID                  string          `json:"id"`
+	Text                string          `json:"text"`
+	ParentPostID        sql.NullString  `json:"parent_post_id"`
+	RootPostID          sql.NullString  `json:"root_post_id"`
+	AuthorDid           string          `json:"author_did"`
+	CreatedAt           time.Time       `json:"created_at"`
+	HasEmbeddedMedia    bool            `json:"has_embedded_media"`
+	ParentRelationship  sql.NullString  `json:"parent_relationship"`
+	Sentiment           sql.NullString  `json:"sentiment"`
+	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
+}
+
+func (q *Queries) GetPostsPageByClusterAlias(ctx context.Context, arg GetPostsPageByClusterAliasParams) ([]GetPostsPageByClusterAliasRow, error) {
 	rows, err := q.query(ctx, q.getPostsPageByClusterAliasStmt, getPostsPageByClusterAlias,
 		arg.LookupAlias,
 		arg.Cursor,
@@ -38,9 +53,9 @@ func (q *Queries) GetPostsPageByClusterAlias(ctx context.Context, arg GetPostsPa
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Post
+	var items []GetPostsPageByClusterAliasRow
 	for rows.Next() {
-		var i Post
+		var i GetPostsPageByClusterAliasRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Text,

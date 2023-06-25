@@ -1,15 +1,15 @@
 version: '3.8'
 
 services:
-  bsky-image-processor:
+  bsky-indexer:
     build:
       context: ../../
-      dockerfile: build/image-processor/Dockerfile
+      dockerfile: build/indexer/Dockerfile
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: always
-    image: bsky-image-processor
-    container_name: bsky-image-processor
+    image: bsky-indexer
+    container_name: bsky-indexer
     env_file:
       - ../../.env
     ports:

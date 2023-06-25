@@ -9,5 +9,6 @@ CREATE TABLE posts (
     parent_relationship CHAR(3),
     sentiment CHAR(3),
     sentiment_confidence FLOAT,
+    indexed_at TIMESTAMPTZ,
     FOREIGN KEY (author_did) REFERENCES authors(did)
 );

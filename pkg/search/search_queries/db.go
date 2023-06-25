@@ -151,6 +151,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getTopPostersStmt, err = db.PrepareContext(ctx, getTopPosters); err != nil {
 		return nil, fmt.Errorf("error preparing query GetTopPosters: %w", err)
 	}
+	if q.getUnindexedPostPageStmt, err = db.PrepareContext(ctx, getUnindexedPostPage); err != nil {
+		return nil, fmt.Errorf("error preparing query GetUnindexedPostPage: %w", err)
+	}
 	if q.getUnprocessedImagesStmt, err = db.PrepareContext(ctx, getUnprocessedImages); err != nil {
 		return nil, fmt.Errorf("error preparing query GetUnprocessedImages: %w", err)
 	}
@@ -159,6 +162,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.removeLikeFromPostStmt, err = db.PrepareContext(ctx, removeLikeFromPost); err != nil {
 		return nil, fmt.Errorf("error preparing query RemoveLikeFromPost: %w", err)
+	}
+	if q.setPostIndexedTimestampStmt, err = db.PrepareContext(ctx, setPostIndexedTimestamp); err != nil {
+		return nil, fmt.Errorf("error preparing query SetPostIndexedTimestamp: %w", err)
 	}
 	if q.unassignLabelFromAuthorStmt, err = db.PrepareContext(ctx, unassignLabelFromAuthor); err != nil {
 		return nil, fmt.Errorf("error preparing query UnassignLabelFromAuthor: %w", err)
@@ -386,6 +392,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getTopPostersStmt: %w", cerr)
 		}
 	}
+	if q.getUnindexedPostPageStmt != nil {
+		if cerr := q.getUnindexedPostPageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getUnindexedPostPageStmt: %w", cerr)
+		}
+	}
 	if q.getUnprocessedImagesStmt != nil {
 		if cerr := q.getUnprocessedImagesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getUnprocessedImagesStmt: %w", cerr)
@@ -399,6 +410,11 @@ func (q *Queries) Close() error {
 	if q.removeLikeFromPostStmt != nil {
 		if cerr := q.removeLikeFromPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing removeLikeFromPostStmt: %w", cerr)
+		}
+	}
+	if q.setPostIndexedTimestampStmt != nil {
+		if cerr := q.setPostIndexedTimestampStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setPostIndexedTimestampStmt: %w", cerr)
 		}
 	}
 	if q.unassignLabelFromAuthorStmt != nil {
@@ -493,9 +509,11 @@ type Queries struct {
 	getPostsPageWithPostLabelSortedByHotnessStmt    *sql.Stmt
 	getThreadViewStmt                               *sql.Stmt
 	getTopPostersStmt                               *sql.Stmt
+	getUnindexedPostPageStmt                        *sql.Stmt
 	getUnprocessedImagesStmt                        *sql.Stmt
 	removeAuthorBlockStmt                           *sql.Stmt
 	removeLikeFromPostStmt                          *sql.Stmt
+	setPostIndexedTimestampStmt                     *sql.Stmt
 	unassignLabelFromAuthorStmt                     *sql.Stmt
 	updateImageStmt                                 *sql.Stmt
 }
@@ -547,9 +565,11 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getPostsPageWithPostLabelSortedByHotnessStmt:    q.getPostsPageWithPostLabelSortedByHotnessStmt,
 		getThreadViewStmt:                               q.getThreadViewStmt,
 		getTopPostersStmt:                               q.getTopPostersStmt,
+		getUnindexedPostPageStmt:                        q.getUnindexedPostPageStmt,
 		getUnprocessedImagesStmt:                        q.getUnprocessedImagesStmt,
 		removeAuthorBlockStmt:                           q.removeAuthorBlockStmt,
 		removeLikeFromPostStmt:                          q.removeLikeFromPostStmt,
+		setPostIndexedTimestampStmt:                     q.setPostIndexedTimestampStmt,
 		unassignLabelFromAuthorStmt:                     q.unassignLabelFromAuthorStmt,
 		updateImageStmt:                                 q.updateImageStmt,
 	}

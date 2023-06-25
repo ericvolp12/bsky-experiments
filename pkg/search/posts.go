@@ -14,6 +14,8 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
+var PostsNotFound = fmt.Errorf("posts not found")
+
 // Post relationships
 const (
 	ReplyRelationship = "r"
@@ -24,20 +26,21 @@ const (
 )
 
 type Post struct {
-	ID                  string    `json:"id"`
-	Text                string    `json:"text"`
-	ParentPostID        *string   `json:"parent_post_id"`
-	RootPostID          *string   `json:"root_post_id"`
-	AuthorDID           string    `json:"author_did"`
-	AuthorHandle        *string   `json:"author_handle"`
-	CreatedAt           time.Time `json:"created_at"`
-	HasEmbeddedMedia    bool      `json:"has_embedded_media"`
-	ParentRelationship  *string   `json:"parent_relationship"` // null, "r", "q"
-	Sentiment           *string   `json:"sentiment"`
-	SentimentConfidence *float64  `json:"sentiment_confidence"`
-	Images              []*Image  `json:"images,omitempty"`
-	Hotness             *float64  `json:"hotness,omitempty"`
-	Labels              []string  `json:"labels,omitempty"`
+	ID                  string     `json:"id"`
+	Text                string     `json:"text"`
+	ParentPostID        *string    `json:"parent_post_id"`
+	RootPostID          *string    `json:"root_post_id"`
+	AuthorDID           string     `json:"author_did"`
+	AuthorHandle        *string    `json:"author_handle"`
+	CreatedAt           time.Time  `json:"created_at"`
+	HasEmbeddedMedia    bool       `json:"has_embedded_media"`
+	ParentRelationship  *string    `json:"parent_relationship"` // null, "r", "q"
+	Sentiment           *string    `json:"sentiment"`
+	SentimentConfidence *float64   `json:"sentiment_confidence"`
+	Images              []*Image   `json:"images,omitempty"`
+	Hotness             *float64   `json:"hotness,omitempty"`
+	Labels              []string   `json:"labels,omitempty"`
+	IndexedAt           *time.Time `json:"indexed_at,omitempty"`
 }
 
 type PostView struct {
@@ -47,8 +50,8 @@ type PostView struct {
 }
 
 func (pr *PostRegistry) AddPost(ctx context.Context, post *Post) error {
-	tracer := otel.Tracer("post-registry")
-	ctx, span := tracer.Start(ctx, "PostRegistry:AddPost")
+	tracer := otel.Tracer("PostRegistry")
+	ctx, span := tracer.Start(ctx, "AddPost")
 	defer span.End()
 
 	parentPostID := sql.NullString{
@@ -112,8 +115,8 @@ func (pr *PostRegistry) AddPost(ctx context.Context, post *Post) error {
 }
 
 func (pr *PostRegistry) GetPost(ctx context.Context, postID string) (*Post, error) {
-	tracer := otel.Tracer("post-registry")
-	ctx, span := tracer.Start(ctx, "PostRegistry:GetPost")
+	tracer := otel.Tracer("PostRegistry")
+	ctx, span := tracer.Start(ctx, "GetPost")
 	defer span.End()
 	post, err := pr.queries.GetPost(ctx, postID)
 	if err != nil {
@@ -128,9 +131,26 @@ func (pr *PostRegistry) GetPost(ctx context.Context, postID string) (*Post, erro
 	return enrichedPost, err
 }
 
+func (pr *PostRegistry) SetIndexedAtTimestamp(ctx context.Context, postIDs []string, indexedAt time.Time) error {
+	tracer := otel.Tracer("PostRegistry")
+	ctx, span := tracer.Start(ctx, "SetIndexedAtTimestamp")
+	defer span.End()
+
+	sqlIndexedAt := sql.NullTime{
+		Time:  indexedAt,
+		Valid: true,
+	}
+
+	err := pr.queries.SetPostIndexedTimestamp(ctx, search_queries.SetPostIndexedTimestampParams{
+		PostIds:   postIDs,
+		IndexedAt: sqlIndexedAt,
+	})
+	return err
+}
+
 func (pr *PostRegistry) GetPostWithAuthorHandle(ctx context.Context, postID string) (*Post, error) {
-	tracer := otel.Tracer("post-registry")
-	ctx, span := tracer.Start(ctx, "PostRegistry:GetPostWithAuthorHandle")
+	tracer := otel.Tracer("PostRegistry")
+	ctx, span := tracer.Start(ctx, "GetPostWithAuthorHandle")
 	defer span.End()
 	post, err := pr.queries.GetPostWithAuthorHandle(ctx, postID)
 	if err != nil {
@@ -146,8 +166,8 @@ func (pr *PostRegistry) GetPostWithAuthorHandle(ctx context.Context, postID stri
 }
 
 func (pr *PostRegistry) AddLikeToPost(ctx context.Context, postID string) error {
-	tracer := otel.Tracer("post-registry")
-	ctx, span := tracer.Start(ctx, "PostRegistry:AddLikeToPost")
+	tracer := otel.Tracer("PostRegistry")
+	ctx, span := tracer.Start(ctx, "AddLikeToPost")
 	defer span.End()
 
 	err := pr.queries.AddLikeToPost(ctx, postID)
@@ -155,8 +175,8 @@ func (pr *PostRegistry) AddLikeToPost(ctx context.Context, postID string) error 
 }
 
 func (pr *PostRegistry) RemoveLikeFromPost(ctx context.Context, postID string) error {
-	tracer := otel.Tracer("post-registry")
-	ctx, span := tracer.Start(ctx, "PostRegistry:RemoveLikeFromPost")
+	tracer := otel.Tracer("PostRegistry")
+	ctx, span := tracer.Start(ctx, "RemoveLikeFromPost")
 	defer span.End()
 
 	err := pr.queries.RemoveLikeFromPost(ctx, postID)
@@ -164,8 +184,8 @@ func (pr *PostRegistry) RemoveLikeFromPost(ctx context.Context, postID string) e
 }
 
 func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID string) ([]PostView, error) {
-	tracer := otel.Tracer("post-registry")
-	ctx, span := tracer.Start(ctx, "PostRegistry:GetThreadView")
+	tracer := otel.Tracer("PostRegistry")
+	ctx, span := tracer.Start(ctx, "GetThreadView")
 	defer span.End()
 	threadViews, err := pr.queries.GetThreadView(ctx, search_queries.GetThreadViewParams{ID: postID, AuthorDid: authorID})
 	if err != nil {
@@ -222,8 +242,8 @@ func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID stri
 }
 
 func (pr *PostRegistry) GetOldestPresentParent(ctx context.Context, postID string) (*Post, error) {
-	tracer := otel.Tracer("post-registry")
-	ctx, span := tracer.Start(ctx, "PostRegistry:GetOldestPresentParent")
+	tracer := otel.Tracer("PostRegistry")
+	ctx, span := tracer.Start(ctx, "GetOldestPresentParent")
 	defer span.End()
 	postView, err := pr.queries.GetOldestPresentParent(ctx, postID)
 	if err != nil {
@@ -273,8 +293,8 @@ func (pr *PostRegistry) GetOldestPresentParent(ctx context.Context, postID strin
 }
 
 func (pr *PostRegistry) GetPostPage(ctx context.Context, limit int32, offset int32) ([]Post, error) {
-	tracer := otel.Tracer("post-registry")
-	ctx, span := tracer.Start(ctx, "PostRegistry:GetPostPage")
+	tracer := otel.Tracer("PostRegistry")
+	ctx, span := tracer.Start(ctx, "GetPostPage")
 	defer span.End()
 
 	posts, err := pr.queries.GetPostPage(ctx, search_queries.GetPostPageParams{
@@ -305,7 +325,7 @@ func (pr *PostRegistry) GetPostPage(ctx context.Context, limit int32, offset int
 }
 
 func (pr *PostRegistry) GetPostPageCursor(ctx context.Context, limit int32, cursor string) ([]*Post, error) {
-	tracer := otel.Tracer("post-registry")
+	tracer := otel.Tracer("PostRegistry")
 	ctx, span := tracer.Start(ctx, "GetPostPageCursor")
 	defer span.End()
 
@@ -336,6 +356,38 @@ func (pr *PostRegistry) GetPostPageCursor(ctx context.Context, limit int32, curs
 	return retPosts, nil
 }
 
+func (pr *PostRegistry) GetUnindexedPostPage(ctx context.Context, limit int32, offset int32) ([]*Post, error) {
+	tracer := otel.Tracer("PostRegistry")
+	ctx, span := tracer.Start(ctx, "GetUnindexedPostPage")
+	defer span.End()
+
+	posts, err := pr.queries.GetUnindexedPostPage(ctx, search_queries.GetUnindexedPostPageParams{
+		Limit:  limit,
+		Offset: offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	retPosts := []*Post{}
+	for _, post := range posts {
+		newPost, err := postFromUnindexedPage(post)
+		if err != nil {
+			return nil, err
+		}
+		if newPost == nil {
+			continue
+		}
+		retPosts = append(retPosts, newPost)
+	}
+
+	if len(retPosts) == 0 {
+		return nil, PostsNotFound
+	}
+
+	return retPosts, nil
+}
+
 // postFromQueryPost turns a queries.Post into a search.Post
 func postFromQueryPost(p search_queries.GetPostRow) (*Post, error) {
 	var parentPostIDPtr *string
@@ -361,6 +413,11 @@ func postFromQueryPost(p search_queries.GetPostRow) (*Post, error) {
 	var sentimentConfidence *float64
 	if p.SentimentConfidence.Valid {
 		sentimentConfidence = &p.SentimentConfidence.Float64
+	}
+
+	var indexedAt *time.Time
+	if p.IndexedAt.Valid {
+		indexedAt = &p.IndexedAt.Time
 	}
 
 	var images []*Image
@@ -398,6 +455,7 @@ func postFromQueryPost(p search_queries.GetPostRow) (*Post, error) {
 		Sentiment:           sentiment,
 		SentimentConfidence: sentimentConfidence,
 		Images:              images,
+		IndexedAt:           indexedAt,
 	}, nil
 }
 
@@ -427,6 +485,11 @@ func postFromPagePost(p search_queries.GetPostPageRow) (*Post, error) {
 		sentimentConfidence = &p.SentimentConfidence.Float64
 	}
 
+	var indexedAt *time.Time
+	if p.IndexedAt.Valid {
+		indexedAt = &p.IndexedAt.Time
+	}
+
 	var labels []string
 	switch v := p.Labels.(type) {
 	case []byte:
@@ -450,6 +513,7 @@ func postFromPagePost(p search_queries.GetPostPageRow) (*Post, error) {
 		Sentiment:           sentiment,
 		SentimentConfidence: sentimentConfidence,
 		Labels:              labels,
+		IndexedAt:           indexedAt,
 	}, nil
 }
 
@@ -479,6 +543,11 @@ func postFromCursorPagePost(p search_queries.GetPostPageCursorRow) (*Post, error
 		sentimentConfidence = &p.SentimentConfidence.Float64
 	}
 
+	var indexedAt *time.Time
+	if p.IndexedAt.Valid {
+		indexedAt = &p.IndexedAt.Time
+	}
+
 	var labels []string
 	switch v := p.Labels.(type) {
 	case []byte:
@@ -502,6 +571,65 @@ func postFromCursorPagePost(p search_queries.GetPostPageCursorRow) (*Post, error
 		Sentiment:           sentiment,
 		SentimentConfidence: sentimentConfidence,
 		Labels:              labels,
+		IndexedAt:           indexedAt,
+	}, nil
+}
+
+func postFromUnindexedPage(p search_queries.GetUnindexedPostPageRow) (*Post, error) {
+	var parentPostIDPtr *string
+	if p.ParentPostID.Valid {
+		parentPostIDPtr = &p.ParentPostID.String
+	}
+
+	var rootPostIDPtr *string
+	if p.RootPostID.Valid {
+		rootPostIDPtr = &p.RootPostID.String
+	}
+
+	var parentRelationshipPtr *string
+	if p.ParentRelationship.Valid {
+		parentRelationshipPtr = &p.ParentRelationship.String
+	}
+
+	var sentiment *string
+	if p.Sentiment.Valid {
+		sentiment = &p.Sentiment.String
+	}
+
+	var sentimentConfidence *float64
+	if p.SentimentConfidence.Valid {
+		sentimentConfidence = &p.SentimentConfidence.Float64
+	}
+
+	var indexedAt *time.Time
+	if p.IndexedAt.Valid {
+		indexedAt = &p.IndexedAt.Time
+	}
+
+	var labels []string
+	switch v := p.Labels.(type) {
+	case []byte:
+		// Convert labels from an array of strings to a slice of strings
+		if err := json.Unmarshal(v, &labels); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal labels: %v", err)
+		}
+	default:
+		return nil, fmt.Errorf("unexpected type for labels: %T", v)
+	}
+
+	return &Post{
+		ID:                  p.ID,
+		Text:                p.Text,
+		ParentPostID:        parentPostIDPtr,
+		RootPostID:          rootPostIDPtr,
+		AuthorDID:           p.AuthorDid,
+		CreatedAt:           p.CreatedAt,
+		HasEmbeddedMedia:    p.HasEmbeddedMedia,
+		ParentRelationship:  parentRelationshipPtr,
+		Sentiment:           sentiment,
+		SentimentConfidence: sentimentConfidence,
+		Labels:              labels,
+		IndexedAt:           indexedAt,
 	}, nil
 }
 

@@ -5,6 +5,8 @@ package search_queries
 
 import (
 	"context"
+	"database/sql"
+	"time"
 )
 
 const getPostsPageByAuthorLabelAlias = `-- name: GetPostsPageByAuthorLabelAlias :many
@@ -27,7 +29,20 @@ type GetPostsPageByAuthorLabelAliasParams struct {
 	Limit       int32       `json:"limit"`
 }
 
-func (q *Queries) GetPostsPageByAuthorLabelAlias(ctx context.Context, arg GetPostsPageByAuthorLabelAliasParams) ([]Post, error) {
+type GetPostsPageByAuthorLabelAliasRow struct {
+	ID                  string          `json:"id"`
+	Text                string          `json:"text"`
+	ParentPostID        sql.NullString  `json:"parent_post_id"`
+	RootPostID          sql.NullString  `json:"root_post_id"`
+	AuthorDid           string          `json:"author_did"`
+	CreatedAt           time.Time       `json:"created_at"`
+	HasEmbeddedMedia    bool            `json:"has_embedded_media"`
+	ParentRelationship  sql.NullString  `json:"parent_relationship"`
+	Sentiment           sql.NullString  `json:"sentiment"`
+	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
+}
+
+func (q *Queries) GetPostsPageByAuthorLabelAlias(ctx context.Context, arg GetPostsPageByAuthorLabelAliasParams) ([]GetPostsPageByAuthorLabelAliasRow, error) {
 	rows, err := q.query(ctx, q.getPostsPageByAuthorLabelAliasStmt, getPostsPageByAuthorLabelAlias,
 		arg.LookupAlias,
 		arg.Cursor,
@@ -38,9 +53,9 @@ func (q *Queries) GetPostsPageByAuthorLabelAlias(ctx context.Context, arg GetPos
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Post
+	var items []GetPostsPageByAuthorLabelAliasRow
 	for rows.Next() {
-		var i Post
+		var i GetPostsPageByAuthorLabelAliasRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Text,
