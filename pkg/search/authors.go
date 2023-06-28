@@ -13,8 +13,9 @@ import (
 )
 
 type Author struct {
-	DID    string `json:"did"`
-	Handle string `json:"handle"`
+	DID           string `json:"did"`
+	Handle        string `json:"handle"`
+	ClusterOptOut bool   `json:"cluster_opt_out"`
 }
 
 type Percentile struct {
@@ -66,7 +67,42 @@ func (pr *PostRegistry) GetAuthor(ctx context.Context, did string) (*Author, err
 		}
 		return nil, err
 	}
-	return &Author{DID: author.Did, Handle: author.Handle}, nil
+	return &Author{DID: author.Did, Handle: author.Handle, ClusterOptOut: author.ClusterOptOut}, nil
+}
+
+func (pr *PostRegistry) GetOptedOutAuthors(ctx context.Context) ([]*Author, error) {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:GetOptedOutAuthors")
+	defer span.End()
+	authors, err := pr.queries.GetOptedOutAuthors(ctx)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, NotFoundError{fmt.Errorf("authors not found")}
+		}
+		return nil, err
+	}
+
+	retAuthors := make([]*Author, len(authors))
+	for i, author := range authors {
+		retAuthors[i] = &Author{DID: author.Did, Handle: author.Handle, ClusterOptOut: author.ClusterOptOut}
+	}
+
+	return retAuthors, nil
+}
+
+func (pr *PostRegistry) UpdateAuthorOptOut(ctx context.Context, did string, optOut bool) error {
+	tracer := otel.Tracer("post-registry")
+	ctx, span := tracer.Start(ctx, "PostRegistry:UpdateAuthorOptOut")
+	defer span.End()
+
+	err := pr.queries.UpdateAuthorOptOut(ctx, search_queries.UpdateAuthorOptOutParams{
+		Did:           did,
+		ClusterOptOut: optOut,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (pr *PostRegistry) GetAuthorsByHandle(ctx context.Context, handle string) ([]*Author, error) {

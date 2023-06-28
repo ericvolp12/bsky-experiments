@@ -106,6 +106,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getOldestPresentParentStmt, err = db.PrepareContext(ctx, getOldestPresentParent); err != nil {
 		return nil, fmt.Errorf("error preparing query GetOldestPresentParent: %w", err)
 	}
+	if q.getOptedOutAuthorsStmt, err = db.PrepareContext(ctx, getOptedOutAuthors); err != nil {
+		return nil, fmt.Errorf("error preparing query GetOptedOutAuthors: %w", err)
+	}
 	if q.getPostStmt, err = db.PrepareContext(ctx, getPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPost: %w", err)
 	}
@@ -168,6 +171,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.unassignLabelFromAuthorStmt, err = db.PrepareContext(ctx, unassignLabelFromAuthor); err != nil {
 		return nil, fmt.Errorf("error preparing query UnassignLabelFromAuthor: %w", err)
+	}
+	if q.updateAuthorOptOutStmt, err = db.PrepareContext(ctx, updateAuthorOptOut); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateAuthorOptOut: %w", err)
 	}
 	if q.updateImageStmt, err = db.PrepareContext(ctx, updateImage); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateImage: %w", err)
@@ -317,6 +323,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getOldestPresentParentStmt: %w", cerr)
 		}
 	}
+	if q.getOptedOutAuthorsStmt != nil {
+		if cerr := q.getOptedOutAuthorsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getOptedOutAuthorsStmt: %w", cerr)
+		}
+	}
 	if q.getPostStmt != nil {
 		if cerr := q.getPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostStmt: %w", cerr)
@@ -422,6 +433,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing unassignLabelFromAuthorStmt: %w", cerr)
 		}
 	}
+	if q.updateAuthorOptOutStmt != nil {
+		if cerr := q.updateAuthorOptOutStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateAuthorOptOutStmt: %w", cerr)
+		}
+	}
 	if q.updateImageStmt != nil {
 		if cerr := q.updateImageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateImageStmt: %w", cerr)
@@ -494,6 +510,7 @@ type Queries struct {
 	getMembersOfAuthorLabelStmt                     *sql.Stmt
 	getMembersOfClusterStmt                         *sql.Stmt
 	getOldestPresentParentStmt                      *sql.Stmt
+	getOptedOutAuthorsStmt                          *sql.Stmt
 	getPostStmt                                     *sql.Stmt
 	getPostPageStmt                                 *sql.Stmt
 	getPostPageCursorStmt                           *sql.Stmt
@@ -515,6 +532,7 @@ type Queries struct {
 	removeLikeFromPostStmt                          *sql.Stmt
 	setPostIndexedTimestampStmt                     *sql.Stmt
 	unassignLabelFromAuthorStmt                     *sql.Stmt
+	updateAuthorOptOutStmt                          *sql.Stmt
 	updateImageStmt                                 *sql.Stmt
 }
 
@@ -550,6 +568,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getMembersOfAuthorLabelStmt:        q.getMembersOfAuthorLabelStmt,
 		getMembersOfClusterStmt:            q.getMembersOfClusterStmt,
 		getOldestPresentParentStmt:         q.getOldestPresentParentStmt,
+		getOptedOutAuthorsStmt:             q.getOptedOutAuthorsStmt,
 		getPostStmt:                        q.getPostStmt,
 		getPostPageStmt:                    q.getPostPageStmt,
 		getPostPageCursorStmt:              q.getPostPageCursorStmt,
@@ -571,6 +590,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		removeLikeFromPostStmt:                          q.removeLikeFromPostStmt,
 		setPostIndexedTimestampStmt:                     q.setPostIndexedTimestampStmt,
 		unassignLabelFromAuthorStmt:                     q.unassignLabelFromAuthorStmt,
+		updateAuthorOptOutStmt:                          q.updateAuthorOptOutStmt,
 		updateImageStmt:                                 q.updateImageStmt,
 	}
 }

@@ -13,15 +13,20 @@ FROM authors
 WHERE handle = $1
 `
 
-func (q *Queries) GetAuthorsByHandle(ctx context.Context, handle string) ([]Author, error) {
+type GetAuthorsByHandleRow struct {
+	Did    string `json:"did"`
+	Handle string `json:"handle"`
+}
+
+func (q *Queries) GetAuthorsByHandle(ctx context.Context, handle string) ([]GetAuthorsByHandleRow, error) {
 	rows, err := q.query(ctx, q.getAuthorsByHandleStmt, getAuthorsByHandle, handle)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Author
+	var items []GetAuthorsByHandleRow
 	for rows.Next() {
-		var i Author
+		var i GetAuthorsByHandleRow
 		if err := rows.Scan(&i.Did, &i.Handle); err != nil {
 			return nil, err
 		}

@@ -178,6 +178,9 @@ func main() {
 	router.GET("/stats", api.GetAuthorStats)
 	router.GET("/post/:id", api.GetPost)
 
+	router.GET("/opted_out_authors", api.GetOptedOutAuthors)
+	router.POST("/opt_out", api.GraphOptOut)
+
 	router.GET("/clusters", api.GetClusterList)
 	router.GET("/users/by_handle/:handle/cluster", api.GetClusterForHandle)
 	router.GET("/users/by_did/:did/cluster", api.GetClusterForDID)

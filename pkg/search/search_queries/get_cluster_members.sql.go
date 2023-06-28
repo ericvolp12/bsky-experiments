@@ -15,15 +15,20 @@ JOIN clusters ON author_clusters.cluster_id = clusters.id
 WHERE clusters.id = $1
 `
 
-func (q *Queries) GetMembersOfCluster(ctx context.Context, clusterID int32) ([]Author, error) {
+type GetMembersOfClusterRow struct {
+	Did    string `json:"did"`
+	Handle string `json:"handle"`
+}
+
+func (q *Queries) GetMembersOfCluster(ctx context.Context, clusterID int32) ([]GetMembersOfClusterRow, error) {
 	rows, err := q.query(ctx, q.getMembersOfClusterStmt, getMembersOfCluster, clusterID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Author
+	var items []GetMembersOfClusterRow
 	for rows.Next() {
-		var i Author
+		var i GetMembersOfClusterRow
 		if err := rows.Scan(&i.Did, &i.Handle); err != nil {
 			return nil, err
 		}

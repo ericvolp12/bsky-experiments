@@ -10,8 +10,9 @@ import (
 )
 
 type Author struct {
-	Did    string `json:"did"`
-	Handle string `json:"handle"`
+	Did           string `json:"did"`
+	Handle        string `json:"handle"`
+	ClusterOptOut bool   `json:"cluster_opt_out"`
 }
 
 type AuthorBlock struct {

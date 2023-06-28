@@ -8,7 +8,9 @@ import (
 )
 
 const getAuthor = `-- name: GetAuthor :one
-SELECT did, handle
+SELECT did,
+    handle,
+    cluster_opt_out
 FROM authors
 WHERE did = $1
 `
@@ -16,6 +18,6 @@ WHERE did = $1
 func (q *Queries) GetAuthor(ctx context.Context, did string) (Author, error) {
 	row := q.queryRow(ctx, q.getAuthorStmt, getAuthor, did)
 	var i Author
-	err := row.Scan(&i.Did, &i.Handle)
+	err := row.Scan(&i.Did, &i.Handle, &i.ClusterOptOut)
 	return i, err
 }

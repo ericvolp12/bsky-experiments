@@ -10,14 +10,19 @@ import (
 	"sync"
 	"time"
 
+	comatproto "github.com/bluesky-social/indigo/api/atproto"
+	"github.com/bluesky-social/indigo/api/bsky"
+	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/ericvolp12/bsky-experiments/pkg/layout"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/clusters"
+
 	"github.com/ericvolp12/bsky-experiments/pkg/search/search_queries"
 	"github.com/ericvolp12/bsky-experiments/pkg/usercount"
 	"github.com/gin-gonic/gin"
 	lru "github.com/hashicorp/golang-lru/arc/v2"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -352,6 +357,100 @@ func (api *API) LayoutThread(ctx context.Context, rootPostID string, threadView 
 	})
 
 	return threadViewLayout, nil
+}
+
+type OptOutRequest struct {
+	Username    string `json:"username"`
+	AppPassword string `json:"appPassword"`
+}
+
+func (api *API) GraphOptOut(c *gin.Context) {
+	ctx := c.Request.Context()
+	tracer := otel.Tracer("search-api")
+	ctx, span := tracer.Start(ctx, "GraphOptOut")
+	defer span.End()
+
+	// get Username and appPassword from Post Body
+	var optOutRequest OptOutRequest
+	if err := c.ShouldBindJSON(&optOutRequest); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Create an instrumented transport for OTEL Tracing of HTTP Requests
+	instrumentedTransport := otelhttp.NewTransport(&http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	})
+
+	// Create the XRPC Client
+	client := xrpc.Client{
+		Client: &http.Client{
+			Transport: instrumentedTransport,
+		},
+		Host: "https://bsky.social",
+	}
+
+	// Create a new XRPC Client authenticated as the user
+	ses, err := comatproto.ServerCreateSession(ctx, &client, &comatproto.ServerCreateSession_Input{
+		Identifier: optOutRequest.Username,
+		Password:   optOutRequest.AppPassword,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Errorf("Error creating authenticated ATProto session: %w\nYour username and/or AppPassword may be incorrect", err).Error()})
+		return
+	}
+
+	client.Auth = &xrpc.AuthInfo{
+		Handle:     ses.Handle,
+		Did:        ses.Did,
+		RefreshJwt: ses.RefreshJwt,
+		AccessJwt:  ses.AccessJwt,
+	}
+
+	// Try to Get the user's profile to confirm that the user is authenticated
+	profile, err := bsky.ActorGetProfile(ctx, &client, ses.Handle)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Errorf("Error getting user profile while confirming identity: %w\n"+
+			"There may have been a problem communicating with the BSky API, "+
+			"as we can't confirm your identity without that info, we are unable to process your opt-out right now.", err).Error()})
+		return
+	}
+
+	if profile == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to get your profile from the BSky API when confirming your identity, we can't process your opt-out right now."})
+		return
+	}
+
+	// Create an OptOut record for the user
+	err = api.PostRegistry.UpdateAuthorOptOut(ctx, ses.Did, true)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Errorf("Error while updating author opt out record in the Atlas Database: %w\n"+
+			"Please feel free to @mention jaz.bsky.social on the Skyline for support for this error, since it's likely an issue with something Jaz can fix.", err).Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "You have successfully opted out of the Atlas"})
+}
+
+func (api *API) GetOptedOutAuthors(c *gin.Context) {
+	ctx := c.Request.Context()
+	tracer := otel.Tracer("search-api")
+	ctx, span := tracer.Start(ctx, "GetOptedOutAuthors")
+	defer span.End()
+
+	authors, err := api.PostRegistry.GetOptedOutAuthors(ctx)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Errorf("Error getting opted out authors from the Atlas Database: %w\n"+
+			"Please feel free to @mention jaz.bsky.social on the Skyline for support for this error, since it's likely an issue with something Jaz can fix.", err).Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"authors": authors})
 }
 
 func (api *API) ProcessThreadRequest(c *gin.Context) {

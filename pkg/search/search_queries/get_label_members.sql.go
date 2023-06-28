@@ -15,15 +15,20 @@ JOIN labels ON author_labels.label_id = labels.id
 WHERE labels.id = $1
 `
 
-func (q *Queries) GetMembersOfAuthorLabel(ctx context.Context, labelID int64) ([]Author, error) {
+type GetMembersOfAuthorLabelRow struct {
+	Did    string `json:"did"`
+	Handle string `json:"handle"`
+}
+
+func (q *Queries) GetMembersOfAuthorLabel(ctx context.Context, labelID int64) ([]GetMembersOfAuthorLabelRow, error) {
 	rows, err := q.query(ctx, q.getMembersOfAuthorLabelStmt, getMembersOfAuthorLabel, labelID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Author
+	var items []GetMembersOfAuthorLabelRow
 	for rows.Next() {
-		var i Author
+		var i GetMembersOfAuthorLabelRow
 		if err := rows.Scan(&i.Did, &i.Handle); err != nil {
 			return nil, err
 		}
