@@ -52,7 +52,7 @@ func main() {
 	// Registers a tracer Provider globally if the exporter endpoint is set
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
 		log.Info("initializing tracer...")
-		shutdown, err := tracing.InstallExportPipeline(ctx, "BSkyGraphBuilder", 1)
+		shutdown, err := tracing.InstallExportPipeline(ctx, "BSkyGraphBuilder", 0.2)
 		if err != nil {
 			log.Fatal(err)
 		}

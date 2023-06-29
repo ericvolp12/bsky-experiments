@@ -9,6 +9,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import ParentBasedTraceIdRatio
 from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger import jsonlogger
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -62,7 +63,9 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 otel_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 if otel_endpoint:
     resource = Resource(attributes={SERVICE_NAME: "bsky-sentiment"})
-    trace.set_tracer_provider(TracerProvider(resource=resource))
+    trace.set_tracer_provider(
+        TracerProvider(resource=resource, sampler=ParentBasedTraceIdRatio(0.2))
+    )
     trace.get_tracer_provider().add_span_processor(
         BatchSpanProcessor(
             OTLPSpanExporter(
