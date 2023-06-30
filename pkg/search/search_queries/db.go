@@ -70,6 +70,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getAuthorsByHandleStmt, err = db.PrepareContext(ctx, getAuthorsByHandle); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAuthorsByHandle: %w", err)
 	}
+	if q.getBangersForAuthorStmt, err = db.PrepareContext(ctx, getBangersForAuthor); err != nil {
+		return nil, fmt.Errorf("error preparing query GetBangersForAuthor: %w", err)
+	}
 	if q.getBlockedByCountForTargetStmt, err = db.PrepareContext(ctx, getBlockedByCountForTarget); err != nil {
 		return nil, fmt.Errorf("error preparing query GetBlockedByCountForTarget: %w", err)
 	}
@@ -261,6 +264,11 @@ func (q *Queries) Close() error {
 	if q.getAuthorsByHandleStmt != nil {
 		if cerr := q.getAuthorsByHandleStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getAuthorsByHandleStmt: %w", cerr)
+		}
+	}
+	if q.getBangersForAuthorStmt != nil {
+		if cerr := q.getBangersForAuthorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getBangersForAuthorStmt: %w", cerr)
 		}
 	}
 	if q.getBlockedByCountForTargetStmt != nil {
@@ -498,6 +506,7 @@ type Queries struct {
 	getAuthorBlockStmt                              *sql.Stmt
 	getAuthorStatsStmt                              *sql.Stmt
 	getAuthorsByHandleStmt                          *sql.Stmt
+	getBangersForAuthorStmt                         *sql.Stmt
 	getBlockedByCountForTargetStmt                  *sql.Stmt
 	getBlocksForTargetStmt                          *sql.Stmt
 	getClustersStmt                                 *sql.Stmt
@@ -556,6 +565,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getAuthorBlockStmt:                 q.getAuthorBlockStmt,
 		getAuthorStatsStmt:                 q.getAuthorStatsStmt,
 		getAuthorsByHandleStmt:             q.getAuthorsByHandleStmt,
+		getBangersForAuthorStmt:            q.getBangersForAuthorStmt,
 		getBlockedByCountForTargetStmt:     q.getBlockedByCountForTargetStmt,
 		getBlocksForTargetStmt:             q.getBlocksForTargetStmt,
 		getClustersStmt:                    q.getClustersStmt,

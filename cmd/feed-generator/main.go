@@ -14,6 +14,7 @@ import (
 	feedgenerator "github.com/ericvolp12/bsky-experiments/pkg/feed-generator"
 	"github.com/ericvolp12/bsky-experiments/pkg/feed-generator/endpoints"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/authorlabel"
+	"github.com/ericvolp12/bsky-experiments/pkg/feeds/bangers"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/cluster"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/firehose"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/postlabel"
@@ -147,6 +148,13 @@ func main() {
 		log.Fatalf("Failed to create FirehoseFeed: %v", err)
 	}
 	feedGenerator.AddFeed(firehoseFeedAliases, firehoseFeed)
+
+	// Create a Bangers feed
+	bangersFeed, bangersFeedAliases, err := bangers.NewBangersFeed(ctx, feedActorDID, postRegistry)
+	if err != nil {
+		log.Fatalf("Failed to create BangersFeed: %v", err)
+	}
+	feedGenerator.AddFeed(bangersFeedAliases, bangersFeed)
 
 	router := gin.New()
 
