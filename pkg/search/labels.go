@@ -18,14 +18,15 @@ type Label struct {
 	Name        string `json:"name"`
 }
 
-func (pr *PostRegistry) AddPostLabel(ctx context.Context, postID string, label string) error {
+func (pr *PostRegistry) AddPostLabel(ctx context.Context, postID string, authorDid string, label string) error {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AddPostLabel")
 	defer span.End()
 
 	err := pr.queries.AddPostLabel(ctx, search_queries.AddPostLabelParams{
-		PostID: postID,
-		Label:  label,
+		PostID:    postID,
+		AuthorDid: authorDid,
+		Label:     label,
 	})
 	return err
 }

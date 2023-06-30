@@ -310,7 +310,7 @@ func (indexer *Indexer) ProcessImages(ctx context.Context) {
 
 		for _, label := range imageLabels {
 			postLabel := fmt.Sprintf("%s:%s", "cv", label)
-			err = indexer.PostRegistry.AddPostLabel(ctx, unprocessedImages[idx].PostID, postLabel)
+			err = indexer.PostRegistry.AddPostLabel(ctx, unprocessedImages[idx].PostID, unprocessedImages[idx].AuthorDID, postLabel)
 			if err != nil {
 				log.Errorf("Failed to add label to post: %v", err)
 				continue

@@ -165,12 +165,20 @@ func (pr *PostRegistry) GetPostWithAuthorHandle(ctx context.Context, postID stri
 	return enrichedPost, err
 }
 
-func (pr *PostRegistry) AddLikeToPost(ctx context.Context, postID string) error {
+func (pr *PostRegistry) AddLikeToPost(ctx context.Context, postID string, authorDid string) error {
 	tracer := otel.Tracer("PostRegistry")
 	ctx, span := tracer.Start(ctx, "AddLikeToPost")
 	defer span.End()
 
-	err := pr.queries.AddLikeToPost(ctx, postID)
+	authorString := sql.NullString{
+		String: authorDid,
+		Valid:  true,
+	}
+
+	err := pr.queries.AddLikeToPost(ctx, search_queries.AddLikeToPostParams{
+		PostID:    postID,
+		AuthorDid: authorString,
+	})
 	return err
 }
 

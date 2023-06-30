@@ -293,7 +293,7 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 					span.SetAttributes(attribute.String("like.subject.post_id", postID))
 
 					// Add the Like to the DB
-					err := bsky.PostRegistry.AddLikeToPost(ctx, postID)
+					err := bsky.PostRegistry.AddLikeToPost(ctx, postID, evt.Repo)
 					if err != nil {
 						log.Errorf("failed to add like to post: %+v\n", err)
 						span.SetAttributes(attribute.String("error", err.Error()))

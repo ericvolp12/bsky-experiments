@@ -90,11 +90,13 @@ type PostHotness struct {
 }
 
 type PostLabel struct {
-	PostID string `json:"post_id"`
-	Label  string `json:"label"`
+	PostID    string `json:"post_id"`
+	AuthorDid string `json:"author_did"`
+	Label     string `json:"label"`
 }
 
 type PostLike struct {
-	PostID    string `json:"post_id"`
-	LikeCount int64  `json:"like_count"`
+	PostID    string         `json:"post_id"`
+	AuthorDid sql.NullString `json:"author_did"`
+	LikeCount int64          `json:"like_count"`
 }
