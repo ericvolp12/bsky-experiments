@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"sync"
 	"time"
@@ -13,7 +12,6 @@ import (
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/xrpc"
-	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/ericvolp12/bsky-experiments/pkg/layout"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/clusters"
@@ -58,7 +56,6 @@ type API struct {
 	PostRegistry *search.PostRegistry
 	UserCount    *usercount.UserCount
 
-	SocialGraph    *graph.Graph
 	ClusterManager *clusters.ClusterManager
 
 	LayoutServiceHost string
@@ -75,22 +72,12 @@ type API struct {
 func NewAPI(
 	postRegistry *search.PostRegistry,
 	userCount *usercount.UserCount,
-	socialGraphPath string,
 	graphJSONUrl string,
 	layoutServiceHost string,
 	threadViewCacheTTL time.Duration,
 	layoutCacheTTL time.Duration,
 	statsCacheTTL time.Duration,
 ) (*API, error) {
-	// Read the graph from the Binary file
-	ctx := context.Background()
-	readerWriter := graph.BinaryGraphReaderWriter{}
-
-	g1, err := readerWriter.ReadGraph(ctx, socialGraphPath)
-	if err != nil {
-		return nil, fmt.Errorf("error reading graph: %w", err)
-	}
-
 	// Hellthread is around 300KB right now so 1000 worst-case threads should be around 300MB
 	threadViewCache, err := lru.NewARC[string, ThreadViewCacheEntry](1000)
 	if err != nil {
@@ -110,7 +97,6 @@ func NewAPI(
 	return &API{
 		PostRegistry:       postRegistry,
 		UserCount:          userCount,
-		SocialGraph:        &g1,
 		ClusterManager:     clusterManager,
 		LayoutServiceHost:  layoutServiceHost,
 		ThreadViewCacheTTL: threadViewCacheTTL,
@@ -171,56 +157,6 @@ func (api *API) GetClusterForDID(c *gin.Context) {
 
 func (api *API) GetClusterList(c *gin.Context) {
 	c.JSON(http.StatusOK, api.ClusterManager.Clusters)
-}
-
-func (api *API) GetSocialDistance(c *gin.Context) {
-	ctx := c.Request.Context()
-	tracer := otel.Tracer("search-api")
-	ctx, span := tracer.Start(ctx, "GetSocialDistance")
-	defer span.End()
-
-	src := c.Query("src")
-	dest := c.Query("dest")
-
-	if src == "" || dest == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "src and dest must be provided"})
-		return
-	}
-
-	// Make sure src and dst DIDs are in the graph
-	if _, ok := api.SocialGraph.Nodes[graph.NodeID(src)]; !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("src with DID '%s' not found", src)})
-		return
-	}
-	if _, ok := api.SocialGraph.Nodes[graph.NodeID(dest)]; !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("dest with DID '%s' not found", dest)})
-		return
-	}
-
-	distance, path, weights := api.SocialGraph.FindSocialDistance(graph.NodeID(src), graph.NodeID(dest))
-
-	// Return the distance, path, and weights with Handles and DIDs
-
-	// Get the handles for the nodes in the path
-	handles := make([]string, len(path))
-	for i, nodeID := range path {
-		handles[i] = api.SocialGraph.Nodes[nodeID].Handle
-	}
-
-	// Make sure weights and distnaces aren't infinite before returning them
-	for i, weight := range weights {
-		if math.IsInf(weight, 0) {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("infinite weight for edge %s -> %s", path[i-1], path[i])})
-			return
-		}
-	}
-
-	if math.IsInf(distance, 0) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("infinite distance between %s and %s", src, dest)})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"distance": distance, "did_path": path, "handle_path": handles, "weights": weights})
 }
 
 func (api *API) GetAuthorStats(c *gin.Context) {

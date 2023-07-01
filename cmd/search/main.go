@@ -79,11 +79,6 @@ func main() {
 		}()
 	}
 
-	binaryGraphPath := os.Getenv("BINARY_GRAPH_PATH")
-	if binaryGraphPath == "" {
-		log.Fatal("BINARY_GRAPH_PATH environment variable is required")
-	}
-
 	postRegistry, err := search.NewPostRegistry(dbConnectionString)
 	if err != nil {
 		log.Fatalf("Failed to create PostRegistry: %v", err)
@@ -100,7 +95,6 @@ func main() {
 	api, err := endpoints.NewAPI(
 		postRegistry,
 		userCount,
-		binaryGraphPath,
 		graphJSONUrl,
 		layoutServiceHost,
 		30*time.Minute, // Thread View Cache TTL
@@ -174,7 +168,6 @@ func main() {
 	p.Use(router)
 
 	router.GET("/thread", api.ProcessThreadRequest)
-	router.GET("/distance", api.GetSocialDistance)
 	router.GET("/stats", api.GetAuthorStats)
 	router.GET("/post/:id", api.GetPost)
 
