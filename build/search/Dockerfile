@@ -28,6 +28,4 @@ COPY public/ public/
 
 COPY specs/search.openapi.yaml public/openapi3-spec.yaml
 
-COPY graph.bin /app/graph.bin
-
 CMD ["./search"]
