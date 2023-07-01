@@ -238,9 +238,10 @@ func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*b
 				cacheHits.WithLabelValues("post").Inc()
 				return cacheEntry.Post, nil
 			}
+		} else {
+			// If there was an error scanning the post, add attributes to the span
+			span.SetAttributes(attribute.String("caches.post.scan.error", err.Error()))
 		}
-		// If there was an error scanning the post, add attributes to the span
-		span.SetAttributes(attribute.String("caches.post.scan.error", err.Error()))
 	} else if err != redis.Nil {
 		span.SetAttributes(attribute.String("caches.post.get.error", err.Error()))
 	}

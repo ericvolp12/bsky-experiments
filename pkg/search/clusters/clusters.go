@@ -10,8 +10,9 @@ import (
 )
 
 type Cluster struct {
-	ClusterID   string
-	ClusterName string
+	ID      string
+	Name    string
+	DBIndex int32
 }
 
 type HandleClusterMapEntry struct {
@@ -35,7 +36,8 @@ type GraphData struct {
 	Options    map[string]interface{} `json:"options"`
 	Attributes struct {
 		Clusters map[string]struct {
-			Label string `json:"label"`
+			DbIndex *int32 `json:"dbIndex,omitempty"`
+			Label   string `json:"label"`
 		} `json:"clusters"`
 	} `json:"attributes"`
 	Nodes []struct {
@@ -77,13 +79,19 @@ func NewClusterManager(graphJSONUrl string) (*ClusterManager, error) {
 
 	log.Printf("found %d clusters and %d users", len(graphData.Attributes.Clusters), len(graphData.Nodes))
 
-	for id, cluster := range graphData.Attributes.Clusters {
+	for idx, cluster := range graphData.Attributes.Clusters {
 		if cluster.Label == "" {
 			continue
 		}
-		cm.Clusters[id] = &Cluster{
-			ClusterID:   id,
-			ClusterName: cluster.Label,
+
+		if cluster.DbIndex == nil {
+			continue
+		}
+
+		cm.Clusters[idx] = &Cluster{
+			ID:      idx,
+			Name:    cluster.Label,
+			DBIndex: *cluster.DbIndex,
 		}
 	}
 
@@ -92,11 +100,11 @@ func NewClusterManager(graphJSONUrl string) (*ClusterManager, error) {
 		if cluster, exists := cm.Clusters[nodeCommunity]; exists {
 			cm.HandleClusterMap[node.Attributes.Label] = &HandleClusterMapEntry{
 				UserHandle: node.Attributes.Label,
-				ClusterID:  cluster.ClusterID,
+				ClusterID:  cluster.ID,
 			}
 			cm.DIDClusterMap[node.Attributes.DID] = &DIDClusterMapEntry{
 				UserDID:   node.Attributes.DID,
-				ClusterID: cluster.ClusterID,
+				ClusterID: cluster.ID,
 			}
 		}
 	}

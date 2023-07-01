@@ -284,16 +284,13 @@ func (ep *Endpoints) UpdateClusterAssignments(c *gin.Context) {
 	log.Printf("Enqueueing %d authors...\n", len(clusterManager.DIDClusterMap))
 
 	for _, author := range clusterManager.DIDClusterMap {
-		clusterID, err := strconv.ParseInt(author.ClusterID, 10, 64)
-		if err != nil {
-			newErr := fmt.Errorf("failed to parse cluster ID %s: %w", author.ClusterID, err)
-			errs = append(errs, newErr)
-			log.Println(newErr.Error())
+		cluster := clusterManager.Clusters[author.ClusterID]
+		if cluster == nil {
 			continue
 		}
 
 		assignmentChan <- assignment{
-			ClusterID: int32(clusterID),
+			ClusterID: cluster.DBIndex,
 			AuthorDID: author.UserDID,
 		}
 	}

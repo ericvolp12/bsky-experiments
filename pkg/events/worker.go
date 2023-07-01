@@ -315,7 +315,9 @@ func (bsky *BSky) ProcessRepoRecord(
 		"parent_id", parentID,
 		"root_id", rootID,
 		"parent_relationship", parentRelationsip,
-		"created_at", t)
+		"created_at", t,
+		"created_at_fmt", t.UTC().Format(time.RFC3339Nano),
+	)
 
 	// Record the time to process and the count
 	postsProcessedCounter.Inc()

@@ -136,7 +136,7 @@ func (api *API) GetClusterForHandle(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"cluster_id": cluster.ClusterID, "cluster_name": cluster.ClusterName})
+	c.JSON(http.StatusOK, gin.H{"cluster_id": cluster.ID, "cluster_name": cluster.Name})
 }
 
 func (api *API) GetClusterForDID(c *gin.Context) {
@@ -152,7 +152,7 @@ func (api *API) GetClusterForDID(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"cluster_id": cluster.ClusterID, "cluster_name": cluster.ClusterName})
+	c.JSON(http.StatusOK, gin.H{"cluster_id": cluster.ID, "cluster_name": cluster.Name})
 }
 
 func (api *API) GetClusterList(c *gin.Context) {
