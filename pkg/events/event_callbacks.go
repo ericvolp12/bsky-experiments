@@ -134,7 +134,7 @@ func NewBSky(
 		// 60 minute Cache TTLs
 		cachesPrefix:    "graph_builder",
 		redisClient:     redisClient,
-		profileCacheTTL: time.Hour * 6,
+		profileCacheTTL: time.Hour * 12,
 		postCacheTTL:    time.Minute * 60,
 
 		RepoRecordQueue:  make(chan RepoRecord, 1),
