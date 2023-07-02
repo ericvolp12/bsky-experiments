@@ -76,3 +76,8 @@ var indexingLatency = promauto.NewHistogram(prometheus.HistogramOpts{
 	Help:    "The duration of adding a post to the index",
 	Buckets: prometheus.ExponentialBuckets(0.001, 30, 15),
 })
+
+var lastSeq = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "bsky_last_seq",
+	Help: "The last sequence number processed",
+})

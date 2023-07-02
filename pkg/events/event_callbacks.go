@@ -43,6 +43,7 @@ type RepoStreamCtxCallbacks struct {
 // RepoRecord holds data needed for processing a RepoRecord
 type RepoRecord struct {
 	ctx       context.Context
+	seq       int64
 	pst       appbsky.FeedPost
 	opPath    string
 	repoName  string
@@ -59,8 +60,9 @@ type BSky struct {
 
 	Logger *zap.SugaredLogger
 
-	SeqMux  sync.Mutex
-	LastSeq int64 // LastSeq is the last sequence number processed
+	SeqMux      sync.RWMutex
+	LastUpdated time.Time
+	LastSeq     int64 // LastSeq is the last sequence number processed
 
 	redisClient     *redis.Client
 	cachesPrefix    string
@@ -136,7 +138,8 @@ func NewBSky(
 
 		Logger: log,
 
-		SeqMux: sync.Mutex{},
+		SeqMux:      sync.RWMutex{},
+		LastUpdated: time.Now(),
 
 		// 60 minute Cache TTLs
 		cachesPrefix:    "graph_builder",
@@ -144,7 +147,7 @@ func NewBSky(
 		profileCacheTTL: time.Hour * 6,
 		postCacheTTL:    time.Minute * 60,
 
-		RepoRecordQueue:  make(chan RepoRecord, 100),
+		RepoRecordQueue:  make(chan RepoRecord, 10),
 		bskyLimiter:      rate.NewLimiter(rate.Every(time.Millisecond*125), 1),
 		directoryLimiter: rate.NewLimiter(rate.Every(time.Millisecond*125), 1),
 
@@ -186,14 +189,17 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 	ctx, span := tracer.Start(ctx, "HandleRepoCommit")
 	defer span.End()
 
-	log := bsky.Logger.With("repo", evt.Repo, "seq", evt.Seq)
-
 	span.AddEvent("AcquireSeqLock")
 	bsky.SeqMux.Lock()
 	span.AddEvent("SeqLockAcquired")
+	bsky.LastUpdated = time.Now()
 	bsky.LastSeq = evt.Seq
 	bsky.SeqMux.Unlock()
 	span.AddEvent("ReleaseSeqLock")
+
+	lastSeq.Set(float64(evt.Seq))
+
+	log := bsky.Logger.With("repo", evt.Repo, "seq", evt.Seq)
 
 	rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
 	if err != nil {
@@ -315,6 +321,7 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 			// Add the RepoRecord to the Queue
 			bsky.RepoRecordQueue <- RepoRecord{
 				ctx:       ctx,
+				seq:       evt.Seq,
 				pst:       pst,
 				repoName:  evt.Repo,
 				opPath:    op.Path,

@@ -86,6 +86,7 @@ func (bsky *BSky) worker(ctx context.Context, workerID int) {
 
 			err := bsky.ProcessRepoRecord(
 				record.ctx,
+				record.seq,
 				record.pst,
 				record.opPath,
 				record.repoName,
@@ -105,6 +106,7 @@ func (bsky *BSky) worker(ctx context.Context, workerID int) {
 
 func (bsky *BSky) ProcessRepoRecord(
 	ctx context.Context,
+	seq int64,
 	pst appbsky.FeedPost,
 	opPath string,
 	authorDID string,

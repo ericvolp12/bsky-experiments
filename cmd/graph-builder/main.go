@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	_ "net/http/pprof"
@@ -34,6 +36,23 @@ var tracer trace.Tracer
 
 func main() {
 	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Trap SIGINT to trigger a shutdown.
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		select {
+		case <-signals:
+			cancel()
+			fmt.Println("shutting down on signal")
+		case <-ctx.Done():
+			fmt.Println("shutting down on context done")
+		}
+	}()
+
 	rawlog, err := zap.NewProduction()
 	if err != nil {
 		log.Fatalf("failed to create logger: %+v\n", err)
@@ -231,25 +250,25 @@ func handleRepoStreamWithRetry(
 		defer cancel()
 
 		// Start a timer to check for graph updates
-		updateCheckDuration := 30 * time.Second
+		updateCheckDuration := 1 * time.Minute
 		updateCheckTimer := time.NewTicker(updateCheckDuration)
 		defer updateCheckTimer.Stop()
 
 		// Run a goroutine to handle the graph update check
 		go func() {
+			lastSeq := int64(0)
 			for {
 				select {
 				case <-updateCheckTimer.C:
-					bsky.PersistedGraph.CursorMux.RLock()
-					if bsky.PersistedGraph.LastUpdated.Add(updateCheckDuration).Before(time.Now()) {
-						log.Infof("The graph hasn't been updated in the past %v seconds, exiting the graph builder (docker should restart it and get us in a good state)", updateCheckDuration)
-						bsky.PersistedGraph.CursorMux.RUnlock()
-						os.Exit(1)
+					bsky.SeqMux.RLock()
+					if lastSeq > bsky.LastSeq {
+						fmt.Printf("lastSeq: %d, bsky.LastSeq: %d | progress hasn't been made in %v, exiting...\n", lastSeq, bsky.LastSeq, updateCheckDuration)
+						bsky.SeqMux.RUnlock()
 						cancel()
 						c.Close()
-						return
 					}
-					bsky.PersistedGraph.CursorMux.RUnlock()
+					lastSeq = bsky.LastSeq
+					bsky.SeqMux.RUnlock()
 				case <-streamCtx.Done():
 					return
 				}
