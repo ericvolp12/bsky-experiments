@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -255,21 +256,43 @@ func (g *PersistedGraph) Write(ctx context.Context, writer io.Writer) error {
 	tracer := otel.Tracer("persistentgraph")
 	ctx, span := tracer.Start(ctx, "Write")
 	defer span.End()
-	// Get all nodes from Redis
-	nodes, err := g.Client.HGetAll(ctx, g.NodeKey).Result()
-	if err != nil {
-		return fmt.Errorf("error getting nodes from Redis: %w", err)
+
+	// Get all nodes from Redis in chunks of 10000
+	nodes := make(map[string]string)
+	iter := g.Client.HScan(ctx, g.NodeKey, 0, "*", 10000).Iterator()
+	for iter.Next(ctx) {
+		did := iter.Val()
+		hasVal := iter.Next(ctx)
+		if !hasVal {
+			log.Printf("Iterator stopped mid-node: %s", did)
+			continue
+		}
+		handle := iter.Val()
+		nodes[did] = handle
 	}
 
-	// Get all edges from Redis
-	edges, err := g.Client.HGetAll(ctx, g.EdgeKey).Result()
-	if err != nil {
-		return fmt.Errorf("error getting edges from Redis: %w", err)
+	// Get all edges from Redis in chunks of 100000
+	// Edges have a key of "from-to" and a value of the weight
+	edges := make(map[string]string)
+	iter = g.Client.HScan(ctx, g.EdgeKey, 0, "*", 100000).Iterator()
+	for iter.Next(ctx) {
+		edgeName := iter.Val()
+		hasVal := iter.Next(ctx)
+		if !hasVal {
+			log.Printf("Iterator stopped mid-edge: %s", edgeName)
+			continue
+		}
+		weight := iter.Val()
+		edges[edgeName] = weight
 	}
 
 	// Write each edge to the writer
 	for edgeIdentifier, weight := range edges {
 		edge := strings.Split(edgeIdentifier, "-")
+		if len(edge) != 2 {
+			log.Printf("Invalid edge identifier: %s", edgeIdentifier)
+			continue
+		}
 		from := edge[0]
 		to := edge[1]
 		fmt.Fprintf(writer, "%s %s %s %s %s\n", from, nodes[from], to, nodes[to], weight)
