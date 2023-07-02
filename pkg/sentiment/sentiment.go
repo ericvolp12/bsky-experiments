@@ -30,7 +30,7 @@ type Sentiment struct {
 }
 
 type sentimentRequest struct {
-	Posts []search.Post `json:"posts"`
+	Posts []*search.Post `json:"posts"`
 }
 
 type sentimentDecision struct {
@@ -79,20 +79,26 @@ func NewSentiment(sentimentServiceHost string) *Sentiment {
 	}
 }
 
-func (s *Sentiment) GetPostsSentiment(ctx context.Context, posts []search.Post) ([]search.Post, error) {
+func (s *Sentiment) GetPostsSentiment(ctx context.Context, posts []*search.Post) ([]*search.Post, error) {
 	tracer := otel.Tracer("bsky-search")
 	ctx, span := tracer.Start(ctx, "Sentiment:GetPostsSentiment")
 	defer span.End()
 
-	// Return early if any of the posts are not in English
+	nonEnglishPosts := make([]*search.Post, 0)
+
+	// Return early if all of the posts are not in English
 	for _, post := range posts {
 		confidence := s.LanguageDetector.ComputeLanguageConfidence(post.Text, lingua.English)
 		if confidence < 0.5 {
 			span.SetAttributes(attribute.String("language", "non-english"))
 			span.SetAttributes(attribute.Float64("language.confidence", confidence))
 			span.SetAttributes(attribute.Bool("skipping_sentiment", true))
-			return posts, nil
+			nonEnglishPosts = append(nonEnglishPosts, post)
 		}
+	}
+
+	if len(nonEnglishPosts) >= len(posts) {
+		return posts, nil
 	}
 
 	url := fmt.Sprintf("%s/analyze_sentiment", s.SentimentServiceHost)
@@ -133,7 +139,9 @@ func (s *Sentiment) GetPostsSentiment(ctx context.Context, posts []search.Post) 
 		} else {
 			log.Printf("unknown sentiment: %s\n", post.Decision.Sentiment)
 		}
-		posts[i].SentimentConfidence = &post.Decision.Confidence
+		var confidence float64
+		confidence = post.Decision.Confidence
+		posts[i].SentimentConfidence = &confidence
 	}
 
 	return posts, nil

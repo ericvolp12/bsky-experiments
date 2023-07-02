@@ -172,6 +172,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.setPostIndexedTimestampStmt, err = db.PrepareContext(ctx, setPostIndexedTimestamp); err != nil {
 		return nil, fmt.Errorf("error preparing query SetPostIndexedTimestamp: %w", err)
 	}
+	if q.setPostSentimentStmt, err = db.PrepareContext(ctx, setPostSentiment); err != nil {
+		return nil, fmt.Errorf("error preparing query SetPostSentiment: %w", err)
+	}
 	if q.unassignLabelFromAuthorStmt, err = db.PrepareContext(ctx, unassignLabelFromAuthor); err != nil {
 		return nil, fmt.Errorf("error preparing query UnassignLabelFromAuthor: %w", err)
 	}
@@ -436,6 +439,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setPostIndexedTimestampStmt: %w", cerr)
 		}
 	}
+	if q.setPostSentimentStmt != nil {
+		if cerr := q.setPostSentimentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing setPostSentimentStmt: %w", cerr)
+		}
+	}
 	if q.unassignLabelFromAuthorStmt != nil {
 		if cerr := q.unassignLabelFromAuthorStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing unassignLabelFromAuthorStmt: %w", cerr)
@@ -540,6 +548,7 @@ type Queries struct {
 	removeAuthorBlockStmt                           *sql.Stmt
 	removeLikeFromPostStmt                          *sql.Stmt
 	setPostIndexedTimestampStmt                     *sql.Stmt
+	setPostSentimentStmt                            *sql.Stmt
 	unassignLabelFromAuthorStmt                     *sql.Stmt
 	updateAuthorOptOutStmt                          *sql.Stmt
 	updateImageStmt                                 *sql.Stmt
@@ -599,6 +608,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		removeAuthorBlockStmt:                           q.removeAuthorBlockStmt,
 		removeLikeFromPostStmt:                          q.removeLikeFromPostStmt,
 		setPostIndexedTimestampStmt:                     q.setPostIndexedTimestampStmt,
+		setPostSentimentStmt:                            q.setPostSentimentStmt,
 		unassignLabelFromAuthorStmt:                     q.unassignLabelFromAuthorStmt,
 		updateAuthorOptOutStmt:                          q.updateAuthorOptOutStmt,
 		updateImageStmt:                                 q.updateImageStmt,

@@ -101,12 +101,6 @@ func main() {
 		postRegistryEnabled = true
 	}
 
-	sentimentAnalysisEnabled := false
-	sentimentServiceHost := os.Getenv("SENTIMENT_SERVICE_HOST")
-	if sentimentServiceHost != "" {
-		sentimentAnalysisEnabled = true
-	}
-
 	redisAddress := os.Getenv("REDIS_ADDRESS")
 	if redisAddress == "" {
 		redisAddress = "localhost:6379"
@@ -147,8 +141,8 @@ func main() {
 	log.Info("initializing BSky Event Handler...")
 	bsky, err := intEvents.NewBSky(
 		ctx,
-		includeLinks, postRegistryEnabled, sentimentAnalysisEnabled,
-		dbConnectionString, sentimentServiceHost, meiliAddress,
+		includeLinks, postRegistryEnabled,
+		dbConnectionString, meiliAddress,
 		redisGraph,
 		redisClient,
 		workerCount,

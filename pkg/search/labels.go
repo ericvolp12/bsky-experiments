@@ -31,6 +31,45 @@ func (pr *PostRegistry) AddPostLabel(ctx context.Context, postID string, authorD
 	return err
 }
 
+func (pr *PostRegistry) AddOneLabelPerPost(ctx context.Context, labels []string, postIDs []string, authorDIDs []string) []error {
+	tracer := otel.Tracer("PostRegistry")
+	ctx, span := tracer.Start(ctx, "AddOneLabelPerPost")
+	defer span.End()
+
+	tx, err := pr.db.Begin()
+	if err != nil {
+		return []error{fmt.Errorf("error starting transaction: %w", err)}
+	}
+	defer tx.Rollback()
+
+	qtx := pr.queries.WithTx(tx)
+	errs := []error{}
+
+	if len(labels) != len(postIDs) || len(labels) != len(authorDIDs) {
+		return []error{fmt.Errorf("labels, postIDs, and authorDIDs must be the same length")}
+	}
+
+	for i, postID := range postIDs {
+
+		err := qtx.AddPostLabel(ctx, search_queries.AddPostLabelParams{
+			PostID:    postID,
+			AuthorDid: authorDIDs[i],
+			Label:     labels[i],
+		})
+
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		errs = append(errs, fmt.Errorf("error committing transaction: %w", err))
+	}
+
+	return errs
+}
+
 func (pr *PostRegistry) CreateLabel(ctx context.Context, labelAlias string, labelName string) (*Label, error) {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:CreateLabel")

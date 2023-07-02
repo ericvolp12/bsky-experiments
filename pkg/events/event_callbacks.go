@@ -19,7 +19,6 @@ import (
 	"github.com/bluesky-social/indigo/repomgr"
 	"github.com/ericvolp12/bsky-experiments/pkg/persistedgraph"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
-	"github.com/ericvolp12/bsky-experiments/pkg/sentiment"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	"github.com/meilisearch/meilisearch-go"
 	"github.com/redis/go-redis/v9"
@@ -81,9 +80,6 @@ type BSky struct {
 	PostRegistryEnabled bool
 	PostRegistry        *search.PostRegistry
 
-	SentimentAnalysisEnabled bool
-	SentimentAnalysis        *sentiment.Sentiment
-
 	MeiliClient *meilisearch.Client
 }
 
@@ -91,8 +87,8 @@ type BSky struct {
 // and a social graph, initializing mutexes for cross-routine access
 func NewBSky(
 	ctx context.Context,
-	includeLinks, postRegistryEnabled, sentimentAnalysisEnabled bool,
-	dbConnectionString, sentimentServiceHost, meilisearchHost string,
+	includeLinks, postRegistryEnabled bool,
+	dbConnectionString, meilisearchHost string,
 	persistedGraph *persistedgraph.PersistedGraph,
 	redisClient *redis.Client,
 	workerCount int,
@@ -106,12 +102,6 @@ func NewBSky(
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	var sentimentAnalysis *sentiment.Sentiment
-
-	if sentimentAnalysisEnabled {
-		sentimentAnalysis = sentiment.NewSentiment(sentimentServiceHost)
 	}
 
 	meiliClient := meilisearch.NewClient(meilisearch.ClientConfig{
@@ -156,9 +146,6 @@ func NewBSky(
 
 		PostRegistryEnabled: postRegistryEnabled,
 		PostRegistry:        postRegistry,
-
-		SentimentAnalysisEnabled: sentimentAnalysisEnabled,
-		SentimentAnalysis:        sentimentAnalysis,
 
 		MeiliClient: meiliClient,
 	}

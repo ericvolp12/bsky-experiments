@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	objectdetection "github.com/ericvolp12/bsky-experiments/pkg/object-detection"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
+	"github.com/ericvolp12/bsky-experiments/pkg/sentiment"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	"github.com/meilisearch/meilisearch-go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -26,7 +28,11 @@ type Indexer struct {
 	PostRegistry *search.PostRegistry
 	MeiliClient  *meilisearch.Client
 	Detection    *objectdetection.ObjectDetectionImpl
+	Sentiment    *sentiment.Sentiment
 	Logger       *zap.SugaredLogger
+
+	PositiveConfidenceThreshold float64
+	NegativeConfidenceThreshold float64
 }
 
 func main() {
@@ -95,6 +101,13 @@ func main() {
 		Host: meiliAddress,
 	})
 
+	sentimentServiceHost := os.Getenv("SENTIMENT_SERVICE_HOST")
+	if sentimentServiceHost == "" {
+		log.Fatal("SENTIMENT_SERVICE_HOST environment variable is required")
+	}
+
+	sentiment := sentiment.NewSentiment(sentimentServiceHost)
+
 	// Start up a Metrics and Profiling goroutine
 	go func() {
 		log = log.With("source", "pprof_server")
@@ -104,10 +117,13 @@ func main() {
 	}()
 
 	indexer := &Indexer{
-		PostRegistry: postRegistry,
-		MeiliClient:  meiliClient,
-		Detection:    detection,
-		Logger:       log,
+		PostRegistry:                postRegistry,
+		MeiliClient:                 meiliClient,
+		Detection:                   detection,
+		Sentiment:                   sentiment,
+		Logger:                      log,
+		PositiveConfidenceThreshold: 0.65,
+		NegativeConfidenceThreshold: 0.65,
 	}
 
 	// Create a cancellable context
@@ -188,6 +204,51 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 
 	fetchDone := time.Now()
 
+	log.Info("submtting posts for Sentiment Analysis...")
+	// If sentiment is enabled, get the sentiment for the post
+	span.AddEvent("GetPostsSentiment")
+	sentimentResults, err := indexer.Sentiment.GetPostsSentiment(ctx, posts)
+	if err != nil {
+		span.SetAttributes(attribute.String("sentiment.error", err.Error()))
+		log.Errorf("error getting sentiment for posts: %+v\n", err)
+	}
+	sentimentDone := time.Now()
+
+	log.Info("setting sentiment results...")
+	errs := indexer.PostRegistry.SetSentimentResults(ctx, sentimentResults)
+	if len(errs) > 0 {
+		log.Errorf("error(s) setting sentiment results: %+v\n", errs)
+	}
+
+	postIDsToLabel := make([]string, 0)
+	authorDIDsToLabel := make([]string, 0)
+	labels := make([]string, 0)
+
+	for i := range sentimentResults {
+		post := sentimentResults[i]
+		if post != nil {
+			if post.Sentiment != nil && post.SentimentConfidence != nil {
+				if strings.Contains(*post.Sentiment, "p") && *post.SentimentConfidence >= indexer.PositiveConfidenceThreshold {
+					postIDsToLabel = append(postIDsToLabel, post.ID)
+					authorDIDsToLabel = append(authorDIDsToLabel, post.AuthorDID)
+					labels = append(labels, "sentiment:pos")
+				} else if strings.Contains(*post.Sentiment, "n") && *post.SentimentConfidence >= indexer.NegativeConfidenceThreshold {
+					postIDsToLabel = append(postIDsToLabel, post.ID)
+					authorDIDsToLabel = append(authorDIDsToLabel, post.AuthorDID)
+					labels = append(labels, "sentiment:neg")
+				}
+			}
+		}
+	}
+
+	log.Infof("setting %d sentiment labels...", len(labels))
+	errs = indexer.PostRegistry.AddOneLabelPerPost(ctx, labels, postIDsToLabel, authorDIDsToLabel)
+	if len(errs) > 0 {
+		log.Errorf("error(s) setting sentiment labels: %+v\n", errs)
+	}
+
+	appliedSentimentDone := time.Now()
+
 	log.Info("submitting %d posts to meilisearch...", len(posts))
 
 	span.AddEvent("Submitting posts to Meilisearch")
@@ -223,6 +284,8 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 		attribute.String("fetch_time", fetchDone.Sub(start).String()),
 		attribute.String("index_time", indexDone.Sub(fetchDone).String()),
 		attribute.String("update_time", updateDone.Sub(indexDone).String()),
+		attribute.String("sentiment_time", sentimentDone.Sub(fetchDone).String()),
+		attribute.String("sentiment_db_time", appliedSentimentDone.Sub(sentimentDone).String()),
 	)
 
 	log.Infow("finished indexing posts, sleeping...",
@@ -231,6 +294,8 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 		"fetch_time", fetchDone.Sub(start),
 		"index_time", indexDone.Sub(fetchDone),
 		"update_time", updateDone.Sub(indexDone),
+		"sentiment_time", sentimentDone.Sub(fetchDone),
+		"sentiment_db_time", appliedSentimentDone.Sub(sentimentDone),
 	)
 }
 

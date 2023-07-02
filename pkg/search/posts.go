@@ -131,6 +131,62 @@ func (pr *PostRegistry) GetPost(ctx context.Context, postID string) (*Post, erro
 	return enrichedPost, err
 }
 
+func (pr *PostRegistry) SetSentimentResults(ctx context.Context, posts []*Post) []error {
+	tracer := otel.Tracer("PostRegistry")
+	ctx, span := tracer.Start(ctx, "SetSentimentResults")
+	defer span.End()
+
+	tx, err := pr.db.Begin()
+	if err != nil {
+		return []error{fmt.Errorf("error starting transaction: %w", err)}
+	}
+	defer tx.Rollback()
+
+	qtx := pr.queries.WithTx(tx)
+	errs := []error{}
+
+	for i := range posts {
+		post := posts[i]
+
+		sentiment := sql.NullString{
+			String: "",
+			Valid:  false,
+		}
+
+		sentimentConfidence := sql.NullFloat64{
+			Float64: 0,
+			Valid:   false,
+		}
+
+		if post.Sentiment != nil {
+			sentiment.String = *post.Sentiment
+			sentiment.Valid = true
+		}
+
+		if post.SentimentConfidence != nil {
+			sentimentConfidence.Float64 = *post.SentimentConfidence
+			sentimentConfidence.Valid = true
+		}
+
+		err := qtx.SetPostSentiment(ctx, search_queries.SetPostSentimentParams{
+			ID:                  post.ID,
+			Sentiment:           sentiment,
+			SentimentConfidence: sentimentConfidence,
+		})
+
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		errs = append(errs, fmt.Errorf("error committing transaction: %w", err))
+	}
+
+	return errs
+}
+
 func (pr *PostRegistry) SetIndexedAtTimestamp(ctx context.Context, postIDs []string, indexedAt time.Time) error {
 	tracer := otel.Tracer("PostRegistry")
 	ctx, span := tracer.Start(ctx, "SetIndexedAtTimestamp")
