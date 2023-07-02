@@ -147,7 +147,7 @@ func NewBSky(
 		profileCacheTTL: time.Hour * 6,
 		postCacheTTL:    time.Minute * 60,
 
-		RepoRecordQueue:  make(chan RepoRecord, 10),
+		RepoRecordQueue:  make(chan RepoRecord, 1),
 		bskyLimiter:      rate.NewLimiter(rate.Every(time.Millisecond*125), 1),
 		directoryLimiter: rate.NewLimiter(rate.Every(time.Millisecond*125), 1),
 

@@ -235,6 +235,34 @@ func handleRepoStreamWithRetry(
 	callbacks *intEvents.RepoStreamCtxCallbacks,
 ) error {
 	var backoff time.Duration
+	// Create a new context with a cancel function
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Start a timer to check for graph updates
+	updateCheckDuration := 1 * time.Minute
+	updateCheckTimer := time.NewTicker(updateCheckDuration)
+	defer updateCheckTimer.Stop()
+
+	// Run a goroutine to handle the graph update check
+	go func() {
+		lastSeq := int64(0)
+		for {
+			select {
+			case <-updateCheckTimer.C:
+				bsky.SeqMux.RLock()
+				if lastSeq > bsky.LastSeq {
+					fmt.Printf("lastSeq: %d, bsky.LastSeq: %d | progress hasn't been made in %v, exiting...\n", lastSeq, bsky.LastSeq, updateCheckDuration)
+					bsky.SeqMux.RUnlock()
+					cancel()
+				}
+				lastSeq = bsky.LastSeq
+				bsky.SeqMux.RUnlock()
+			case <-streamCtx.Done():
+				return
+			}
+		}
+	}()
 
 	for {
 		log.Info("connecting to BSky WebSocket...")
@@ -245,33 +273,11 @@ func handleRepoStreamWithRetry(
 		}
 		defer c.Close()
 
-		// Create a new context with a cancel function
-		streamCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
-
-		// Start a timer to check for graph updates
-		updateCheckDuration := 1 * time.Minute
-		updateCheckTimer := time.NewTicker(updateCheckDuration)
-		defer updateCheckTimer.Stop()
-
-		// Run a goroutine to handle the graph update check
 		go func() {
-			lastSeq := int64(0)
-			for {
-				select {
-				case <-updateCheckTimer.C:
-					bsky.SeqMux.RLock()
-					if lastSeq > bsky.LastSeq {
-						fmt.Printf("lastSeq: %d, bsky.LastSeq: %d | progress hasn't been made in %v, exiting...\n", lastSeq, bsky.LastSeq, updateCheckDuration)
-						bsky.SeqMux.RUnlock()
-						cancel()
-						c.Close()
-					}
-					lastSeq = bsky.LastSeq
-					bsky.SeqMux.RUnlock()
-				case <-streamCtx.Done():
-					return
-				}
+			select {
+			case <-streamCtx.Done():
+				log.Info("closing websocket...")
+				c.Close()
 			}
 		}()
 
@@ -299,6 +305,7 @@ func handleRepoStreamWithRetry(
 			select {
 			case <-time.After(backoff):
 				log.Infof("Reconnecting after %v...", backoff)
+				continue
 			case <-ctx.Done():
 				return ctx.Err()
 			}
