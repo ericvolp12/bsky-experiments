@@ -13,9 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-type TimeoutError struct {
-	error
-}
+var TimeoutError = fmt.Errorf("timeout")
 
 func FeedGetPostsWithTimeout(
 	ctx context.Context,
@@ -30,6 +28,8 @@ func FeedGetPostsWithTimeout(
 
 	resultChan := make(chan result, 1)
 
+	ctx, cancel := context.WithCancel(ctx)
+
 	go func() {
 		start := time.Now()
 		posts, err := appbsky.FeedGetPosts(ctx, client, uris)
@@ -40,9 +40,11 @@ func FeedGetPostsWithTimeout(
 
 	select {
 	case res := <-resultChan:
+		cancel()
 		return res.posts, res.err
 	case <-time.After(timeout):
-		return nil, &TimeoutError{fmt.Errorf("FeedGetPosts timed out after %v", timeout)}
+		cancel()
+		return nil, TimeoutError
 	}
 }
 

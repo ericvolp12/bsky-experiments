@@ -39,9 +39,15 @@ func main() {
 		log.Fatalf("failed to create logger: %+v\n", err)
 	}
 	defer func() {
+		log.Printf("main function teardown\n")
+
+		if r := recover(); r != nil {
+			log.Printf("recovered from panic: %+v\n", r)
+		}
+
 		err := rawlog.Sync()
 		if err != nil {
-			fmt.Printf("failed to sync logger on teardown: %+v", err.Error())
+			log.Printf("failed to sync logger on teardown: %+v", err.Error())
 		}
 	}()
 
@@ -68,7 +74,7 @@ func main() {
 
 	includeLinks := os.Getenv("INCLUDE_LINKS") == "true"
 
-	workerCount := 10
+	workerCount := 5
 
 	postRegistryEnabled := false
 	dbConnectionString := os.Getenv("REGISTRY_DB_CONNECTION_STRING")
@@ -122,7 +128,6 @@ func main() {
 	log.Info("initializing BSky Event Handler...")
 	bsky, err := intEvents.NewBSky(
 		ctx,
-		log,
 		includeLinks, postRegistryEnabled, sentimentAnalysisEnabled,
 		dbConnectionString, sentimentServiceHost, meiliAddress,
 		redisGraph,
@@ -146,7 +151,11 @@ func main() {
 
 	// Server for pprof and prometheus via promhttp
 	go func() {
-		log = log.With("source", "pprof_server")
+		rawlog, err := zap.NewProduction()
+		if err != nil {
+			log.Fatalf("failed to create logger: %+v\n", err)
+		}
+		log := rawlog.Sugar().With("source", "pprof_server")
 		log.Info("starting pprof and prometheus server...")
 		// Create a handler to write out the plaintext graph
 		http.HandleFunc("/graph", func(w http.ResponseWriter, r *http.Request) {

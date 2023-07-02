@@ -32,10 +32,24 @@ type ImageMeta struct {
 	ThumbnailURL string `json:"thumbnail_url"`
 }
 
-func (bsky *BSky) worker(workerID int) {
-	ctx := context.Background()
+func (bsky *BSky) worker(ctx context.Context, workerID int) {
+	// Create a logger for this worker
+	rawlog, err := zap.NewProduction()
+	if err != nil {
+		fmt.Printf("failed to create logger: %+v\n", err)
+	}
 
-	log := bsky.Workers[workerID].Logger
+	log := rawlog.Sugar().With("worker_id", workerID)
+
+	bsky.Workers[workerID].Logger = log
+
+	defer func() {
+		log.Infof("shutting down worker %d...", workerID)
+		err := log.Sync()
+		if err != nil {
+			fmt.Printf("failed to sync logger on teardown: %+v\n", err.Error())
+		}
+	}()
 
 	log.Infof("starting worker %d\n", workerID)
 
@@ -63,19 +77,30 @@ func (bsky *BSky) worker(workerID int) {
 
 	// Pull from the work queue and process records as they come in
 	for {
-		record := <-bsky.RepoRecordQueue
-		err := bsky.ProcessRepoRecord(
-			record.ctx,
-			record.pst,
-			record.opPath,
-			record.repoName,
-			record.eventTime,
-			workerID,
-		)
-		if err != nil {
-			log.Error("failed to process record: %v\n", err)
+		select {
+		case record, ok := <-bsky.RepoRecordQueue:
+			if !ok {
+				log.Infof("worker %d terminating: RepoRecordQueue has been closed\n", workerID)
+				return
+			}
+
+			err := bsky.ProcessRepoRecord(
+				record.ctx,
+				record.pst,
+				record.opPath,
+				record.repoName,
+				record.eventTime,
+				workerID,
+			)
+			if err != nil {
+				log.Errorf("failed to process record: %v\n", err)
+			}
+		case <-ctx.Done():
+			log.Infof("worker %d terminating: context was cancelled\n", workerID)
+			return
 		}
 	}
+
 }
 
 func (bsky *BSky) ProcessRepoRecord(
@@ -190,7 +215,7 @@ func (bsky *BSky) ProcessRepoRecord(
 		if err != nil {
 			log.Errorf("error fetching post with metadata: %+v\n", err)
 		} else if postMeta == nil {
-			log.Errorf("post with metadata not found")
+			log.Error("post with metadata not found")
 		} else if postMeta.Embed != nil &&
 			postMeta.Embed.EmbedImages_View != nil &&
 			postMeta.Embed.EmbedImages_View.Images != nil &&
@@ -264,18 +289,6 @@ func (bsky *BSky) ProcessRepoRecord(
 		if err != nil {
 			log.Errorf("error writing post to registry: %+v\n", err)
 		}
-
-		// iStart := time.Now()
-		// span.AddEvent("IndexPost")
-		// ti, err := bsky.MeiliClient.Index("posts").UpdateDocuments([]search.Post{post}, "id")
-		// if err != nil {
-		// 	log.Errorf("error indexing post: %+v\n", err)
-		// }
-		// span.AddEvent("IndexPostDone")
-		// if ti != nil {
-		// 	span.SetAttributes(attribute.Int64("meili.task_uid", ti.TaskUID))
-		// }
-		// indexingLatency.Observe(time.Since(iStart).Seconds())
 
 		// If there are images, write them to the registry
 		if len(images) > 0 {

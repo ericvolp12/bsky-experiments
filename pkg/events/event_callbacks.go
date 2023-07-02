@@ -59,6 +59,7 @@ type BSky struct {
 
 	Logger *zap.SugaredLogger
 
+	SeqMux  sync.Mutex
 	LastSeq int64 // LastSeq is the last sequence number processed
 
 	redisClient     *redis.Client
@@ -69,7 +70,8 @@ type BSky struct {
 	RepoRecordQueue chan RepoRecord
 
 	// Rate Limiter for requests against the BSky API
-	bskyLimiter *rate.Limiter
+	bskyLimiter      *rate.Limiter
+	directoryLimiter *rate.Limiter
 
 	WorkerCount int
 	Workers     []*Worker
@@ -87,7 +89,6 @@ type BSky struct {
 // and a social graph, initializing mutexes for cross-routine access
 func NewBSky(
 	ctx context.Context,
-	log *zap.SugaredLogger,
 	includeLinks, postRegistryEnabled, sentimentAnalysisEnabled bool,
 	dbConnectionString, sentimentServiceHost, meilisearchHost string,
 	persistedGraph *persistedgraph.PersistedGraph,
@@ -121,7 +122,12 @@ func NewBSky(
 		return nil, fmt.Errorf("failed to connect to MeiliSearch: %w", err)
 	}
 
-	log = log.With("source", "event_handler")
+	rawlog, err := zap.NewProduction()
+	if err != nil {
+		fmt.Printf("failed to create logger: %+v\n", err)
+		return nil, err
+	}
+	log := rawlog.Sugar().With("source", "event_handler")
 
 	bsky := &BSky{
 		IncludeLinks: includeLinks,
@@ -130,14 +136,17 @@ func NewBSky(
 
 		Logger: log,
 
+		SeqMux: sync.Mutex{},
+
 		// 60 minute Cache TTLs
 		cachesPrefix:    "graph_builder",
 		redisClient:     redisClient,
 		profileCacheTTL: time.Hour * 6,
 		postCacheTTL:    time.Minute * 60,
 
-		RepoRecordQueue: make(chan RepoRecord, 100),
-		bskyLimiter:     rate.NewLimiter(rate.Every(time.Millisecond*125), 1),
+		RepoRecordQueue:  make(chan RepoRecord, 100),
+		bskyLimiter:      rate.NewLimiter(rate.Every(time.Millisecond*125), 1),
+		directoryLimiter: rate.NewLimiter(rate.Every(time.Millisecond*125), 1),
 
 		WorkerCount: workerCount,
 		Workers:     make([]*Worker, workerCount),
@@ -159,27 +168,13 @@ func NewBSky(
 			return nil, err
 		}
 
-		rawlog, err := zap.NewProduction()
-		if err != nil {
-			log.Fatalf("failed to create logger: %+v\n", err)
-		}
-		defer func() {
-			err := rawlog.Sync()
-			if err != nil {
-				fmt.Printf("failed to sync logger on teardown: %+v", err.Error())
-			}
-		}()
-
-		log := rawlog.Sugar().With("worker_id", i)
-
 		bsky.Workers[i] = &Worker{
 			WorkerID:  i,
 			Client:    client,
 			ClientMux: sync.RWMutex{},
-			Logger:    log,
 		}
 
-		go bsky.worker(i)
+		go bsky.worker(ctx, i)
 	}
 
 	return bsky, nil
@@ -193,7 +188,12 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 
 	log := bsky.Logger.With("repo", evt.Repo, "seq", evt.Seq)
 
+	span.AddEvent("AcquireSeqLock")
+	bsky.SeqMux.Lock()
+	span.AddEvent("SeqLockAcquired")
 	bsky.LastSeq = evt.Seq
+	bsky.SeqMux.Unlock()
+	span.AddEvent("ReleaseSeqLock")
 
 	rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
 	if err != nil {
@@ -325,7 +325,6 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 			deleteRecordsProcessed.Inc()
 			span.SetAttributes(attribute.String("evt.kind", "delete"))
 			span.SetAttributes(attribute.String("op.path", op.Path))
-			return nil
 		}
 	}
 	return nil
