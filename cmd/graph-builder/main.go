@@ -93,7 +93,7 @@ func main() {
 
 	includeLinks := os.Getenv("INCLUDE_LINKS") == "true"
 
-	workerCount := 5
+	workerCount := 20
 
 	postRegistryEnabled := false
 	dbConnectionString := os.Getenv("REGISTRY_DB_CONNECTION_STRING")
@@ -104,11 +104,6 @@ func main() {
 	redisAddress := os.Getenv("REDIS_ADDRESS")
 	if redisAddress == "" {
 		redisAddress = "localhost:6379"
-	}
-
-	meiliAddress := os.Getenv("MEILI_ADDRESS")
-	if meiliAddress == "" {
-		meiliAddress = "http://localhost:7700"
 	}
 
 	redisClient := redis.NewClient(&redis.Options{
@@ -142,7 +137,7 @@ func main() {
 	bsky, err := intEvents.NewBSky(
 		ctx,
 		includeLinks, postRegistryEnabled,
-		dbConnectionString, meiliAddress,
+		dbConnectionString,
 		redisGraph,
 		redisClient,
 		workerCount,

@@ -20,7 +20,6 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/persistedgraph"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
-	"github.com/meilisearch/meilisearch-go"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -79,8 +78,6 @@ type BSky struct {
 
 	PostRegistryEnabled bool
 	PostRegistry        *search.PostRegistry
-
-	MeiliClient *meilisearch.Client
 }
 
 // NewBSky creates a new BSky struct with an authenticated XRPC client
@@ -88,7 +85,7 @@ type BSky struct {
 func NewBSky(
 	ctx context.Context,
 	includeLinks, postRegistryEnabled bool,
-	dbConnectionString, meilisearchHost string,
+	dbConnectionString string,
 	persistedGraph *persistedgraph.PersistedGraph,
 	redisClient *redis.Client,
 	workerCount int,
@@ -102,16 +99,6 @@ func NewBSky(
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	meiliClient := meilisearch.NewClient(meilisearch.ClientConfig{
-		Host: meilisearchHost,
-	})
-
-	// Check connection to MeiliSearch
-	_, err = meiliClient.Health()
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to MeiliSearch: %w", err)
 	}
 
 	rawlog, err := zap.NewProduction()
@@ -146,8 +133,6 @@ func NewBSky(
 
 		PostRegistryEnabled: postRegistryEnabled,
 		PostRegistry:        postRegistry,
-
-		MeiliClient: meiliClient,
 	}
 
 	// Initialize the workers, each with their own BSky Client and Mutex
