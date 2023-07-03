@@ -151,13 +151,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Try to read the seq number from Redis
-	cursor := redisGraph.Cursor
-	if cursor != "" {
-		log.Infof("found cursor in redis: %s", cursor)
-		u.RawQuery = fmt.Sprintf("cursor=%s", cursor)
-	}
-
 	quit := make(chan struct{})
 
 	wg := &sync.WaitGroup{}
@@ -259,6 +252,13 @@ func handleRepoStreamWithRetry(
 	}()
 
 	for {
+		// Try to read the seq number from Redis
+		cursor := bsky.PersistedGraph.GetCursor(ctx)
+		if cursor != "" {
+			log.Infof("found cursor in redis: %s", cursor)
+			u.RawQuery = fmt.Sprintf("cursor=%s", cursor)
+		}
+
 		log.Info("connecting to BSky WebSocket...")
 		c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 		if err != nil {

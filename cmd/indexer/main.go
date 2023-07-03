@@ -18,6 +18,8 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/sentiment"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	"github.com/meilisearch/meilisearch-go"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -182,6 +184,26 @@ func main() {
 	log.Info("Exiting...")
 }
 
+var postsAnalyzedCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "indexer_analyzed_posts",
+	Help: "The total number of posts analyzed",
+})
+
+var postsIndexedCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "indexer_indexed_posts",
+	Help: "The total number of posts indexed",
+})
+
+var positiveSentimentCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "indexer_positive_sentiment",
+	Help: "The total number of posts with positive sentiment",
+})
+
+var negativeSentimentCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "indexer_negative_sentiment",
+	Help: "The total number of posts with negative sentiment",
+})
+
 func (indexer *Indexer) IndexPosts(ctx context.Context) {
 	tracer := otel.Tracer("MeilisearchIndexer")
 	ctx, span := tracer.Start(ctx, "IndexPosts")
@@ -223,19 +245,24 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 	postIDsToLabel := make([]string, 0)
 	authorDIDsToLabel := make([]string, 0)
 	labels := make([]string, 0)
+	postsAnalyzed := 0
 
 	for i := range sentimentResults {
 		post := sentimentResults[i]
 		if post != nil {
 			if post.Sentiment != nil && post.SentimentConfidence != nil {
+				postsAnalyzed++
+				postsAnalyzedCounter.Inc()
 				if strings.Contains(*post.Sentiment, "p") && *post.SentimentConfidence >= indexer.PositiveConfidenceThreshold {
 					postIDsToLabel = append(postIDsToLabel, post.ID)
 					authorDIDsToLabel = append(authorDIDsToLabel, post.AuthorDID)
 					labels = append(labels, "sentiment:pos")
+					positiveSentimentCounter.Inc()
 				} else if strings.Contains(*post.Sentiment, "n") && *post.SentimentConfidence >= indexer.NegativeConfidenceThreshold {
 					postIDsToLabel = append(postIDsToLabel, post.ID)
 					authorDIDsToLabel = append(authorDIDsToLabel, post.AuthorDID)
 					labels = append(labels, "sentiment:neg")
+					negativeSentimentCounter.Inc()
 				}
 			}
 		}
@@ -269,6 +296,8 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 		postIds[i] = post.ID
 	}
 
+	postsIndexedCounter.Add(float64(len(postIds)))
+
 	log.Infof("setting indexed at timestamp on %d posts...", len(postIds))
 	err = indexer.PostRegistry.SetIndexedAtTimestamp(ctx, postIds, time.Now())
 	if err != nil {
@@ -280,6 +309,8 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 
 	span.SetAttributes(
 		attribute.Int("posts_indexed", len(posts)),
+		attribute.Int("posts_analyzed", postsAnalyzed),
+		attribute.Int("posts_labeled_with_sentiment", len(postIDsToLabel)),
 		attribute.String("indexing_time", time.Since(start).String()),
 		attribute.String("fetch_time", fetchDone.Sub(start).String()),
 		attribute.String("index_time", indexDone.Sub(fetchDone).String()),
@@ -290,6 +321,8 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 
 	log.Infow("finished indexing posts, sleeping...",
 		"posts_indexed", len(posts),
+		"posts_analyzed", postsAnalyzed,
+		"posts_labeled_with_sentiment", len(postIDsToLabel),
 		"indexing_time", time.Since(start),
 		"fetch_time", fetchDone.Sub(start),
 		"index_time", indexDone.Sub(fetchDone),
