@@ -12,7 +12,7 @@ GO_CMD = CGO_ENABLED=0 GOOS=linux go
 # Build the Graph Builder Go binary
 build-graph-builder:
 	@echo "Building Graph Builder Go binary..."
-	$(GO_CMD_W_CGO) build -o graph-builder -race cmd/graph-builder/*.go
+	$(GO_CMD_W_CGO) build -o graph-builder cmd/graph-builder/*.go
 
 # Build the Graph Builder Docker image
 docker-build-graph-builder:

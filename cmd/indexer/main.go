@@ -67,10 +67,10 @@ func main() {
 		log.Fatal("REGISTRY_DB_CONNECTION_STRING environment variable is required")
 	}
 
-	meiliAddress := os.Getenv("MEILI_ADDRESS")
-	if meiliAddress == "" {
-		log.Fatal("MEILI_ADDRESS environment variable is required")
-	}
+	// meiliAddress := os.Getenv("MEILI_ADDRESS")
+	// if meiliAddress == "" {
+	// 	log.Fatal("MEILI_ADDRESS environment variable is required")
+	// }
 
 	// Registers a tracer Provider globally if the exporter endpoint is set
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
@@ -99,9 +99,9 @@ func main() {
 
 	detection := objectdetection.NewObjectDetection(objectDetectionServiceHost)
 
-	meiliClient := meilisearch.NewClient(meilisearch.ClientConfig{
-		Host: meiliAddress,
-	})
+	// meiliClient := meilisearch.NewClient(meilisearch.ClientConfig{
+	// 	Host: meiliAddress,
+	// })
 
 	sentimentServiceHost := os.Getenv("SENTIMENT_SERVICE_HOST")
 	if sentimentServiceHost == "" {
@@ -119,8 +119,8 @@ func main() {
 	}()
 
 	indexer := &Indexer{
-		PostRegistry:                postRegistry,
-		MeiliClient:                 meiliClient,
+		PostRegistry: postRegistry,
+		// MeiliClient:                 meiliClient,
 		Detection:                   detection,
 		Sentiment:                   sentiment,
 		Logger:                      log,
@@ -276,19 +276,19 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 
 	appliedSentimentDone := time.Now()
 
-	log.Info("submitting %d posts to meilisearch...", len(posts))
+	// log.Info("submitting %d posts to meilisearch...", len(posts))
 
-	span.AddEvent("Submitting posts to Meilisearch")
-	ti, err := indexer.MeiliClient.Index("posts").UpdateDocuments(posts, "id")
-	if err != nil {
-		log.Errorf("error indexing posts: %v", err)
-		return
-	}
-	span.AddEvent("Posts submitted to Meilisearch")
+	// span.AddEvent("Submitting posts to Meilisearch")
+	// ti, err := indexer.MeiliClient.Index("posts").UpdateDocuments(posts, "id")
+	// if err != nil {
+	// 	log.Errorf("error indexing posts: %v", err)
+	// 	return
+	// }
+	// span.AddEvent("Posts submitted to Meilisearch")
 
-	indexDone := time.Now()
+	// indexDone := time.Now()
 
-	log.Infof("...%d posts queued for index in meilisearch: %d", len(posts), ti.TaskUID)
+	// log.Infof("...%d posts queued for index in meilisearch: %d", len(posts), ti.TaskUID)
 
 	// Set indexed at timestamp on posts
 	postIds := make([]string, len(posts))
@@ -313,8 +313,8 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 		attribute.Int("posts_labeled_with_sentiment", len(postIDsToLabel)),
 		attribute.String("indexing_time", time.Since(start).String()),
 		attribute.String("fetch_time", fetchDone.Sub(start).String()),
-		attribute.String("index_time", indexDone.Sub(fetchDone).String()),
-		attribute.String("update_time", updateDone.Sub(indexDone).String()),
+		attribute.String("index_time", appliedSentimentDone.Sub(fetchDone).String()),
+		attribute.String("update_time", updateDone.Sub(appliedSentimentDone).String()),
 		attribute.String("sentiment_time", sentimentDone.Sub(fetchDone).String()),
 		attribute.String("sentiment_db_time", appliedSentimentDone.Sub(sentimentDone).String()),
 	)
@@ -325,8 +325,8 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 		"posts_labeled_with_sentiment", len(postIDsToLabel),
 		"indexing_time", time.Since(start),
 		"fetch_time", fetchDone.Sub(start),
-		"index_time", indexDone.Sub(fetchDone),
-		"update_time", updateDone.Sub(indexDone),
+		"index_time", appliedSentimentDone.Sub(fetchDone),
+		"update_time", updateDone.Sub(appliedSentimentDone),
 		"sentiment_time", sentimentDone.Sub(fetchDone),
 		"sentiment_db_time", appliedSentimentDone.Sub(sentimentDone),
 	)

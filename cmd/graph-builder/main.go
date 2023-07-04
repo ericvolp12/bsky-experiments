@@ -59,11 +59,6 @@ func main() {
 	}
 	defer func() {
 		log.Printf("main function teardown\n")
-
-		if r := recover(); r != nil {
-			log.Printf("recovered from panic: %+v\n", r)
-		}
-
 		err := rawlog.Sync()
 		if err != nil {
 			log.Printf("failed to sync logger on teardown: %+v", err.Error())
