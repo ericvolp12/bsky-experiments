@@ -228,7 +228,7 @@ func handleRepoStreamWithRetry(
 			select {
 			case <-updateCheckTimer.C:
 				bsky.SeqMux.RLock()
-				if lastSeq > bsky.LastSeq {
+				if lastSeq >= bsky.LastSeq {
 					fmt.Printf("lastSeq: %d, bsky.LastSeq: %d | progress hasn't been made in %v, exiting...\n", lastSeq, bsky.LastSeq, updateCheckDuration)
 					bsky.SeqMux.RUnlock()
 					cancel()
