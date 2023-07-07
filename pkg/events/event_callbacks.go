@@ -231,6 +231,9 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 				return nil
 			}
 
+			lastSeqCreatedAt.Set(float64(t.UnixNano()))
+			lastSeqProcessedAt.Set(float64(time.Now().UnixNano()))
+
 			// If the record is a block, try to unmarshal it into a GraphBlock and log it
 			if strings.HasPrefix(op.Path, "app.bsky.graph.block") {
 				span.SetAttributes(attribute.String("repo.name", evt.Repo))

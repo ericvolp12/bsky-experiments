@@ -81,3 +81,13 @@ var lastSeq = promauto.NewGauge(prometheus.GaugeOpts{
 	Name: "bsky_last_seq",
 	Help: "The last sequence number processed",
 })
+
+var lastSeqProcessedAt = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "bsky_last_seq_processed_at",
+	Help: "The timestamp of the last sequence number processed",
+})
+
+var lastSeqCreatedAt = promauto.NewGauge(prometheus.GaugeOpts{
+	Name: "bsky_last_seq_created_at",
+	Help: "The timestamp of the last sequence number created",
+})
