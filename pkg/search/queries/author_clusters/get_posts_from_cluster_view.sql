@@ -11,12 +11,7 @@ SELECT DISTINCT ON (h.id) h.id,
     h.sentiment_confidence,
     h.hotness::float as hotness
 FROM post_hotness h
-WHERE h.cluster_label = sqlc.arg('cluster')
-    AND (
-        CASE
-            WHEN sqlc.arg('cursor') = '' THEN TRUE
-            ELSE h.id < sqlc.arg('cursor')
-        END
-    )
-ORDER BY h.id DESC
+WHERE h.cluster_label = $1
+    AND h.created_at < $2
+ORDER BY h.created_at DESC
 LIMIT sqlc.arg('limit');

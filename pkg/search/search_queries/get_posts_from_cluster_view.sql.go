@@ -23,20 +23,15 @@ SELECT DISTINCT ON (h.id) h.id,
     h.hotness::float as hotness
 FROM post_hotness h
 WHERE h.cluster_label = $1
-    AND (
-        CASE
-            WHEN $2 = '' THEN TRUE
-            ELSE h.id < $2
-        END
-    )
-ORDER BY h.id DESC
+    AND h.created_at < $2
+ORDER BY h.created_at DESC
 LIMIT $3
 `
 
 type GetPostsPageByClusterAliasFromViewParams struct {
-	Cluster sql.NullString `json:"cluster"`
-	Cursor  interface{}    `json:"cursor"`
-	Limit   int32          `json:"limit"`
+	ClusterLabel sql.NullString `json:"cluster_label"`
+	CreatedAt    time.Time      `json:"created_at"`
+	Limit        int32          `json:"limit"`
 }
 
 type GetPostsPageByClusterAliasFromViewRow struct {
@@ -54,7 +49,7 @@ type GetPostsPageByClusterAliasFromViewRow struct {
 }
 
 func (q *Queries) GetPostsPageByClusterAliasFromView(ctx context.Context, arg GetPostsPageByClusterAliasFromViewParams) ([]GetPostsPageByClusterAliasFromViewRow, error) {
-	rows, err := q.query(ctx, q.getPostsPageByClusterAliasFromViewStmt, getPostsPageByClusterAliasFromView, arg.Cluster, arg.Cursor, arg.Limit)
+	rows, err := q.query(ctx, q.getPostsPageByClusterAliasFromViewStmt, getPostsPageByClusterAliasFromView, arg.ClusterLabel, arg.CreatedAt, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
