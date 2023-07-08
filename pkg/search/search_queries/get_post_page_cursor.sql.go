@@ -10,37 +10,40 @@ import (
 )
 
 const getPostPageCursor = `-- name: GetPostPageCursor :many
-SELECT p.id,
-    p.text,
-    p.parent_post_id,
-    p.root_post_id,
-    p.author_did,
-    p.created_at,
-    p.has_embedded_media,
-    p.parent_relationship,
-    p.sentiment,
-    p.sentiment_confidence,
-    p.indexed_at,
-    COALESCE(
-        json_agg(l.label) FILTER (
-            WHERE l.label IS NOT NULL
-        ),
-        '[]'
+WITH filtered_posts AS (
+    SELECT id, text, parent_post_id, root_post_id, author_did, created_at, has_embedded_media, parent_relationship, sentiment, sentiment_confidence, indexed_at
+    FROM posts
+    WHERE created_at < $1
+    ORDER BY created_at DESC
+    LIMIT $2
+)
+SELECT fp.id,
+    fp.text,
+    fp.parent_post_id,
+    fp.root_post_id,
+    fp.author_did,
+    fp.created_at,
+    fp.has_embedded_media,
+    fp.parent_relationship,
+    fp.sentiment,
+    fp.sentiment_confidence,
+    fp.indexed_at,
+    (
+        SELECT COALESCE(
+                json_agg(l.label) FILTER (
+                    WHERE l.label IS NOT NULL
+                ),
+                '[]'
+            )
+        FROM post_labels l
+        WHERE l.post_id = fp.id
     ) as labels
-FROM posts p
-    LEFT JOIN post_labels l on l.post_id = p.id
-WHERE CASE
-        WHEN $2 = '' THEN TRUE
-        ELSE p.id < $2
-    END
-GROUP BY p.id
-ORDER BY p.id DESC
-LIMIT $1
+FROM filtered_posts fp
 `
 
 type GetPostPageCursorParams struct {
-	Limit  int32       `json:"limit"`
-	Cursor interface{} `json:"cursor"`
+	CreatedAt time.Time `json:"created_at"`
+	Limit     int32     `json:"limit"`
 }
 
 type GetPostPageCursorRow struct {
@@ -59,7 +62,7 @@ type GetPostPageCursorRow struct {
 }
 
 func (q *Queries) GetPostPageCursor(ctx context.Context, arg GetPostPageCursorParams) ([]GetPostPageCursorRow, error) {
-	rows, err := q.query(ctx, q.getPostPageCursorStmt, getPostPageCursor, arg.Limit, arg.Cursor)
+	rows, err := q.query(ctx, q.getPostPageCursorStmt, getPostPageCursor, arg.CreatedAt, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

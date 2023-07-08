@@ -388,14 +388,14 @@ func (pr *PostRegistry) GetPostPage(ctx context.Context, limit int32, offset int
 	return retPosts, nil
 }
 
-func (pr *PostRegistry) GetPostPageCursor(ctx context.Context, limit int32, cursor string) ([]*Post, error) {
+func (pr *PostRegistry) GetPostPageCursor(ctx context.Context, limit int32, cursor time.Time) ([]*Post, error) {
 	tracer := otel.Tracer("PostRegistry")
 	ctx, span := tracer.Start(ctx, "GetPostPageCursor")
 	defer span.End()
 
 	posts, err := pr.queries.GetPostPageCursor(ctx, search_queries.GetPostPageCursorParams{
-		Limit:  limit,
-		Cursor: cursor,
+		Limit:     limit,
+		CreatedAt: cursor,
 	})
 	if err != nil {
 		return nil, err

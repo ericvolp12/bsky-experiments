@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds"
@@ -36,12 +37,12 @@ func (plf *FirehoseFeed) GetPage(ctx context.Context, feed string, userDID strin
 	ctx, span := tracer.Start(ctx, "GetPage")
 	defer span.End()
 
-	postID, cursorBloomFilter, _, err := feeds.ParseCursor(cursor, plf.BloomFilterSize, plf.BloomFilterFalsePositiveRate)
+	cursorCreatedAt, cursorBloomFilter, _, err := feeds.ParseTimebasedCursor(cursor, plf.BloomFilterSize, plf.BloomFilterFalsePositiveRate)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error parsing cursor: %w", err)
 	}
 
-	postsFromRegistry, err := plf.PostRegistry.GetPostPageCursor(ctx, int32(limit), postID)
+	postsFromRegistry, err := plf.PostRegistry.GetPostPageCursor(ctx, int32(limit), cursorCreatedAt)
 	if err != nil {
 		if errors.As(err, &search.NotFoundError{}) {
 			return nil, nil, NotFoundError{fmt.Errorf("posts not found for feed %s", feed)}
@@ -52,7 +53,7 @@ func (plf *FirehoseFeed) GetPage(ctx context.Context, feed string, userDID strin
 	// Convert to appbsky.FeedDefs_SkeletonFeedPost
 	posts := []*appbsky.FeedDefs_SkeletonFeedPost{}
 	newHotness := -1.0
-	lastPostID := ""
+	lastPostCreatedAt := time.Unix(0, 0)
 	for _, post := range postsFromRegistry {
 		postAtURL := fmt.Sprintf("at://%s/app.bsky.feed.post/%s", post.AuthorDID, post.ID)
 		posts = append(posts, &appbsky.FeedDefs_SkeletonFeedPost{
@@ -61,11 +62,11 @@ func (plf *FirehoseFeed) GetPage(ctx context.Context, feed string, userDID strin
 		if post.Hotness != nil {
 			newHotness = *post.Hotness
 		}
-		lastPostID = post.ID
+		lastPostCreatedAt = post.CreatedAt
 	}
 
 	// Get the cursor for the next page
-	newCursor, err := feeds.AssembleCursor(lastPostID, cursorBloomFilter, newHotness)
+	newCursor, err := feeds.AssembleTimebasedCursor(lastPostCreatedAt, cursorBloomFilter, newHotness)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error assembling cursor: %w", err)
 	}

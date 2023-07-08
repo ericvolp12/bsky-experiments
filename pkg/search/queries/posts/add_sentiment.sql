@@ -1,4 +1,4 @@
--- name: SetPostsSentiment :exec
+-- name: SetPostSentiment :exec
 UPDATE posts
 SET sentiment = $1,
     sentiment_confidence = $2
