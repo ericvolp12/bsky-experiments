@@ -3,10 +3,8 @@ package events
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"path"
-	"strings"
 	"sync"
 	"time"
 
@@ -193,37 +191,6 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 				return nil
 			}
 
-			// Grab the record from the merkel tree
-			rc, rec, err := rr.GetRecord(ctx, op.Path)
-			if err != nil {
-				e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
-				log.Errorf("failed to get a record from the event: %+v\n", e)
-				return nil
-			}
-
-			err = bsky.PersistedGraph.SetCursor(ctx, fmt.Sprintf("%d", evt.Seq))
-			if err != nil {
-				log.Errorf("failed to set cursor: %+v\n", err)
-			}
-
-			// Verify that the record cid matches the cid in the event
-			if lexutil.LexLink(rc) != *op.Cid {
-				e := fmt.Errorf("mismatch in record and op cid: %s != %s", rc, *op.Cid)
-				log.Errorf("failed to LexLink the record in the event: %+v\n", e)
-				return nil
-			}
-
-			recordAsCAR := lexutil.LexiconTypeDecoder{
-				Val: rec,
-			}
-
-			// Attempt to Unpack the CAR Blocks into JSON Byte Array
-			b, err := recordAsCAR.MarshalJSON()
-			if err != nil {
-				log.Errorf("failed to marshal record as CAR: %+v\n", err)
-				return nil
-			}
-
 			// Parse time from the event time string
 			t, err := time.Parse(time.RFC3339, evt.Time)
 			if err != nil {
@@ -234,43 +201,47 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 			lastSeqCreatedAt.Set(float64(t.UnixNano()))
 			lastSeqCreatedAt.Set(float64(time.Now().UnixNano()))
 
-			// If the record is a block, try to unmarshal it into a GraphBlock and log it
-			if strings.HasPrefix(op.Path, "app.bsky.graph.block") {
-				span.SetAttributes(attribute.String("repo.name", evt.Repo))
-				span.SetAttributes(attribute.String("event.type", "app.bsky.graph.block"))
-				// Unmarshal the JSON Byte Array into a Block
-				var block = appbsky.GraphBlock{}
-				err = json.Unmarshal(b, &block)
-				if err != nil {
-					log.Errorf("failed to unmarshal block into a GraphBlock: %+v\n", err)
-					return nil
-				}
-				span.SetAttributes(attribute.String("block.subject", block.Subject))
-				err = bsky.PostRegistry.AddAuthorBlock(ctx, evt.Repo, block.Subject, t)
-				if err != nil {
-					log.Errorf("failed to add author block to registry: %+v\n", err)
-					return nil
-				}
-				log.Infow("processed graph block", "target", block.Subject, "source", evt.Repo)
+			err = bsky.PersistedGraph.SetCursor(ctx, fmt.Sprintf("%d", evt.Seq))
+			if err != nil {
+				log.Errorf("failed to set cursor: %+v\n", err)
+			}
+
+			// Grab the record from the merkel tree
+			rc, rec, err := rr.GetRecord(ctx, op.Path)
+			if err != nil {
+				e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
+				log.Errorf("failed to get a record from the event: %+v\n", e)
 				return nil
 			}
 
-			// If the record is a like, try to unmarshal it into a Like and stick it in the DB
-			if strings.HasPrefix(op.Path, "app.bsky.feed.like") {
+			// Verify that the record cid matches the cid in the event
+			if lexutil.LexLink(rc) != *op.Cid {
+				e := fmt.Errorf("mismatch in record and op cid: %s != %s", rc, *op.Cid)
+				log.Errorf("failed to LexLink the record in the event: %+v\n", e)
+				return nil
+			}
+
+			// Unpack the record and process it
+			switch rec := rec.(type) {
+			case *appbsky.FeedPost:
+				span.AddEvent("Adding to Queue")
+				// Add the RepoRecord to the Queue
+				bsky.RepoRecordQueue <- RepoRecord{
+					ctx:       ctx,
+					seq:       evt.Seq,
+					pst:       *rec,
+					repoName:  evt.Repo,
+					opPath:    op.Path,
+					eventTime: evt.Time,
+				}
+				span.AddEvent("Added to Queue")
+			case *appbsky.FeedLike:
 				span.SetAttributes(attribute.String("repo.name", evt.Repo))
 				span.SetAttributes(attribute.String("event.type", "app.bsky.feed.like"))
-				// Unmarshal the JSON Byte Array into a Like
-				var like = appbsky.FeedLike{}
-				err = json.Unmarshal(b, &like)
-				if err != nil {
-					log.Errorf("failed to unmarshal like into a Like: %+v\n", err)
-					return nil
-				}
+				if rec.Subject != nil {
+					span.SetAttributes(attribute.String("like.subject.uri", rec.Subject.Uri))
 
-				if like.Subject != nil {
-					span.SetAttributes(attribute.String("like.subject.uri", like.Subject.Uri))
-
-					_, postID := path.Split(like.Subject.Uri)
+					_, postID := path.Split(rec.Subject.Uri)
 					span.SetAttributes(attribute.String("like.subject.post_id", postID))
 
 					// Add the Like to the DB
@@ -282,27 +253,34 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 					likesProcessedCounter.Inc()
 				}
 				return nil
-			}
-
-			// Unmarshal the JSON Byte Array into a FeedPost
-			var pst = appbsky.FeedPost{}
-			err = json.Unmarshal(b, &pst)
-			if err != nil {
-				log.Errorf("failed to unmarshal post into a FeedPost: %+v\n", err)
+			case *appbsky.FeedRepost:
+				// Ignore reposts for now
+			case *appbsky.GraphBlock:
+				span.SetAttributes(attribute.String("repo.name", evt.Repo))
+				span.SetAttributes(attribute.String("event.type", "app.bsky.graph.block"))
+				span.SetAttributes(attribute.String("block.subject", rec.Subject))
+				err = bsky.PostRegistry.AddAuthorBlock(ctx, evt.Repo, rec.Subject, t)
+				if err != nil {
+					log.Errorf("failed to add author block to registry: %+v\n", err)
+					return nil
+				}
+				log.Infow("processed graph block", "target", rec.Subject, "source", evt.Repo)
 				return nil
+
+			case *appbsky.GraphFollow:
+				// Ignore follows for now
+			case *appbsky.ActorProfile:
+				// Ignore profile updates for now
+			case *appbsky.FeedGenerator:
+				// Ignore feed generator updates for now
+			case *appbsky.GraphList:
+				// Ignore mute list creation for now
+			case *appbsky.GraphListitem:
+				// Ignore mute list updates for now
+			default:
+				log.Warnf("unknown record type: %+v", rec)
 			}
 
-			span.AddEvent("Adding to Queue")
-			// Add the RepoRecord to the Queue
-			bsky.RepoRecordQueue <- RepoRecord{
-				ctx:       ctx,
-				seq:       evt.Seq,
-				pst:       pst,
-				repoName:  evt.Repo,
-				opPath:    op.Path,
-				eventTime: evt.Time,
-			}
-			span.AddEvent("Added to Queue")
 		case repomgr.EvtKindDeleteRecord:
 			deleteRecordsProcessed.Inc()
 			span.SetAttributes(attribute.String("evt.kind", "delete"))
