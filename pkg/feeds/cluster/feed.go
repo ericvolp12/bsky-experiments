@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds"
@@ -67,7 +68,7 @@ func (cf *ClusterFeed) GetPage(ctx context.Context, feed string, userDID string,
 	ctx, span := tracer.Start(ctx, "ClusterFeed:GetPage")
 	defer span.End()
 
-	postID, cursorBloomFilter, _, err := feeds.ParseCursor(cursor, cf.BloomFilterSize, cf.BloomFilterFalsePositiveRate)
+	createdAt, cursorBloomFilter, _, err := feeds.ParseTimebasedCursor(cursor, cf.BloomFilterSize, cf.BloomFilterFalsePositiveRate)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error parsing cursor: %w", err)
 	}
@@ -80,7 +81,7 @@ func (cf *ClusterFeed) GetPage(ctx context.Context, feed string, userDID string,
 	// Slice the cluster feed prefix off the feed name
 	clusterName := strings.TrimPrefix(feed, "cluster-")
 
-	postsFromRegistry, err := cf.PostRegistry.GetPostsPageFromViewForCluster(ctx, clusterName, cf.DefaultLookbackHours, int32(limit), postID)
+	postsFromRegistry, err := cf.PostRegistry.GetPostsPageForCluster(ctx, clusterName, cf.DefaultLookbackHours, int32(limit), createdAt)
 	if err != nil {
 		if errors.As(err, &search.NotFoundError{}) {
 			return nil, nil, NotFoundError{fmt.Errorf("posts not found for feed %s", feed)}
@@ -91,7 +92,7 @@ func (cf *ClusterFeed) GetPage(ctx context.Context, feed string, userDID string,
 	// Convert to appbsky.FeedDefs_SkeletonFeedPost
 	posts := []*appbsky.FeedDefs_SkeletonFeedPost{}
 	newHotness := -1.0
-	lastPostID := ""
+	var lastPostCreatedAt time.Time
 	for _, post := range postsFromRegistry {
 		// Check if the post is in the bloom filter
 		if !cursorBloomFilter.TestString(post.ID) {
@@ -103,12 +104,12 @@ func (cf *ClusterFeed) GetPage(ctx context.Context, feed string, userDID string,
 				newHotness = *post.Hotness
 			}
 			cursorBloomFilter.AddString(post.ID)
-			lastPostID = post.ID
+			lastPostCreatedAt = post.CreatedAt
 		}
 	}
 
 	// Get the cursor for the next page
-	newCursor, err := feeds.AssembleCursor(lastPostID, cursorBloomFilter, newHotness)
+	newCursor, err := feeds.AssembleTimebasedCursor(lastPostCreatedAt, cursorBloomFilter, newHotness)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error assembling cursor: %w", err)
 	}

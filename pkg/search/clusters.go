@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	_ "github.com/lib/pq" // postgres driver
 
@@ -60,7 +61,7 @@ func (pr *PostRegistry) GetPostsPageForCluster(
 	clusterAlias string,
 	hoursAgo int32,
 	limit int32,
-	cursor string,
+	cursor time.Time,
 ) ([]*Post, error) {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetPostsPageForCluster")
@@ -70,7 +71,7 @@ func (pr *PostRegistry) GetPostsPageForCluster(
 		LookupAlias: clusterAlias,
 		Limit:       limit,
 		HoursAgo:    hoursAgo,
-		Cursor:      cursor,
+		CreatedAt:   cursor,
 	})
 
 	if err != nil {

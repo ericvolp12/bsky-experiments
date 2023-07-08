@@ -6,37 +6,44 @@ package search_queries
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"time"
 )
 
 const getPostsPageWithPostLabelChronological = `-- name: GetPostsPageWithPostLabelChronological :many
-SELECT h.id,
-    h.text,
-    h.parent_post_id,
-    h.root_post_id,
-    h.author_did,
-    h.created_at,
-    h.has_embedded_media,
-    h.parent_relationship,
-    h.sentiment,
-    h.sentiment_confidence,
-    h.hotness::float as hotness
-FROM post_hotness h
-WHERE $1 = ANY(h.post_labels)
-    AND (
-        CASE
-            WHEN $2 = '' THEN TRUE
-            ELSE h.id < $2
-        END
-    )
-ORDER BY h.id DESC
-LIMIT $3
+WITH labeled_posts AS (
+    SELECT p.id,
+        p.text,
+        p.parent_post_id,
+        p.root_post_id,
+        p.author_did,
+        p.created_at,
+        p.has_embedded_media,
+        p.parent_relationship,
+        p.sentiment,
+        p.sentiment_confidence
+    FROM posts p
+        JOIN post_labels l ON p.id = l.post_id
+    WHERE l.label = $1
+        AND p.created_at < $2
+    ORDER BY p.created_at DESC
+    LIMIT $3
+)
+SELECT lp.id, lp.text, lp.parent_post_id, lp.root_post_id, lp.author_did, lp.created_at, lp.has_embedded_media, lp.parent_relationship, lp.sentiment, lp.sentiment_confidence,
+    (
+        SELECT json_agg(l.label) FILTER (
+                WHERE l.label IS NOT NULL
+            )
+        FROM post_labels l
+        WHERE l.post_id = lp.id
+    ) AS labels
+FROM labeled_posts lp
 `
 
 type GetPostsPageWithPostLabelChronologicalParams struct {
-	Label  interface{} `json:"label"`
-	Cursor interface{} `json:"cursor"`
-	Limit  int32       `json:"limit"`
+	Label     string    `json:"label"`
+	CreatedAt time.Time `json:"created_at"`
+	Limit     int32     `json:"limit"`
 }
 
 type GetPostsPageWithPostLabelChronologicalRow struct {
@@ -50,11 +57,11 @@ type GetPostsPageWithPostLabelChronologicalRow struct {
 	ParentRelationship  sql.NullString  `json:"parent_relationship"`
 	Sentiment           sql.NullString  `json:"sentiment"`
 	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
-	Hotness             float64         `json:"hotness"`
+	Labels              json.RawMessage `json:"labels"`
 }
 
 func (q *Queries) GetPostsPageWithPostLabelChronological(ctx context.Context, arg GetPostsPageWithPostLabelChronologicalParams) ([]GetPostsPageWithPostLabelChronologicalRow, error) {
-	rows, err := q.query(ctx, q.getPostsPageWithPostLabelChronologicalStmt, getPostsPageWithPostLabelChronological, arg.Label, arg.Cursor, arg.Limit)
+	rows, err := q.query(ctx, q.getPostsPageWithPostLabelChronologicalStmt, getPostsPageWithPostLabelChronological, arg.Label, arg.CreatedAt, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +80,7 @@ func (q *Queries) GetPostsPageWithPostLabelChronological(ctx context.Context, ar
 			&i.ParentRelationship,
 			&i.Sentiment,
 			&i.SentimentConfidence,
-			&i.Hotness,
+			&i.Labels,
 		); err != nil {
 			return nil, err
 		}

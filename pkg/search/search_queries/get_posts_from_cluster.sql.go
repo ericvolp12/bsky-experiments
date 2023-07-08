@@ -10,23 +10,31 @@ import (
 )
 
 const getPostsPageByClusterAlias = `-- name: GetPostsPageByClusterAlias :many
-SELECT p.id, p.text, p.parent_post_id, p.root_post_id, p.author_did, p.created_at, 
-       p.has_embedded_media, p.parent_relationship, p.sentiment, p.sentiment_confidence
+SELECT p.id,
+      p.text,
+      p.parent_post_id,
+      p.root_post_id,
+      p.author_did,
+      p.created_at,
+      p.has_embedded_media,
+      p.parent_relationship,
+      p.sentiment,
+      p.sentiment_confidence
 FROM posts p
-JOIN author_clusters ON p.author_did = author_clusters.author_did
-JOIN clusters ON author_clusters.cluster_id = clusters.id
-WHERE clusters.lookup_alias = $1 AND 
-      (CASE WHEN $2 = '' THEN TRUE ELSE p.id < $2 END) AND
-      p.created_at >= NOW() - make_interval(hours := CAST($3 AS INT))
-ORDER BY p.id DESC
-LIMIT $4
+      JOIN author_clusters ON p.author_did = author_clusters.author_did
+      JOIN clusters ON author_clusters.cluster_id = clusters.id
+WHERE clusters.lookup_alias = $1
+      AND p.created_at < $2
+      AND p.created_at >= NOW() - make_interval(hours := CAST($4 AS INT))
+ORDER BY p.created_at DESC
+LIMIT $3
 `
 
 type GetPostsPageByClusterAliasParams struct {
-	LookupAlias string      `json:"lookup_alias"`
-	Cursor      interface{} `json:"cursor"`
-	HoursAgo    int32       `json:"hours_ago"`
-	Limit       int32       `json:"limit"`
+	LookupAlias string    `json:"lookup_alias"`
+	CreatedAt   time.Time `json:"created_at"`
+	Limit       int32     `json:"limit"`
+	HoursAgo    int32     `json:"hours_ago"`
 }
 
 type GetPostsPageByClusterAliasRow struct {
@@ -45,9 +53,9 @@ type GetPostsPageByClusterAliasRow struct {
 func (q *Queries) GetPostsPageByClusterAlias(ctx context.Context, arg GetPostsPageByClusterAliasParams) ([]GetPostsPageByClusterAliasRow, error) {
 	rows, err := q.query(ctx, q.getPostsPageByClusterAliasStmt, getPostsPageByClusterAlias,
 		arg.LookupAlias,
-		arg.Cursor,
-		arg.HoursAgo,
+		arg.CreatedAt,
 		arg.Limit,
+		arg.HoursAgo,
 	)
 	if err != nil {
 		return nil, err

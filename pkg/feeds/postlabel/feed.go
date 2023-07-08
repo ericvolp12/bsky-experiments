@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
+	"github.com/bits-and-blooms/bloom/v3"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
@@ -79,17 +82,35 @@ func (plf *PostLabelFeed) GetPage(ctx context.Context, feed string, userDID stri
 	ctx, span := tracer.Start(ctx, "PostLabelFeed:GetPage")
 	defer span.End()
 
-	postID, cursorBloomFilter, cursorHotness, err := feeds.ParseCursor(cursor, plf.BloomFilterSize, plf.BloomFilterFalsePositiveRate)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error parsing cursor: %w", err)
-	}
-
 	// Check if the feed is an alias
 	if alias, ok := feedAliases[feed]; ok {
 		feed = alias
 	}
 
 	var postsFromRegistry []*search.Post
+
+	// var postID string
+	var cursorBloomFilter *bloom.BloomFilter
+	var cursorHotness float64
+	var createdAt time.Time
+	var err error
+
+	cursorType := "standard"
+	if strings.HasPrefix(feed, "hellthread") {
+		cursorType = "timebased"
+	}
+
+	if cursorType == "standard" {
+		_, cursorBloomFilter, cursorHotness, err = feeds.ParseCursor(cursor, plf.BloomFilterSize, plf.BloomFilterFalsePositiveRate)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error parsing cursor: %w", err)
+		}
+	} else {
+		createdAt, cursorBloomFilter, cursorHotness, err = feeds.ParseTimebasedCursor(cursor, plf.BloomFilterSize, plf.BloomFilterFalsePositiveRate)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error parsing cursor: %w", err)
+		}
+	}
 
 	switch feed {
 	case "animals":
@@ -98,10 +119,10 @@ func (plf *PostLabelFeed) GetPage(ctx context.Context, feed string, userDID stri
 		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelsByHotness(ctx, foodLabels, int32(limit), cursorHotness)
 	case "hellthread":
 		// Sort hellthread by chronological order instead of hotness
-		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelChronological(ctx, feed, int32(limit), postID)
+		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelChronological(ctx, feed, int32(limit), createdAt)
 	case "hellthread:pics":
 		// Sort hellthread by chronological order instead of hotness
-		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelChronological(ctx, feed, int32(limit), postID)
+		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelChronological(ctx, feed, int32(limit), createdAt)
 	default:
 		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelByHotness(ctx, feed, int32(limit), cursorHotness)
 	}
@@ -117,6 +138,7 @@ func (plf *PostLabelFeed) GetPage(ctx context.Context, feed string, userDID stri
 	posts := []*appbsky.FeedDefs_SkeletonFeedPost{}
 	newHotness := -1.0
 	lastPostID := ""
+	var lastPostCreatedAt time.Time
 	for _, post := range postsFromRegistry {
 		// Check if the post is in the bloom filter
 		if !cursorBloomFilter.TestString(post.ID) {
@@ -129,11 +151,21 @@ func (plf *PostLabelFeed) GetPage(ctx context.Context, feed string, userDID stri
 			}
 			cursorBloomFilter.AddString(post.ID)
 			lastPostID = post.ID
+			lastPostCreatedAt = post.CreatedAt
 		}
 	}
 
+	var newCursor string
+
 	// Get the cursor for the next page
-	newCursor, err := feeds.AssembleCursor(lastPostID, cursorBloomFilter, newHotness)
+	if cursorType == "standard" {
+		newCursor, err = feeds.AssembleCursor(lastPostID, cursorBloomFilter, newHotness)
+	} else if cursorType == "timebased" {
+		newCursor, err = feeds.AssembleTimebasedCursor(lastPostCreatedAt, cursorBloomFilter, newHotness)
+	} else {
+		return nil, nil, fmt.Errorf("unknown cursor type: %s", cursorType)
+	}
+
 	if err != nil {
 		return nil, nil, fmt.Errorf("error assembling cursor: %w", err)
 	}
