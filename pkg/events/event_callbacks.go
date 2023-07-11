@@ -199,7 +199,7 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 			}
 
 			lastSeqCreatedAt.Set(float64(t.UnixNano()))
-			lastSeqCreatedAt.Set(float64(time.Now().UnixNano()))
+			lastSeqProcessedAt.Set(float64(time.Now().UnixNano()))
 
 			err = bsky.PersistedGraph.SetCursor(ctx, fmt.Sprintf("%d", evt.Seq))
 			if err != nil {
