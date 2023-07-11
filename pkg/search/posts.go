@@ -485,7 +485,79 @@ func (pr *PostRegistry) GetBangerPostsForAuthor(ctx context.Context, did string,
 	return retPosts, nil
 }
 
+func (pr *PostRegistry) GetAllTimeBangers(ctx context.Context, limit int32, offset int32) ([]*Post, error) {
+	tracer := otel.Tracer("PostRegistry")
+	ctx, span := tracer.Start(ctx, "GetAllTimeBangers")
+	defer span.End()
+
+	posts, err := pr.queries.GetAllTimeBangers(ctx, search_queries.GetAllTimeBangersParams{
+		Limit:  limit,
+		Offset: offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	retPosts := []*Post{}
+	for _, post := range posts {
+		newPost, err := postFromAllTimeBangerPage(post)
+		if err != nil {
+			return nil, err
+		}
+		if newPost == nil {
+			continue
+		}
+		retPosts = append(retPosts, newPost)
+	}
+
+	if len(retPosts) == 0 {
+		return nil, PostsNotFound
+	}
+
+	return retPosts, nil
+}
+
 func postFromBangerPage(p search_queries.GetBangersForAuthorRow) (*Post, error) {
+	var parentPostIDPtr *string
+	if p.ParentPostID.Valid {
+		parentPostIDPtr = &p.ParentPostID.String
+	}
+
+	var rootPostIDPtr *string
+	if p.RootPostID.Valid {
+		rootPostIDPtr = &p.RootPostID.String
+	}
+
+	var parentRelationshipPtr *string
+	if p.ParentRelationship.Valid {
+		parentRelationshipPtr = &p.ParentRelationship.String
+	}
+
+	var sentiment *string
+	if p.Sentiment.Valid {
+		sentiment = &p.Sentiment.String
+	}
+
+	var sentimentConfidence *float64
+	if p.SentimentConfidence.Valid {
+		sentimentConfidence = &p.SentimentConfidence.Float64
+	}
+
+	return &Post{
+		ID:                  p.ID,
+		Text:                p.Text,
+		ParentPostID:        parentPostIDPtr,
+		RootPostID:          rootPostIDPtr,
+		AuthorDID:           p.AuthorDid,
+		CreatedAt:           p.CreatedAt,
+		HasEmbeddedMedia:    p.HasEmbeddedMedia,
+		ParentRelationship:  parentRelationshipPtr,
+		Sentiment:           sentiment,
+		SentimentConfidence: sentimentConfidence,
+	}, nil
+}
+
+func postFromAllTimeBangerPage(p search_queries.GetAllTimeBangersRow) (*Post, error) {
 	var parentPostIDPtr *string
 	if p.ParentPostID.Valid {
 		parentPostIDPtr = &p.ParentPostID.String

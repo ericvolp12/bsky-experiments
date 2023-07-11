@@ -24,7 +24,7 @@ func NewBangersFeed(ctx context.Context, feedActorDID string, postRegistry *sear
 	return &BangersFeed{
 		FeedActorDID: feedActorDID,
 		PostRegistry: postRegistry,
-	}, []string{"bangers"}, nil
+	}, []string{"bangers", "at-bangers"}, nil
 }
 
 func (plf *BangersFeed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
@@ -43,12 +43,25 @@ func (plf *BangersFeed) GetPage(ctx context.Context, feed string, userDID string
 		}
 	}
 
-	postsFromRegistry, err := plf.PostRegistry.GetBangerPostsForAuthor(ctx, userDID, int32(limit), int32(offset))
-	if err != nil {
-		if errors.As(err, &search.NotFoundError{}) {
-			return nil, nil, NotFoundError{fmt.Errorf("posts not found for feed %s", feed)}
+	var postsFromRegistry []*search.Post
+
+	switch feed {
+	case "bangers":
+		postsFromRegistry, err = plf.PostRegistry.GetBangerPostsForAuthor(ctx, userDID, int32(limit), int32(offset))
+		if err != nil {
+			if errors.As(err, &search.NotFoundError{}) {
+				return nil, nil, NotFoundError{fmt.Errorf("posts not found for feed %s", feed)}
+			}
+			return nil, nil, fmt.Errorf("error getting posts from registry for feed (%s): %w", feed, err)
 		}
-		return nil, nil, fmt.Errorf("error getting posts from registry for feed (%s): %w", feed, err)
+	case "at-bangers":
+		postsFromRegistry, err = plf.PostRegistry.GetAllTimeBangers(ctx, int32(limit), int32(offset))
+		if err != nil {
+			if errors.As(err, &search.NotFoundError{}) {
+				return nil, nil, NotFoundError{fmt.Errorf("posts not found for feed %s", feed)}
+			}
+			return nil, nil, fmt.Errorf("error getting posts from registry for feed (%s): %w", feed, err)
+		}
 	}
 
 	// Convert to appbsky.FeedDefs_SkeletonFeedPost
@@ -79,6 +92,9 @@ func (plf *BangersFeed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFee
 	feeds := []appbsky.FeedDescribeFeedGenerator_Feed{
 		{
 			Uri: "at://" + plf.FeedActorDID + "/app.bsky.feed.generator/" + "bangers",
+		},
+		{
+			Uri: "at://" + plf.FeedActorDID + "/app.bsky.feed.generator/" + "at-bangers",
 		},
 	}
 

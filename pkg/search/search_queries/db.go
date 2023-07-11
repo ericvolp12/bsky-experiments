@@ -55,6 +55,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getAllLabelsStmt, err = db.PrepareContext(ctx, getAllLabels); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAllLabels: %w", err)
 	}
+	if q.getAllTimeBangersStmt, err = db.PrepareContext(ctx, getAllTimeBangers); err != nil {
+		return nil, fmt.Errorf("error preparing query GetAllTimeBangers: %w", err)
+	}
 	if q.getAllUniquePostLabelsStmt, err = db.PrepareContext(ctx, getAllUniquePostLabels); err != nil {
 		return nil, fmt.Errorf("error preparing query GetAllUniquePostLabels: %w", err)
 	}
@@ -242,6 +245,11 @@ func (q *Queries) Close() error {
 	if q.getAllLabelsStmt != nil {
 		if cerr := q.getAllLabelsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getAllLabelsStmt: %w", cerr)
+		}
+	}
+	if q.getAllTimeBangersStmt != nil {
+		if cerr := q.getAllTimeBangersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getAllTimeBangersStmt: %w", cerr)
 		}
 	}
 	if q.getAllUniquePostLabelsStmt != nil {
@@ -509,6 +517,7 @@ type Queries struct {
 	addPostLabelStmt                                *sql.Stmt
 	assignLabelToAuthorStmt                         *sql.Stmt
 	getAllLabelsStmt                                *sql.Stmt
+	getAllTimeBangersStmt                           *sql.Stmt
 	getAllUniquePostLabelsStmt                      *sql.Stmt
 	getAuthorStmt                                   *sql.Stmt
 	getAuthorBlockStmt                              *sql.Stmt
@@ -569,6 +578,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addPostLabelStmt:                   q.addPostLabelStmt,
 		assignLabelToAuthorStmt:            q.assignLabelToAuthorStmt,
 		getAllLabelsStmt:                   q.getAllLabelsStmt,
+		getAllTimeBangersStmt:              q.getAllTimeBangersStmt,
 		getAllUniquePostLabelsStmt:         q.getAllUniquePostLabelsStmt,
 		getAuthorStmt:                      q.getAuthorStmt,
 		getAuthorBlockStmt:                 q.getAuthorBlockStmt,
