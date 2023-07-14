@@ -22,11 +22,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type preheatItem struct {
-	authorID string
-	postID   string
-}
-
 func main() {
 	ctx := context.Background()
 	var logger *zap.Logger
@@ -97,9 +92,9 @@ func main() {
 		userCount,
 		graphJSONUrl,
 		layoutServiceHost,
-		30*time.Minute, // Thread View Cache TTL
-		30*time.Minute, // Layout Cache TTL
-		5*time.Minute,  // Stats Cache TTL
+		1*time.Minute, // Thread View Cache TTL
+		1*time.Minute, // Layout Cache TTL
+		5*time.Minute, // Stats Cache TTL
 	)
 
 	router := gin.New()
@@ -183,39 +178,6 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-
-	// Preheat the caches with some popular threads
-	preheatList := []preheatItem{
-		{authorID: "did:plc:wgaezxqi2spqm3mhrb5xvkzi", postID: "3juzlwllznd24"},
-	}
-
-	// Create a routine to preheat the caches every 30 minutes
-	cachePreheatTicker := time.NewTicker(30*time.Minute + 45*time.Second)
-	go func() {
-		ctx := context.Background()
-		tracer := otel.Tracer("search-api")
-		for {
-			ctx, span := tracer.Start(ctx, "preheatCaches")
-			log.Printf("Preheating caches with %d threads", len(preheatList))
-			for _, threadToHeat := range preheatList {
-				threadView, err := api.GetThreadView(ctx, threadToHeat.postID, threadToHeat.authorID)
-				if err != nil {
-					log.Printf("Error preheating thread view cache: %v", err)
-				}
-				_, err = api.LayoutThread(ctx, threadToHeat.postID, threadView)
-				if err != nil {
-					log.Printf("Error preheating layout cache: %v", err)
-				}
-			}
-			span.End()
-			select {
-			case <-cachePreheatTicker.C:
-				continue
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
 
 	statsRefreshTicker := time.NewTicker(5 * time.Minute)
 
