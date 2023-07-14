@@ -267,6 +267,12 @@ func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID stri
 			parentPostIDPtr = &parentPostID
 		}
 
+		var parentRelationship *string
+		if threadView.ParentRelationship.Valid {
+			parentRelationshipString := fmt.Sprintf("%s", threadView.ParentRelationship.String)
+			parentRelationship = &parentRelationshipString
+		}
+
 		var rootPostIDPtr *string
 		if threadView.RootPostID.Valid {
 			rootPostID := fmt.Sprintf("%s", threadView.RootPostID.String)
@@ -290,6 +296,7 @@ func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID stri
 				ID:                  threadView.ID,
 				Text:                threadView.Text,
 				ParentPostID:        parentPostIDPtr,
+				ParentRelationship:  parentRelationship,
 				RootPostID:          rootPostIDPtr,
 				AuthorDID:           threadView.AuthorDid,
 				CreatedAt:           threadView.CreatedAt,
