@@ -213,7 +213,7 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 	log.Info("index loop waking up...")
 	start := time.Now()
 	log.Info("getting unindexed posts...")
-	posts, err := indexer.PostRegistry.GetUnindexedPostPage(ctx, 10000, 0)
+	posts, err := indexer.PostRegistry.GetUnindexedPostPage(ctx, 2000, 0)
 	if err != nil {
 		// Check if error is a not found error
 		if errors.Is(err, search.PostsNotFound) {
@@ -269,26 +269,12 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 	}
 
 	log.Infof("setting %d sentiment labels...", len(labels))
-	errs = indexer.PostRegistry.AddOneLabelPerPost(ctx, labels, postIDsToLabel, authorDIDsToLabel)
-	if len(errs) > 0 {
-		log.Errorf("error(s) setting sentiment labels: %+v\n", errs)
+	err = indexer.PostRegistry.AddOneLabelPerPost(ctx, labels, postIDsToLabel, authorDIDsToLabel)
+	if err != nil {
+		log.Errorf("error setting sentiment labels: %+v\n", err)
 	}
 
 	appliedSentimentDone := time.Now()
-
-	// log.Info("submitting %d posts to meilisearch...", len(posts))
-
-	// span.AddEvent("Submitting posts to Meilisearch")
-	// ti, err := indexer.MeiliClient.Index("posts").UpdateDocuments(posts, "id")
-	// if err != nil {
-	// 	log.Errorf("error indexing posts: %v", err)
-	// 	return
-	// }
-	// span.AddEvent("Posts submitted to Meilisearch")
-
-	// indexDone := time.Now()
-
-	// log.Infof("...%d posts queued for index in meilisearch: %d", len(posts), ti.TaskUID)
 
 	// Set indexed at timestamp on posts
 	postIds := make([]string, len(posts))

@@ -40,6 +40,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addLabelStmt, err = db.PrepareContext(ctx, addLabel); err != nil {
 		return nil, fmt.Errorf("error preparing query AddLabel: %w", err)
 	}
+	if q.addLabelsToPostsStmt, err = db.PrepareContext(ctx, addLabelsToPosts); err != nil {
+		return nil, fmt.Errorf("error preparing query AddLabelsToPosts: %w", err)
+	}
 	if q.addLikeToPostStmt, err = db.PrepareContext(ctx, addLikeToPost); err != nil {
 		return nil, fmt.Errorf("error preparing query AddLikeToPost: %w", err)
 	}
@@ -220,6 +223,11 @@ func (q *Queries) Close() error {
 	if q.addLabelStmt != nil {
 		if cerr := q.addLabelStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addLabelStmt: %w", cerr)
+		}
+	}
+	if q.addLabelsToPostsStmt != nil {
+		if cerr := q.addLabelsToPostsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addLabelsToPostsStmt: %w", cerr)
 		}
 	}
 	if q.addLikeToPostStmt != nil {
@@ -512,6 +520,7 @@ type Queries struct {
 	addClusterStmt                                  *sql.Stmt
 	addImageStmt                                    *sql.Stmt
 	addLabelStmt                                    *sql.Stmt
+	addLabelsToPostsStmt                            *sql.Stmt
 	addLikeToPostStmt                               *sql.Stmt
 	addPostStmt                                     *sql.Stmt
 	addPostLabelStmt                                *sql.Stmt
@@ -573,6 +582,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		addClusterStmt:                     q.addClusterStmt,
 		addImageStmt:                       q.addImageStmt,
 		addLabelStmt:                       q.addLabelStmt,
+		addLabelsToPostsStmt:               q.addLabelsToPostsStmt,
 		addLikeToPostStmt:                  q.addLikeToPostStmt,
 		addPostStmt:                        q.addPostStmt,
 		addPostLabelStmt:                   q.addPostLabelStmt,

@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -32,43 +33,33 @@ func (pr *PostRegistry) AddPostLabel(ctx context.Context, postID string, authorD
 	return err
 }
 
-func (pr *PostRegistry) AddOneLabelPerPost(ctx context.Context, labels []string, postIDs []string, authorDIDs []string) []error {
+func (pr *PostRegistry) AddOneLabelPerPost(ctx context.Context, labels []string, postIDs []string, authorDIDs []string) error {
 	tracer := otel.Tracer("PostRegistry")
 	ctx, span := tracer.Start(ctx, "AddOneLabelPerPost")
 	defer span.End()
 
-	tx, err := pr.db.Begin()
-	if err != nil {
-		return []error{fmt.Errorf("error starting transaction: %w", err)}
-	}
-	defer tx.Rollback()
-
-	qtx := pr.queries.WithTx(tx)
-	errs := []error{}
-
 	if len(labels) != len(postIDs) || len(labels) != len(authorDIDs) {
-		return []error{fmt.Errorf("labels, postIDs, and authorDIDs must be the same length")}
+		return fmt.Errorf("labels, postIDs, and authorDIDs must be the same length")
 	}
+
+	labelMap := make([]map[string]interface{}, len(labels))
 
 	for i, postID := range postIDs {
-
-		err := qtx.AddPostLabel(ctx, search_queries.AddPostLabelParams{
-			PostID:    postID,
-			AuthorDid: authorDIDs[i],
-			Label:     labels[i],
-		})
-
-		if err != nil {
-			errs = append(errs, err)
+		labelMap[i] = map[string]interface{}{
+			"post_id":    postID,
+			"author_did": authorDIDs[i],
+			"label":      labels[i],
 		}
 	}
 
-	err = tx.Commit()
+	b, err := json.Marshal(labelMap)
 	if err != nil {
-		errs = append(errs, fmt.Errorf("error committing transaction: %w", err))
+		return fmt.Errorf("error marshalling labels: %w", err)
 	}
 
-	return errs
+	err = pr.queries.AddLabelsToPosts(ctx, b)
+
+	return err
 }
 
 func (pr *PostRegistry) CreateLabel(ctx context.Context, labelAlias string, labelName string) (*Label, error) {
