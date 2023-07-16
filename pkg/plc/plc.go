@@ -92,12 +92,12 @@ func (d *Directory) Start() {
 	ticker := time.NewTicker(d.CheckPeriod)
 	ctx := context.Background()
 	go func() {
+		d.fetchDirectoryEntries(ctx)
+
 		for range ticker.C {
 			d.fetchDirectoryEntries(ctx)
 		}
 	}()
-
-	d.fetchDirectoryEntries(ctx)
 }
 
 func (d *Directory) fetchDirectoryEntries(ctx context.Context) {
