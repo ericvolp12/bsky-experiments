@@ -165,6 +165,20 @@ func (d *Directory) fetchDirectoryEntries(ctx context.Context) {
 				handle := strings.TrimPrefix(entry.Operation.AlsoKnownAs[0], "at://")
 
 				// Set both forward and backward mappings in redis
+
+				// Lookup an existing DID entry if it exists
+				cmd := d.RedisClient.Get(ctx, d.RedisPrefix+":by_did:"+entry.Did)
+				if cmd.Err() != nil {
+					if cmd.Err() != redis.Nil {
+						d.Logger.Errorf("failed to get redis key: %+v", cmd.Err())
+					}
+				}
+
+				oldHandle := cmd.Val()
+				if oldHandle != "" {
+					pipeline.Del(ctx, d.RedisPrefix+":by_handle:"+oldHandle)
+				}
+
 				pipeline.Set(ctx, d.RedisPrefix+":by_did:"+entry.Did, handle, 0)
 				pipeline.Set(ctx, d.RedisPrefix+":by_handle:"+handle, entry.Did, 0)
 			}
