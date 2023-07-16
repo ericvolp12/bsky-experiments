@@ -17,7 +17,6 @@ import (
 
 	"github.com/bluesky-social/indigo/events"
 	intEvents "github.com/ericvolp12/bsky-experiments/pkg/events"
-	"github.com/ericvolp12/bsky-experiments/pkg/persistedgraph"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -123,17 +122,12 @@ func main() {
 		log.Fatalf("failed to connect to redis: %+v\n", err)
 	}
 
-	redisGraph, err := persistedgraph.NewPersistedGraph(ctx, redisClient, "social-graph")
-	if err != nil {
-		log.Fatalf("failed to initialize persisted graph: %+v\n", err)
-	}
-
 	log.Info("initializing BSky Event Handler...")
 	bsky, err := intEvents.NewBSky(
 		ctx,
 		includeLinks, postRegistryEnabled,
 		dbConnectionString,
-		redisGraph,
+		"graph_builder",
 		redisClient,
 		workerCount,
 	)
@@ -153,25 +147,6 @@ func main() {
 		}
 		log := rawlog.Sugar().With("source", "pprof_server")
 		log.Info("starting pprof and prometheus server...")
-		// Create a handler to write out the plaintext graph
-		http.HandleFunc("/graph", func(w http.ResponseWriter, r *http.Request) {
-			log.Info("writing graph to HTTP Response...")
-
-			w.Header().Set("Content-Type", "text/plain")
-			w.Header().Set("Content-Disposition", "attachment; filename=social-graph.txt")
-			w.Header().Set("Content-Transfer-Encoding", "binary")
-			w.Header().Set("Expires", "0")
-			w.Header().Set("Cache-Control", "must-revalidate")
-			w.Header().Set("Pragma", "public")
-
-			err := bsky.PersistedGraph.Write(ctx, w)
-			if err != nil {
-				log.Errorf("error writing graph: %s", err)
-			} else {
-				log.Info("graph written to HTTP Response successfully")
-			}
-		})
-
 		http.Handle("/metrics", promhttp.Handler())
 		log.Info(http.ListenAndServe("0.0.0.0:6060", nil))
 	}()
@@ -243,7 +218,7 @@ func handleRepoStreamWithRetry(
 
 	for {
 		// Try to read the seq number from Redis
-		cursor := bsky.PersistedGraph.GetCursor(ctx)
+		cursor := bsky.GetCursor(ctx)
 		if cursor != "" {
 			log.Infof("found cursor in redis: %s", cursor)
 			u.RawQuery = fmt.Sprintf("cursor=%s", cursor)

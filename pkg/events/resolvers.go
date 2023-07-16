@@ -27,8 +27,7 @@ type PostCacheEntry struct {
 // RefreshAuthToken refreshes the auth token for the client
 func (bsky *BSky) RefreshAuthToken(ctx context.Context, workerID int) error {
 	worker := bsky.Workers[workerID]
-	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "RefreshAuthToken")
+	ctx, span := otel.Tracer("graph-builder").Start(ctx, "RefreshAuthToken")
 	defer span.End()
 	err := intXRPC.RefreshAuth(ctx, worker.Client, &worker.ClientMux)
 	return err
@@ -37,12 +36,11 @@ func (bsky *BSky) RefreshAuthToken(ctx context.Context, workerID int) error {
 // ResolveProfile resolves a profile from a DID using the cache or the API
 func (bsky *BSky) ResolveProfile(ctx context.Context, did string, workerID int) (*bsky.ActorDefs_ProfileViewDetailed, error) {
 	worker := bsky.Workers[workerID]
-	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "ResolveProfile")
+	ctx, span := otel.Tracer("graph-builder").Start(ctx, "ResolveProfile")
 	defer span.End()
 
-	profileCacheKey := bsky.cachesPrefix + ":profile:" + did
-	didCacheKey := bsky.cachesPrefix + ":did:" + did
+	profileCacheKey := bsky.redisPrefix + ":profile:" + did
+	didCacheKey := bsky.redisPrefix + ":did:" + did
 
 	// Check the cache first
 	profString, err := bsky.redisClient.Get(ctx, profileCacheKey).Result()
@@ -133,8 +131,7 @@ type didLookup struct {
 }
 
 func (bsky *BSky) getHandleFromDirectory(ctx context.Context, did string) (handle string, err error) {
-	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "getHandleFromDirectory")
+	ctx, span := otel.Tracer("graph-builder").Start(ctx, "getHandleFromDirectory")
 	defer span.End()
 
 	start := time.Now()
@@ -182,11 +179,10 @@ func (bsky *BSky) getHandleFromDirectory(ctx context.Context, did string) (handl
 }
 
 func (bsky *BSky) ResolveDID(ctx context.Context, did string) (handle string, err error) {
-	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "ResolveDID")
+	ctx, span := otel.Tracer("graph-builder").Start(ctx, "ResolveDID")
 	defer span.End()
 
-	cacheKey := bsky.cachesPrefix + ":did:" + did
+	cacheKey := bsky.redisPrefix + ":did:" + did
 
 	// Check the cache first
 	handleFromCache, err := bsky.redisClient.Get(ctx, cacheKey).Result()
@@ -219,12 +215,11 @@ func (bsky *BSky) ResolveDID(ctx context.Context, did string) (handle string, er
 // ResolvePost resolves a post from a URI using the cache or the API
 func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*bsky.FeedDefs_PostView, error) {
 	worker := bsky.Workers[workerID]
-	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "ResolvePost")
+	ctx, span := otel.Tracer("graph-builder").Start(ctx, "ResolvePost")
 	defer span.End()
 	// Check the cache first
 	var cacheEntry *PostCacheEntry
-	postString, err := bsky.redisClient.Get(ctx, bsky.cachesPrefix+":post:"+uri).Result()
+	postString, err := bsky.redisClient.Get(ctx, bsky.redisPrefix+":post:"+uri).Result()
 	if err == nil {
 		// If the post is in the cache, return it
 		cacheEntry = &PostCacheEntry{}
@@ -286,7 +281,7 @@ func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*b
 			}
 
 			// Cache the profile
-			bsky.redisClient.Set(ctx, bsky.cachesPrefix+":post:"+uri, entryJSON, bsky.postCacheTTL)
+			bsky.redisClient.Set(ctx, bsky.redisPrefix+":post:"+uri, entryJSON, bsky.postCacheTTL)
 		}
 		return nil, err
 	}
@@ -310,7 +305,7 @@ func (bsky *BSky) ResolvePost(ctx context.Context, uri string, workerID int) (*b
 		}
 
 		// Cache the profile
-		bsky.redisClient.Set(ctx, bsky.cachesPrefix+":post:"+uri, entryJSON, bsky.postCacheTTL)
+		bsky.redisClient.Set(ctx, bsky.redisPrefix+":post:"+uri, entryJSON, bsky.postCacheTTL)
 
 		return posts.Posts[0], nil
 	}

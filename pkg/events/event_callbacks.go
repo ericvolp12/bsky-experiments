@@ -15,7 +15,6 @@ import (
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/repomgr"
-	"github.com/ericvolp12/bsky-experiments/pkg/persistedgraph"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	"github.com/redis/go-redis/v9"
@@ -52,8 +51,6 @@ type RepoRecord struct {
 type BSky struct {
 	IncludeLinks bool
 
-	PersistedGraph *persistedgraph.PersistedGraph
-
 	Logger *zap.SugaredLogger
 
 	SeqMux      sync.RWMutex
@@ -61,9 +58,11 @@ type BSky struct {
 	LastSeq     int64 // LastSeq is the last sequence number processed
 
 	redisClient     *redis.Client
-	cachesPrefix    string
+	redisPrefix     string
 	profileCacheTTL time.Duration
 	postCacheTTL    time.Duration
+	cursorKey       string
+	lastUpdatedKey  string
 
 	RepoRecordQueue chan RepoRecord
 
@@ -83,8 +82,7 @@ type BSky struct {
 func NewBSky(
 	ctx context.Context,
 	includeLinks, postRegistryEnabled bool,
-	dbConnectionString string,
-	persistedGraph *persistedgraph.PersistedGraph,
+	dbConnectionString, redisPrefix string,
 	redisClient *redis.Client,
 	workerCount int,
 ) (*BSky, error) {
@@ -109,18 +107,18 @@ func NewBSky(
 	bsky := &BSky{
 		IncludeLinks: includeLinks,
 
-		PersistedGraph: persistedGraph,
-
 		Logger: log,
 
 		SeqMux:      sync.RWMutex{},
 		LastUpdated: time.Now(),
 
 		// 60 minute Cache TTLs
-		cachesPrefix:    "graph_builder",
+		redisPrefix:     redisPrefix,
 		redisClient:     redisClient,
 		profileCacheTTL: time.Hour * 12,
 		postCacheTTL:    time.Minute * 60,
+		cursorKey:       redisPrefix + ":cursor",
+		lastUpdatedKey:  redisPrefix + ":last-updated",
 
 		RepoRecordQueue:  make(chan RepoRecord, 1),
 		bskyLimiter:      rate.NewLimiter(rate.Every(time.Millisecond*125), 1),
@@ -153,10 +151,42 @@ func NewBSky(
 	return bsky, nil
 }
 
+// SetCursor sets the cursor for the graph.
+func (bsky *BSky) SetCursor(ctx context.Context, cursor int64) error {
+	ctx, span := otel.Tracer("graph-builder").Start(ctx, "SetCursor")
+	defer span.End()
+	// Set the cursor
+	cmd := bsky.redisClient.Set(ctx, bsky.cursorKey, cursor, 0)
+	if cmd.Err() != nil {
+		return fmt.Errorf("error setting cursor in Redis: %w", cmd.Err())
+	}
+
+	// Update the last updated time
+	bsky.SeqMux.Lock()
+	bsky.LastSeq = cursor
+	bsky.LastUpdated = time.Now()
+	bsky.redisClient.Set(ctx, bsky.lastUpdatedKey, bsky.LastUpdated, 0)
+	bsky.SeqMux.Unlock()
+
+	return nil
+}
+
+// GetCursor returns the cursor for the graph.
+func (bsky *BSky) GetCursor(ctx context.Context) string {
+	ctx, span := otel.Tracer("graph-builder").Start(ctx, "GetCursor")
+	defer span.End()
+	// Get the cursor
+	cursor, err := bsky.redisClient.Get(ctx, bsky.cursorKey).Result()
+	if err != nil {
+		return ""
+	}
+
+	return cursor
+}
+
 // HandleRepoCommit is called when a repo commit is received and prints its contents
 func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubscribeRepos_Commit) error {
-	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "HandleRepoCommit")
+	ctx, span := otel.Tracer("graph-builder").Start(ctx, "HandleRepoCommit")
 	defer span.End()
 
 	span.AddEvent("AcquireSeqLock")
@@ -201,7 +231,7 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 			lastSeqCreatedAt.Set(float64(t.UnixNano()))
 			lastSeqProcessedAt.Set(float64(time.Now().UnixNano()))
 
-			err = bsky.PersistedGraph.SetCursor(ctx, fmt.Sprintf("%d", evt.Seq))
+			err = bsky.SetCursor(ctx, evt.Seq)
 			if err != nil {
 				log.Errorf("failed to set cursor: %+v\n", err)
 			}

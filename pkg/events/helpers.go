@@ -8,7 +8,6 @@ import (
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/xrpc"
-	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -21,6 +20,7 @@ func FeedGetPostsWithTimeout(
 	uris []string,
 	timeout time.Duration,
 ) (*appbsky.FeedGetPosts_Output, error) {
+	ctx, _ = otel.Tracer("graph-builder").Start(ctx, "FeedGetPostsWithTimeout")
 	type result struct {
 		posts *appbsky.FeedGetPosts_Output
 		err   error
@@ -56,8 +56,7 @@ func (bsky *BSky) DecodeFacets(
 	facets []*appbsky.RichtextFacet,
 	workerID int,
 ) ([]string, []string, error) {
-	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "DecodeFacets")
+	ctx, span := otel.Tracer("graph-builder").Start(ctx, "DecodeFacets")
 	defer span.End()
 	span.SetAttributes(attribute.Int("facets.count", len(facets)))
 
@@ -81,20 +80,6 @@ func (bsky *BSky) DecodeFacets(
 							continue
 						}
 						mentions = append(mentions, fmt.Sprintf("@%s", mentionedHandle))
-
-						// Track mentions in the social graph
-						from := graph.Node{
-							DID:    graph.NodeID(authorDID),
-							Handle: authorHandle,
-						}
-
-						to := graph.Node{
-							DID:    graph.NodeID(feature.RichtextFacet_Mention.Did),
-							Handle: mentionedHandle,
-						}
-
-						// Increment the edge in the graph
-						bsky.PersistedGraph.IncrementEdge(ctx, from, to, 1)
 					}
 				}
 			}

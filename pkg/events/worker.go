@@ -9,7 +9,6 @@ import (
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/xrpc"
-	"github.com/ericvolp12/bsky-experiments/pkg/graph"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
@@ -113,8 +112,7 @@ func (bsky *BSky) ProcessRepoRecord(
 	eventTime string,
 	workerID int,
 ) error {
-	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "ProcessRepoRecord")
+	ctx, span := otel.Tracer("graph-builder").Start(ctx, "ProcessRepoRecord")
 	defer span.End()
 	start := time.Now()
 
@@ -330,14 +328,12 @@ func (bsky *BSky) ProcessRepoRecord(
 
 // ProcessRelation handles a quote or reply relation
 // It returns the parent author DID and handle after resolving the parent post
-// It also updates the graph with the relation by incrementing the edge weight
 func (bsky *BSky) ProcessRelation(
 	ctx context.Context,
 	authorDID, authorHandle, parentPostURI string,
 	workerID int,
 ) (string, string, error) {
-	tracer := otel.Tracer("graph-builder")
-	ctx, span := tracer.Start(ctx, "ProcessRelation")
+	ctx, span := otel.Tracer("graph-builder").Start(ctx, "ProcessRelation")
 	defer span.End()
 
 	log := bsky.Workers[workerID].Logger
@@ -355,23 +351,6 @@ func (bsky *BSky) ProcessRelation(
 	span.SetAttributes(attribute.String("parent.uri", parentPostURI))
 	span.SetAttributes(attribute.String("parent.author_handle", parentAuthorHandle))
 	span.SetAttributes(attribute.String("parent.author_did", parentAuthorDID))
-
-	// Update the graph
-	from := graph.Node{
-		DID:    graph.NodeID(authorDID),
-		Handle: authorHandle,
-	}
-
-	to := graph.Node{
-		DID:    graph.NodeID(parentAuthorDID),
-		Handle: parentAuthorHandle,
-	}
-
-	err = bsky.PersistedGraph.IncrementEdge(ctx, from, to, 1)
-	if err != nil {
-		span.SetAttributes(attribute.String("persisted_graph.error", err.Error()))
-		log.Errorf("error incrementing edge in persisted graph: %+v\n", err)
-	}
 
 	return parentAuthorDID, parentAuthorHandle, nil
 }
