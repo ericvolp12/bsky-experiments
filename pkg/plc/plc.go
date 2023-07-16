@@ -1,17 +1,19 @@
 package plc
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 )
 
@@ -24,12 +26,23 @@ type Directory struct {
 	Endpoint    string
 	RateLimiter *rate.Limiter
 	CheckPeriod time.Duration
-	Entries     []DirectoryEntry
-	Lock        sync.RWMutex
 	AfterCursor time.Time
+	Logger      *zap.SugaredLogger
+
+	RedisClient *redis.Client
+	RedisPrefix string
 }
 
 type DirectoryEntry struct {
+	Did string `json:"did"`
+	AKA string `json:"handle"`
+}
+
+type RawDirectoryEntry struct {
+	JSON json.RawMessage
+}
+
+type DirectoryJSONLRow struct {
 	Did       string    `json:"did"`
 	Operation Operation `json:"operation"`
 	Cid       string    `json:"cid"`
@@ -38,24 +51,41 @@ type DirectoryEntry struct {
 }
 
 type Operation struct {
-	Sig         string `json:"sig"`
-	Prev        string `json:"prev"`
-	Type        string `json:"type"`
-	Handle      string `json:"handle"`
-	Service     string `json:"service"`
-	SigningKey  string `json:"signingKey"`
-	RecoveryKey string `json:"recoveryKey"`
+	AlsoKnownAs []string `json:"alsoKnownAs"`
+	Type        string   `json:"type"`
 }
 
-func NewDirectory(endpoint string) *Directory {
+func NewDirectory(endpoint string, redisClient *redis.Client, redisPrefix string) (*Directory, error) {
+	ctx := context.Background()
+	rawLogger, err := zap.NewProduction()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create logger: %+v", err)
+	}
+	logger := rawLogger.Sugar().With("source", "plc_directory")
+
+	cmd := redisClient.Get(ctx, redisPrefix+":last_cursor")
+	if cmd.Err() != nil {
+		logger.Info("no last cursor found, starting from beginning")
+	}
+
+	var lastCursor time.Time
+	if cmd.Val() != "" {
+		lastCursor, err = time.Parse(time.RFC3339Nano, cmd.Val())
+		if err != nil {
+			logger.Info("failed to parse last cursor, starting from beginning")
+		}
+	}
+
 	return &Directory{
 		Endpoint:    endpoint,
+		Logger:      logger,
 		RateLimiter: rate.NewLimiter(rate.Limit(2), 1),
 		CheckPeriod: 30 * time.Second,
-		Entries:     make([]DirectoryEntry, 0),
-		Lock:        sync.RWMutex{},
-		AfterCursor: time.Now(),
-	}
+		AfterCursor: lastCursor,
+
+		RedisClient: redisClient,
+		RedisPrefix: redisPrefix,
+	}, nil
 }
 
 func (d *Directory) Start() {
@@ -73,42 +103,108 @@ func (d *Directory) Start() {
 func (d *Directory) fetchDirectoryEntries(ctx context.Context) {
 	client := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
 
+	d.Logger.Info("fetching directory entries...")
+
 	for {
-		d.Lock.Lock()
-		req, _ := http.NewRequestWithContext(ctx, "GET", d.Endpoint, nil)
+		d.Logger.Infof("querying for entries after %s", d.AfterCursor.Format(time.RFC3339Nano))
+		req, err := http.NewRequestWithContext(ctx, "GET", d.Endpoint, nil)
+		if err != nil {
+			d.Logger.Errorf("failed to create request: %+v", err)
+			break
+		}
 		q := req.URL.Query()
-		q.Add("after", d.AfterCursor.Format(time.RFC3339))
+		if !d.AfterCursor.IsZero() {
+			q.Add("after", d.AfterCursor.Format(time.RFC3339Nano))
+		}
 		req.URL.RawQuery = q.Encode()
 		d.RateLimiter.Wait(ctx)
 		start := time.Now()
 		resp, err := client.Do(req)
 		plcDirectoryRequestHistogram.WithLabelValues(fmt.Sprintf("%d", resp.StatusCode)).Observe(time.Since(start).Seconds())
 		if err != nil {
-			d.Lock.Unlock()
-			resp.Body.Close()
-			continue
-		}
-
-		body, _ := ioutil.ReadAll(resp.Body)
-
-		var newEntries []DirectoryEntry
-		json.Unmarshal(body, &newEntries)
-
-		if len(newEntries) == 0 {
-			d.Lock.Unlock()
+			d.Logger.Errorf("failed to fetch directory entries: %+v", err)
 			resp.Body.Close()
 			break
 		}
 
-		d.Entries = append(d.Entries, newEntries...)
-		d.AfterCursor = d.Entries[len(d.Entries)-1].CreatedAt
-		d.Lock.Unlock()
+		// Create a bufio scanner to read the response line by line
+		scanner := bufio.NewScanner(resp.Body)
+
+		var newEntries []DirectoryJSONLRow
+		for scanner.Scan() {
+			line := scanner.Text()
+			var entry DirectoryJSONLRow
+
+			// Try to unmarshal the line into a DirectoryJSONLRow
+			if err := json.Unmarshal([]byte(line), &entry); err != nil {
+				d.Logger.Errorf("failed to unmarshal directory entry: %+v", err)
+				resp.Body.Close()
+				return
+			}
+
+			newEntries = append(newEntries, entry)
+		}
+
+		// Check if the scan finished without errors
+		if err := scanner.Err(); err != nil {
+			d.Logger.Errorf("failed to read response body: %+v", err)
+			resp.Body.Close()
+			return
+		}
+
+		if len(newEntries) <= 1 {
+			resp.Body.Close()
+			break
+		}
+
 		resp.Body.Close()
+
+		pipeline := d.RedisClient.Pipeline()
+		for _, entry := range newEntries {
+			if len(entry.Operation.AlsoKnownAs) > 0 {
+				handle := strings.TrimPrefix(entry.Operation.AlsoKnownAs[0], "at://")
+
+				// Set both forward and backward mappings in redis
+				pipeline.Set(ctx, d.RedisPrefix+":by_did:"+entry.Did, handle, 0)
+				pipeline.Set(ctx, d.RedisPrefix+":by_handle:"+handle, entry.Did, 0)
+			}
+		}
+		_, err = pipeline.Exec(ctx)
+		if err != nil {
+			d.Logger.Errorf("failed to set redis keys: %+v", err)
+		}
+
+		d.AfterCursor = newEntries[len(newEntries)-1].CreatedAt
+		cmd := d.RedisClient.Set(ctx, d.RedisPrefix+":last_cursor", d.AfterCursor.Format(time.RFC3339Nano), 0)
+		if cmd.Err() != nil {
+			d.Logger.Errorf("failed to set last cursor: %+v", cmd.Err())
+		}
+		d.Logger.Infof("fetched %d new directory entries", len(newEntries))
 	}
+
+	d.Logger.Info("finished fetching directory entries")
 }
 
-func (d *Directory) GetDirectoryEntries() []DirectoryEntry {
-	d.Lock.RLock()
-	defer d.Lock.RUnlock()
-	return d.Entries
+func (d *Directory) GetEntryForDID(ctx context.Context, did string) (DirectoryEntry, error) {
+	cmd := d.RedisClient.Get(ctx, d.RedisPrefix+":by_did:"+did)
+	if cmd.Err() != nil {
+		return DirectoryEntry{}, cmd.Err()
+	}
+
+	return DirectoryEntry{
+		Did: did,
+		AKA: cmd.Val(),
+	}, nil
+}
+
+func (d *Directory) GetEntryForHandle(ctx context.Context, handle string) (DirectoryEntry, error) {
+	cmd := d.RedisClient.Get(ctx, d.RedisPrefix+":by_handle:"+handle)
+	if cmd.Err() != nil {
+		return DirectoryEntry{}, cmd.Err()
+	}
+
+	return DirectoryEntry{
+		Did: cmd.Val(),
+		AKA: handle,
+	}, nil
 }
