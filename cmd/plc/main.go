@@ -145,7 +145,7 @@ func main() {
 		log.Fatalf("failed to create plc directory: %+v\n", err)
 	}
 
-	go plc.Start()
+	plc.Start()
 
 	router.GET("/:lookup_target", func(c *gin.Context) {
 		lookupTarget := c.Param("lookup_target")
