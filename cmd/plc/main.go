@@ -85,7 +85,7 @@ func main() {
 	// Plug in OTEL Middleware and skip metrics endpoint
 	router.Use(
 		otelgin.Middleware(
-			"BSky-Feed-Generator-Go",
+			"BSky-PLC",
 			otelgin.WithFilter(func(req *http.Request) bool {
 				return req.URL.Path != "/metrics"
 			}),
@@ -172,7 +172,7 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8723"
+		port = "8080"
 	}
 
 	log.Printf("Starting server on port %s", port)
