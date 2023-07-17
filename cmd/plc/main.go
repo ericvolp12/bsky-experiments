@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -11,10 +10,12 @@ import (
 	"time"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/plc"
+	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	ginprometheus "github.com/ericvolp12/go-gin-prometheus"
 	"github.com/gin-contrib/cors"
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 
@@ -41,9 +42,23 @@ func main() {
 		}
 	}()
 
-	sugar := logger.Sugar()
+	log := logger.Sugar()
 
-	sugar.Info("Starting up PLC Mirror...")
+	log.Info("Starting up PLC Mirror...")
+
+	// Registers a tracer Provider globally if the exporter endpoint is set
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+		log.Info("initializing tracer...")
+		shutdown, err := tracing.InstallExportPipeline(ctx, "PLCMirror", 0.2)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer func() {
+			if err := shutdown(ctx); err != nil {
+				log.Fatal(err)
+			}
+		}()
+	}
 
 	router := gin.New()
 
@@ -109,8 +124,11 @@ func main() {
 		},
 	))
 
+	buckets := prometheus.ExponentialBuckets(0.0001, 2, 16)
 	// Prometheus middleware
-	p := ginprometheus.NewPrometheus("gin", nil)
+	p := ginprometheus.NewPrometheus("gin", &ginprometheus.DefaultMetricOverrides{
+		RequestDurationSecondsBuckets: &buckets,
+	})
 	p.Use(router)
 
 	redisAddress := os.Getenv("REDIS_ADDRESS")
@@ -175,6 +193,6 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("Starting server on port %s", port)
+	log.Infof("Starting server on port %s", port)
 	router.Run(fmt.Sprintf(":%s", port))
 }

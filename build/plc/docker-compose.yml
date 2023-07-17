@@ -12,5 +12,6 @@ services:
     container_name: bsky-plc
     environment:
       - REDIS_ADDRESS=host.docker.internal:6379
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4318/
     ports:
       - "8097:8080"
