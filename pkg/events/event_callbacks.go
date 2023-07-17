@@ -75,6 +75,8 @@ type BSky struct {
 
 	PostRegistryEnabled bool
 	PostRegistry        *search.PostRegistry
+
+	PLCMirrorRoot string
 }
 
 // NewBSky creates a new BSky struct with an authenticated XRPC client
@@ -82,7 +84,7 @@ type BSky struct {
 func NewBSky(
 	ctx context.Context,
 	includeLinks, postRegistryEnabled bool,
-	dbConnectionString, redisPrefix string,
+	dbConnectionString, redisPrefix, plcMirrorRoot string,
 	redisClient *redis.Client,
 	workerCount int,
 ) (*BSky, error) {
@@ -129,6 +131,8 @@ func NewBSky(
 
 		PostRegistryEnabled: postRegistryEnabled,
 		PostRegistry:        postRegistry,
+
+		PLCMirrorRoot: plcMirrorRoot,
 	}
 
 	// Initialize the workers, each with their own BSky Client and Mutex

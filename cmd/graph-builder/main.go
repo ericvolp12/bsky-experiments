@@ -95,6 +95,11 @@ func main() {
 		postRegistryEnabled = true
 	}
 
+	plcDirectoryMirror := os.Getenv("PLC_DIRECTORY_MIRROR")
+	if plcDirectoryMirror != "" {
+		plcDirectoryMirror = "https://plc.jazco.io"
+	}
+
 	redisAddress := os.Getenv("REDIS_ADDRESS")
 	if redisAddress == "" {
 		redisAddress = "localhost:6379"
@@ -126,8 +131,7 @@ func main() {
 	bsky, err := intEvents.NewBSky(
 		ctx,
 		includeLinks, postRegistryEnabled,
-		dbConnectionString,
-		"graph_builder",
+		dbConnectionString, "graph_builder", plcDirectoryMirror,
 		redisClient,
 		workerCount,
 	)
