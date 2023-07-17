@@ -63,18 +63,12 @@ var postProcessingDurationHistogram = promauto.NewHistogram(prometheus.Histogram
 var apiCallDurationHistogram = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    "bsky_api_call_duration_seconds",
 	Help:    "The duration of API calls",
-	Buckets: prometheus.DefBuckets,
+	Buckets: prometheus.ExponentialBuckets(0.0001, 2, 20),
 }, []string{"api_call"})
 
 var likesProcessedCounter = promauto.NewCounter(prometheus.CounterOpts{
 	Name: "bsky_likes_processed_total",
 	Help: "The total number of likes processed",
-})
-
-var indexingLatency = promauto.NewHistogram(prometheus.HistogramOpts{
-	Name:    "bsky_indexing_latency_seconds",
-	Help:    "The duration of adding a post to the index",
-	Buckets: prometheus.ExponentialBuckets(0.001, 30, 15),
 })
 
 var lastSeq = promauto.NewGauge(prometheus.GaugeOpts{
