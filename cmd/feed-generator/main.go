@@ -278,6 +278,12 @@ func main() {
 	router.GET("/xrpc/app.bsky.feed.getFeedSkeleton", endpoints.GetFeedSkeleton)
 	router.GET("/xrpc/app.bsky.feed.describeFeedGenerator", endpoints.DescribeFeedGenerator)
 
+	// Create Admin routes
+	adminRoutes := router.Group("/admin")
+	{
+		adminRoutes.GET("/feeds", endpoints.GetFeeds)
+	}
+
 	// API Key Auth Middleware
 	router.Use(auther.AuthenticateGinRequestViaAPIKey)
 	router.PUT("/assign_user_to_feed", endpoints.AssignUserToFeed)

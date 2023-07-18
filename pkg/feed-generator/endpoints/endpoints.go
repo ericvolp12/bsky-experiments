@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -524,4 +525,37 @@ func (ep *Endpoints) GetFeedMembers(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"authors": authors})
+}
+
+type FeedMeta struct {
+	FeedType  string `json:"feed_type"`
+	UserCount int    `json:"user_count"`
+}
+
+// Debug endpoints for the Feed Generator Admin Dashboard
+type GetFeedsResponse struct {
+	Feeds map[string]FeedMeta `json:"feeds"`
+}
+
+func (ep *Endpoints) GetFeeds(c *gin.Context) {
+	_, span := otel.Tracer("feed-generator").Start(c.Request.Context(), "GetFeeds")
+	defer span.End()
+
+	feeds := make(map[string]FeedMeta)
+
+	for alias, feed := range ep.FeedGenerator.FeedMap {
+		feedType := reflect.TypeOf(feed).String()
+		feedType = strings.TrimPrefix(feedType, "*")
+
+		feeds[alias] = FeedMeta{
+			FeedType:  feedType,
+			UserCount: len(ep.FeedUsers[alias]),
+		}
+	}
+
+	resp := GetFeedsResponse{
+		Feeds: feeds,
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
