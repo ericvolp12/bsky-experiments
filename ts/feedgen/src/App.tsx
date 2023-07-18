@@ -1,9 +1,8 @@
 import "./App.css";
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import FeedList from "./components/FeedList/FeedList";
-import { Fragment } from "react";
-import { Disclosure, Menu, Transition } from "@headlessui/react";
-import { Bars3Icon, BellIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { Disclosure } from "@headlessui/react";
+import { Bars3Icon, XMarkIcon } from "@heroicons/react/24/outline";
 
 function classNames(...classes: string[]) {
   return classes.filter(Boolean).join(" ");
@@ -11,7 +10,7 @@ function classNames(...classes: string[]) {
 
 const router = createBrowserRouter([
   {
-    path: "/",
+    path: "/admin/dashboard/",
     element: <FeedList />,
   },
 ]);
@@ -30,7 +29,7 @@ function App() {
                       <img
                         className="h-8 w-8"
                         src="https://tailwindui.com/img/logos/mark.svg?color=indigo&shade=500"
-                        alt="Your Company"
+                        alt="Feed Generator"
                       />
                     </div>
                     <div className="hidden md:block">

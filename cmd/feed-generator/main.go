@@ -201,6 +201,7 @@ func main() {
 
 	// Serve static files from the public folder
 	router.Static("/public", "./public")
+	router.Static("/assets", "./public/assets")
 
 	// Plug in OTEL Middleware and skip metrics endpoint
 	router.Use(
@@ -282,6 +283,7 @@ func main() {
 	adminRoutes := router.Group("/admin")
 	{
 		adminRoutes.GET("/feeds", endpoints.GetFeeds)
+		adminRoutes.Static("/dashboard", "./public")
 	}
 
 	// API Key Auth Middleware

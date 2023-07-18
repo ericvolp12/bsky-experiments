@@ -1,4 +1,4 @@
-FROM golang:1.20 as builder
+FROM golang:1.20 as bin-builder
 
 WORKDIR /app
 
@@ -18,11 +18,23 @@ FROM alpine:latest as certs
 
 RUN apk --update add ca-certificates
 
+FROM node:18-alpine as web-builder
+
+WORKDIR /app
+
+COPY ts/feedgen /app/
+
+RUN yarn install --frozen-lockfile
+
+RUN yarn build
+
 FROM debian:stable-slim
 
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /app/feedgen .
+COPY --from=bin-builder /app/feedgen .
+
+COPY --from=web-builder /app/dist/ public/
 
 COPY public/ public/
 
