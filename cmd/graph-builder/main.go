@@ -162,7 +162,7 @@ func main() {
 	err = handleRepoStreamWithRetry(ctx, bsky, log, u, &intEvents.RepoStreamCtxCallbacks{
 		RepoCommit: bsky.HandleRepoCommit,
 		RepoInfo:   intEvents.HandleRepoInfo,
-		Error:      intEvents.HandleError,
+		Error:      bsky.HandleError,
 	})
 
 	if err != nil {

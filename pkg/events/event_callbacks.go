@@ -328,6 +328,13 @@ func HandleRepoInfo(ctx context.Context, info *comatproto.SyncSubscribeRepos_Inf
 	return nil
 }
 
-func HandleError(ctx context.Context, errf *events.ErrorFrame) error {
-	return nil
+func (bsky *BSky) HandleError(ctx context.Context, errf *events.ErrorFrame) error {
+	// Errors are only sent as the last message in a stream, so we can
+	// safely exit here
+	ctx, span := otel.Tracer("graph-builder").Start(ctx, "HandleError")
+	defer span.End()
+
+	bsky.Logger.Errorf("error received from repo stream (%+v): %+v \n", errf.Error, errf.Message)
+
+	return fmt.Errorf("error received from repo stream (%+v): %+v", errf.Error, errf.Message)
 }

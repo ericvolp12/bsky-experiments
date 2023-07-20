@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -10,14 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/decred/dcrd/dcrec/secp256k1"
 	es256k "github.com/ericvolp12/jwt-go-secp256k1"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
 	lru "github.com/hashicorp/golang-lru/arc/v2"
-	"github.com/multiformats/go-multibase"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	godid "github.com/whyrusleeping/go-did"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -25,16 +23,11 @@ import (
 )
 
 type PLCEntry struct {
-	Context            []string `json:"@context"`
-	ID                 string   `json:"id"`
-	AlsoKnownAs        []string `json:"alsoKnownAs"`
-	VerificationMethod []struct {
-		ID                 string `json:"id"`
-		Type               string `json:"type"`
-		Controller         string `json:"controller"`
-		PublicKeyMultibase string `json:"publicKeyMultibase"`
-	} `json:"verificationMethod"`
-	Service []struct {
+	Context            []string                   `json:"@context"`
+	ID                 string                     `json:"id"`
+	AlsoKnownAs        []string                   `json:"alsoKnownAs"`
+	VerificationMethod []godid.VerificationMethod `json:"verificationMethod"`
+	Service            []struct {
 		ID              string `json:"id"`
 		Type            string `json:"type"`
 		ServiceEndpoint string `json:"serviceEndpoint"`
@@ -43,7 +36,7 @@ type PLCEntry struct {
 
 type KeyCacheEntry struct {
 	UserDID   string
-	Key       *ecdsa.PublicKey
+	Key       any
 	ExpiresAt time.Time
 }
 
@@ -175,32 +168,32 @@ func (auth *Auth) GetClaimsFromAuthHeader(ctx context.Context, authHeader string
 				return nil, fmt.Errorf("No verification method found in PLC Entry")
 			}
 
-			// Get the multibase key from the PLC Entry's first verification method
-			// TODO: Support multiple verification methods
-			multibaseKey := plcEntry.VerificationMethod[0].PublicKeyMultibase
+			// Get the multibase key from the PLC Entry's verification method with id #atproto
+			var vm *godid.VerificationMethod
+			for _, verificationMethod := range plcEntry.VerificationMethod {
+				if verificationMethod.ID == "#atproto" {
+					vm = &verificationMethod
+					break
+				}
+			}
 
-			// Decode the multibase key
-			_, decodedMultibaseKey, err := multibase.Decode(multibaseKey)
+			if vm == nil {
+				return nil, fmt.Errorf("No verification method for #atproto found in PLC Entry")
+			}
+
+			// Parse the public key from the decoded multibase key
+			pub, err := vm.GetPublicKey()
 			if err != nil {
 				return nil, fmt.Errorf("Failed to decode multibase key: %v", err)
 			}
 
-			// Parse the public key from the decoded multibase key
-			pub, err := secp256k1.ParsePubKey(decodedMultibaseKey)
-			if err != nil {
-				return nil, fmt.Errorf("Failed to parse public key from decoded multibase key: %v", err)
-			}
-
-			// Convert the public key to an ECDSA public key
-			ecdsaPubKey := pub.ToECDSA()
-
 			// Add the ECDSA key to the cache
 			auth.KeyCache.Add(userDID, KeyCacheEntry{
-				Key:       ecdsaPubKey,
+				Key:       pub.Raw,
 				ExpiresAt: time.Now().Add(auth.KeyCacheTTL),
 			})
 
-			return ecdsaPubKey, nil
+			return pub.Raw, nil
 		}
 
 		return nil, fmt.Errorf("Invalid authorization token (failed to parse claims)")

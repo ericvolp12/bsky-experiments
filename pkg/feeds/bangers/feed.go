@@ -47,6 +47,9 @@ func (plf *BangersFeed) GetPage(ctx context.Context, feed string, userDID string
 
 	switch feed {
 	case "bangers":
+		if userDID == "" {
+			return nil, nil, fmt.Errorf("feed %s requires authentication", feed)
+		}
 		postsFromRegistry, err = plf.PostRegistry.GetBangerPostsForAuthor(ctx, userDID, int32(limit), int32(offset))
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
