@@ -21,7 +21,17 @@ type AuthorLabelFeed struct {
 	DefaultLookbackHours         int32
 }
 
-var feedAliases = map[string]string{}
+type FeedEntity struct {
+	Name      string
+	IsPrivate bool
+}
+
+var feedAliases = map[string]FeedEntity{
+	"cl-tpot": {
+		Name:      "a:tpot",
+		IsPrivate: false,
+	},
+}
 
 var privateFeedInstructionsPost = "at://did:plc:q6gjnaw2blty4crticxkmujt/app.bsky.feed.post/3jwvwlajglc2w"
 var unauthorizedResponse = []*appbsky.FeedDefs_SkeletonFeedPost{{Post: privateFeedInstructionsPost}}
@@ -70,33 +80,38 @@ func (alf *AuthorLabelFeed) GetPage(ctx context.Context, feed string, userDID st
 		return nil, nil, fmt.Errorf("error parsing cursor: %w", err)
 	}
 
+	isPrivate := true
+
 	// Check if the feed is an alias
 	if alias, ok := feedAliases[feed]; ok {
-		feed = alias
+		feed = alias.Name
+		isPrivate = alias.IsPrivate
 	}
 
 	// Get the author label from the feed
 	authorLabel := strings.TrimPrefix(feed, "a:")
 
 	// Author Label feeds are private feeds for now, so we need to check that the user is assigned to the label
-	labels, err := alf.PostRegistry.GetLabelsForAuthor(ctx, userDID)
-	if err != nil {
-		span.SetAttributes(attribute.Bool("feed.author.label_lookup.error", true))
-		return nil, nil, fmt.Errorf("error getting labels for author: %w", err)
-	}
-
-	// Check that the author is assigned to this label
-	found := false
-	for _, label := range labels {
-		if label.LookupAlias == authorLabel {
-			found = true
-			break
+	if isPrivate {
+		labels, err := alf.PostRegistry.GetLabelsForAuthor(ctx, userDID)
+		if err != nil {
+			span.SetAttributes(attribute.Bool("feed.author.label_lookup.error", true))
+			return nil, nil, fmt.Errorf("error getting labels for author: %w", err)
 		}
-	}
 
-	if !found {
-		span.SetAttributes(attribute.Bool("feed.author.not_assigned_label", true))
-		return unauthorizedResponse, nil, nil
+		// Check that the author is assigned to this label
+		found := false
+		for _, label := range labels {
+			if label.LookupAlias == authorLabel {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			span.SetAttributes(attribute.Bool("feed.author.not_assigned_label", true))
+			return unauthorizedResponse, nil, nil
+		}
 	}
 
 	postsFromRegistry, err := alf.PostRegistry.GetPostsPageForAuthorLabelFromView(ctx, authorLabel, alf.DefaultLookbackHours, int32(limit), postID)

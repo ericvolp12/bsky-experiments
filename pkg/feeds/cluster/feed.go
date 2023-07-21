@@ -34,9 +34,9 @@ var feedAliases = map[string]string{
 	"cl-japanese":  "cluster-japanese",
 	"cl-brasil":    "cluster-brasil",
 	"cl-korean":    "cluster-korean",
-	"cl-tpot":      "cluster-tpot",
-	"cl-persian":   "cluster-persian",
-	"cl-ukraine":   "cluster-ukraine",
+	// "cl-tpot":      "cluster-tpot",
+	"cl-persian": "cluster-persian",
+	"cl-ukraine": "cluster-ukraine",
 }
 
 func NewClusterFeed(ctx context.Context, feedActorDID string, postRegistry *search.PostRegistry) (*ClusterFeed, []string, error) {
