@@ -127,8 +127,7 @@ func (pr *PostRegistry) GetAuthorsByHandle(ctx context.Context, handle string) (
 }
 
 func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error) {
-	tracer := otel.Tracer("post-registry")
-	ctx, span := tracer.Start(ctx, "PostRegistry:GetAuthorStats")
+	ctx, span := otel.Tracer("post-registry").Start(ctx, "GetAuthorStats")
 	defer span.End()
 	authorStats, err := pr.queries.GetAuthorStats(ctx)
 	if err != nil {
@@ -139,8 +138,7 @@ func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error
 		TotalAuthors:    authorStats.TotalAuthors,
 		TotalPosts:      authorStats.TotalPosts,
 		HellthreadPosts: authorStats.HellthreadPostCount,
-		// Parse mean as a float64 from string
-		MeanPostCount: authorStats.MeanPostsPerAuthor,
+		MeanPostCount:   authorStats.MeanPostsPerAuthor,
 		Percentiles: []Percentile{
 			{
 				Percentile: 0.25,
@@ -165,6 +163,22 @@ func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error
 			{
 				Percentile: 0.99,
 				Count:      authorStats.P99,
+			},
+			{
+				Percentile: 0.995,
+				Count:      authorStats.P995,
+			},
+			{
+				Percentile: 0.997,
+				Count:      authorStats.P997,
+			},
+			{
+				Percentile: 0.999,
+				Count:      authorStats.P999,
+			},
+			{
+				Percentile: 0.9999,
+				Count:      authorStats.P9999,
 			},
 		},
 		Brackets: []Bracket{

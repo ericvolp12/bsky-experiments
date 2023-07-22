@@ -24,7 +24,11 @@ percentiles AS (
         (percentile_cont(0.75) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p75,
         (percentile_cont(0.90) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p90,
         (percentile_cont(0.95) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p95,
-        (percentile_cont(0.99) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99
+        (percentile_cont(0.99) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99,
+        (percentile_cont(0.995) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99_5,
+        (percentile_cont(0.997) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99_7,
+        (percentile_cont(0.999) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99_9,
+        (percentile_cont(0.9999) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99_99
     FROM
         postcounts
 ),
@@ -64,7 +68,11 @@ SELECT
     p75,
     p90,
     p95,
-    p99
+    p99,
+    p99_5,
+    p99_7,
+    p99_9,
+    p99_99
 FROM
     counts,
     percentiles,
@@ -89,6 +97,10 @@ type GetAuthorStatsRow struct {
 	P90                 int64   `json:"p90"`
 	P95                 int64   `json:"p95"`
 	P99                 int64   `json:"p99"`
+	P995                int64   `json:"p99_5"`
+	P997                int64   `json:"p99_7"`
+	P999                int64   `json:"p99_9"`
+	P9999               int64   `json:"p99_99"`
 }
 
 func (q *Queries) GetAuthorStats(ctx context.Context) (GetAuthorStatsRow, error) {
@@ -111,6 +123,10 @@ func (q *Queries) GetAuthorStats(ctx context.Context) (GetAuthorStatsRow, error)
 		&i.P90,
 		&i.P95,
 		&i.P99,
+		&i.P995,
+		&i.P997,
+		&i.P999,
+		&i.P9999,
 	)
 	return i, err
 }

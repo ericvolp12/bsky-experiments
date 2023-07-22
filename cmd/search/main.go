@@ -17,6 +17,8 @@ import (
 	"github.com/gin-contrib/cors"
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/extra/redisotel/v9"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
@@ -60,6 +62,33 @@ func main() {
 		graphJSONUrl = "https://s3.jazco.io/exported_graph_enriched.json"
 	}
 
+	redisAddress := os.Getenv("REDIS_ADDRESS")
+	if redisAddress == "" {
+		redisAddress = "localhost:6379"
+	}
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     redisAddress,
+		Password: "",
+		DB:       0,
+	})
+
+	// Enable tracing instrumentation.
+	if err := redisotel.InstrumentTracing(redisClient); err != nil {
+		log.Fatalf("failed to instrument redis with tracing: %+v\n", err)
+	}
+
+	// Enable metrics instrumentation.
+	if err := redisotel.InstrumentMetrics(redisClient); err != nil {
+		log.Fatalf("failed to instrument redis with metrics: %+v\n", err)
+	}
+
+	// Test the connection to redis
+	_, err := redisClient.Ping(ctx).Result()
+	if err != nil {
+		log.Fatalf("failed to connect to redis: %+v\n", err)
+	}
+
 	// Registers a tracer Provider globally if the exporter endpoint is set
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
 		log.Println("initializing tracer...")
@@ -85,7 +114,7 @@ func main() {
 		log.Fatalf("Failed to create XRPC client: %v", err)
 	}
 
-	userCount := usercount.NewUserCount(ctx, client)
+	userCount := usercount.NewUserCount(ctx, client, redisClient)
 
 	api, err := endpoints.NewAPI(
 		postRegistry,

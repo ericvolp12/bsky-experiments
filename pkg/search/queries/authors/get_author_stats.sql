@@ -15,7 +15,11 @@ percentiles AS (
         (percentile_cont(0.75) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p75,
         (percentile_cont(0.90) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p90,
         (percentile_cont(0.95) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p95,
-        (percentile_cont(0.99) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99
+        (percentile_cont(0.99) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99,
+        (percentile_cont(0.995) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99_5,
+        (percentile_cont(0.997) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99_7,
+        (percentile_cont(0.999) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99_9,
+        (percentile_cont(0.9999) WITHIN GROUP (ORDER BY num_posts) * 1)::bigint AS p99_99
     FROM
         postcounts
 ),
@@ -55,7 +59,11 @@ SELECT
     p75,
     p90,
     p95,
-    p99
+    p99,
+    p99_5,
+    p99_7,
+    p99_9,
+    p99_99
 FROM
     counts,
     percentiles,
