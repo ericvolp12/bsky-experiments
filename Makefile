@@ -136,6 +136,23 @@ dragonfly-up:
 	@echo "Starting DragonflyDB..."
 	docker compose -f build/dragonfly/docker-compose.yml up -d
 
+# Start up ScyllaDB
+.PHONY: scylla-up
+scylla-up:
+	@echo "Starting ScyllaDB..."
+	docker compose -f build/scylla/docker-compose.yml up -d
+
+# Build the Consumer
+.PHONY: build-consumer
+build-consumer:
+	@echo "Building Consumer Go binary..."
+	$(GO_CMD_W_CGO) build -o consumer cmd/consumer/*.go
+
+.PHONY: consumer-up
+consumer-up:
+	@echo "Starting Consumer..."
+	docker compose -f build/consumer/docker-compose.yml up --build -d
+
 # Generate SQLC Code
 .PHONY: sqlc
 sqlc:

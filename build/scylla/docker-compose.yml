@@ -1,0 +1,16 @@
+version: '3.8'
+services:
+  scylla-1:
+    image: 'scylladb/scylla'
+    ports:
+      - "7000:7000"
+      - "7001:7001"
+      - "9042:9042"
+      - "9160:9160"
+      - "10000:10000"
+    volumes:
+      - type: bind
+        source: /mnt/ssd/scylla_1
+        target: /var/lib/scylla
+    restart: always
+    command: --memory 4G --api-address 0.0.0.0
