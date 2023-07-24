@@ -3,11 +3,11 @@ package store
 import "context"
 
 // CREATE TABLE labels (
-//     id uuid PRIMARY KEY,
-//     lookup_alias text,
+//     alias text,
 //     display_name text,
 //     description text,
 //     inserted_at timestamp,
+//     PRIMARY KEY ( alias, inserted_at )
 // ) WITH default_time_to_live = 0
 // AND compaction = { 'class': 'SizeTieredCompactionStrategy' };
 
@@ -15,110 +15,99 @@ import "context"
 //     uri text,
 //     label text,
 //     inserted_at timestamp,
-//     PRIMARY KEY (uri, label)
+//     PRIMARY KEY ((uri, label), inserted_at)
 // ) WITH default_time_to_live = 0
 // AND compaction = { 'class': 'SizeTieredCompactionStrategy' };
 
 // Label represents a label in the database
 type Label struct {
-	ID          string
-	LookupAlias string
-	DisplayName string
-	Description string
-	InsertedAt  int64
+	Alias       string `json:"alias"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description"`
+	InsertedAt  int64  `json:"inserted_at"`
 }
 
 // CreateLabel creates a new label in the database
 func (s *Store) CreateLabel(ctx context.Context, label *Label) error {
 	return s.ScyllaSession.Query(`
-		INSERT INTO labels (
-			id,
-			lookup_alias,
-			display_name,
-			description,
-			inserted_at
-		) VALUES (?, ?, ?, ?, ?)
-	`, label.ID, label.LookupAlias, label.DisplayName, label.Description, label.InsertedAt).WithContext(ctx).Exec()
+		INSERT INTO labels (alias, display_name, description, inserted_at)
+		VALUES (?, ?, ?, ?)
+	`, label.Alias, label.DisplayName, label.Description, label.InsertedAt).WithContext(ctx).Exec()
 }
 
-// GetLabel gets a label from the database
-func (s *Store) GetLabel(ctx context.Context, id string) (*Label, error) {
+// GetLabelByAlias returns a label for a given alias
+func (s *Store) GetLabelByAlias(ctx context.Context, alias string) (*Label, error) {
 	var label Label
-	err := s.ScyllaSession.Query(`
-		SELECT id,
-			lookup_alias,
-			display_name,
-			description,
-			inserted_at
+	if err := s.ScyllaSession.Query(`
+		SELECT alias, display_name, description, inserted_at
 		FROM labels
-		WHERE id = ?
-	`, id).WithContext(ctx).Scan(&label.ID, &label.LookupAlias, &label.DisplayName, &label.Description, &label.InsertedAt)
-	if err != nil {
+		WHERE alias = ?
+	`, alias).WithContext(ctx).Scan(&label); err != nil {
 		return nil, err
 	}
-
 	return &label, nil
 }
 
-// DeleteLabel deletes a label from the database
-func (s *Store) DeleteLabel(ctx context.Context, id string) error {
-	return s.ScyllaSession.Query(`
-		DELETE FROM labels
-		WHERE id = ?
-	`, id).WithContext(ctx).Exec()
-}
-
-// GetLabels gets labels from the database
-func (s *Store) GetLabels(ctx context.Context) ([]*Label, error) {
+// GetLabelPage returns a page of labels
+func (s *Store) GetLabelPage(ctx context.Context, limit int, startAfter string) ([]*Label, error) {
 	var labels []*Label
-	err := s.ScyllaSession.Query(`
-		SELECT id,
-			lookup_alias,
-			display_name,
-			description,
-			inserted_at
+	if err := s.ScyllaSession.Query(`
+		SELECT alias, display_name, description, inserted_at
 		FROM labels
-	`).WithContext(ctx).Scan(&labels)
-	if err != nil {
+		WHERE inserted_at > ?
+		LIMIT ?
+	`, startAfter, limit).WithContext(ctx).Scan(&labels); err != nil {
 		return nil, err
 	}
-
 	return labels, nil
 }
 
-// LabelAssignment represents a label assignment in the database
+// DeleteLabel deletes a label from the database
+func (s *Store) DeleteLabel(ctx context.Context, alias string) error {
+	return s.ScyllaSession.Query(`
+		DELETE FROM labels
+		WHERE alias = ?
+	`, alias).WithContext(ctx).Exec()
+}
+
 type LabelAssignment struct {
-	URI        string
-	Label      string
-	InsertedAt int64
+	URI        string `json:"uri"`
+	Label      string `json:"label"`
+	InsertedAt int64  `json:"inserted_at"`
 }
 
 // CreateLabelAssignment creates a new label assignment in the database
 func (s *Store) CreateLabelAssignment(ctx context.Context, labelAssignment *LabelAssignment) error {
 	return s.ScyllaSession.Query(`
-		INSERT INTO label_assignments (
-			uri,
-			label,
-			inserted_at
-		) VALUES (?, ?, ?)
+		INSERT INTO label_assignments (uri, label, inserted_at)
+		VALUES (?, ?, ?)
 	`, labelAssignment.URI, labelAssignment.Label, labelAssignment.InsertedAt).WithContext(ctx).Exec()
 }
 
-// GetLabelAssignment gets a label assignment from the database
-func (s *Store) GetLabelAssignment(ctx context.Context, uri, label string) (*LabelAssignment, error) {
-	var labelAssignment LabelAssignment
-	err := s.ScyllaSession.Query(`
-		SELECT uri,
-			label,
-			inserted_at
+// GetLabelAssignmentsByURI returns all label assignments for a given URI
+func (s *Store) GetLabelAssignmentsByURI(ctx context.Context, uri string) ([]*LabelAssignment, error) {
+	var labelAssignments []*LabelAssignment
+	if err := s.ScyllaSession.Query(`
+		SELECT uri, label, inserted_at
 		FROM label_assignments
-		WHERE uri = ? AND label = ?
-	`, uri, label).WithContext(ctx).Scan(&labelAssignment.URI, &labelAssignment.Label, &labelAssignment.InsertedAt)
-	if err != nil {
+		WHERE uri = ?
+	`, uri).WithContext(ctx).Scan(&labelAssignments); err != nil {
 		return nil, err
 	}
+	return labelAssignments, nil
+}
 
-	return &labelAssignment, nil
+// GetLabelAssignmentsByLabel returns all label assignments for a given label
+func (s *Store) GetLabelAssignmentsByLabel(ctx context.Context, label string) ([]*LabelAssignment, error) {
+	var labelAssignments []*LabelAssignment
+	if err := s.ScyllaSession.Query(`
+		SELECT uri, label, inserted_at
+		FROM label_assignments
+		WHERE label = ?
+	`, label).WithContext(ctx).Scan(&labelAssignments); err != nil {
+		return nil, err
+	}
+	return labelAssignments, nil
 }
 
 // DeleteLabelAssignment deletes a label assignment from the database
@@ -129,19 +118,10 @@ func (s *Store) DeleteLabelAssignment(ctx context.Context, uri, label string) er
 	`, uri, label).WithContext(ctx).Exec()
 }
 
-// GetLabelAssignmentsByURI gets label assignments by uri from the database
-func (s *Store) GetLabelAssignmentsByURI(ctx context.Context, uri string) ([]*LabelAssignment, error) {
-	var labelAssignments []*LabelAssignment
-	err := s.ScyllaSession.Query(`
-		SELECT uri,
-			label,
-			inserted_at
-		FROM label_assignments
+// DeleteLabelAssignmentsByURI deletes all label assignments for a given URI
+func (s *Store) DeleteLabelAssignmentsByURI(ctx context.Context, uri string) error {
+	return s.ScyllaSession.Query(`
+		DELETE FROM label_assignments
 		WHERE uri = ?
-	`, uri).WithContext(ctx).Scan(&labelAssignments)
-	if err != nil {
-		return nil, err
-	}
-
-	return labelAssignments, nil
+	`, uri).WithContext(ctx).Exec()
 }

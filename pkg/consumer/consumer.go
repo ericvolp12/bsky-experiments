@@ -210,13 +210,14 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 
 	for _, op := range evt.Ops {
 		collection := strings.Split(op.Path, "/")[0]
+		rkey := strings.Split(op.Path, "/")[1]
 
 		ek := repomgr.EventKind(op.Action)
 		log = log.With("action", op.Action, "collection", collection)
 
 		opsProcessedCounter.WithLabelValues(op.Action, collection, c.SocketURL).Inc()
 
-		recordURI := "at://" + evt.Repo + "/" + op.Path
+		// recordURI := "at://" + evt.Repo + "/" + op.Path
 
 		switch ek {
 		case repomgr.EvtKindCreateRecord, repomgr.EvtKindUpdateRecord:
@@ -263,7 +264,8 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				}
 
 				post := store.Post{
-					URI:                recordURI,
+					ActorDID:           evt.Repo,
+					RKey:               rkey,
 					Content:            rec.Text,
 					ParentPostURI:      parentURI,
 					ParentRelationship: parentRelationship,
@@ -288,8 +290,9 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				}
 
 				like := store.Like{
-					URI:        recordURI,
-					PostURI:    subject,
+					ActorDID:   evt.Repo,
+					RKey:       rkey,
+					SubjectURI: subject,
 					CreatedAt:  recCreatedAt.UnixMilli(),
 					InsertedAt: processedAt.UnixMilli(),
 				}
@@ -297,6 +300,12 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				err = c.Store.CreateLike(ctx, &like)
 				if err != nil {
 					log.Errorf("failed to create like: %+v", err)
+				}
+
+				// Increment the like count
+				err = c.Store.IncrementLikeCount(ctx, subject)
+				if err != nil {
+					log.Errorf("failed to increment like count: %+v", err)
 				}
 			case *bsky.FeedRepost:
 				recordsProcessedCounter.WithLabelValues("feed_repost", c.SocketURL).Inc()
@@ -306,7 +315,8 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 
 				block := store.ActorBlock{
-					URI:        recordURI,
+					ActorDID:   evt.Repo,
+					RKey:       rkey,
 					TargetDID:  rec.Subject,
 					CreatedAt:  recCreatedAt.UnixMilli(),
 					InsertedAt: processedAt.UnixMilli(),
@@ -321,7 +331,8 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 
 				follow := store.Follow{
-					URI:        recordURI,
+					ActorDID:   evt.Repo,
+					RKey:       rkey,
 					TargetDID:  rec.Subject,
 					CreatedAt:  recCreatedAt.UnixMilli(),
 					InsertedAt: processedAt.UnixMilli(),
@@ -361,22 +372,28 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 			recordType := strings.Split(op.Path, "/")[0]
 			switch recordType {
 			case "app.bsky.feed.post":
-				err = c.Store.DeletePost(ctx, recordURI)
+				err = c.Store.DeletePost(ctx, evt.Repo, rkey)
 				if err != nil {
 					log.Errorf("failed to delete post: %+v", err)
 				}
 			case "app.bsky.feed.like":
-				err = c.Store.DeleteLike(ctx, recordURI)
+				err = c.Store.DeleteLike(ctx, evt.Repo, rkey)
 				if err != nil {
 					log.Errorf("failed to delete like: %+v", err)
 				}
+
+				// Decrement the like count
+				err = c.Store.DecrementLikeCount(ctx, rkey)
+				if err != nil {
+					log.Errorf("failed to decrement like count: %+v", err)
+				}
 			case "app.bsky.graph.follow":
-				err = c.Store.DeleteFollow(ctx, recordURI)
+				err = c.Store.DeleteFollow(ctx, evt.Repo, rkey)
 				if err != nil {
 					log.Errorf("failed to delete follow: %+v", err)
 				}
 			case "app.bsky.graph.block":
-				err = c.Store.DeleteActorBlock(ctx, recordURI)
+				err = c.Store.DeleteActorBlock(ctx, evt.Repo, rkey)
 				if err != nil {
 					log.Errorf("failed to delete actor block: %+v", err)
 				}
