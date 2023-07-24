@@ -1,6 +1,8 @@
 package store
 
-import "context"
+import (
+	"context"
+)
 
 // CREATE TABLE posts (
 //     actor_did text,
@@ -31,6 +33,9 @@ type Post struct {
 
 // CreatePost creates a new post in the database
 func (s *Store) CreatePost(ctx context.Context, post *Post) error {
+	ctx, span := tracer.Start(ctx, "CreatePost")
+	defer span.End()
+
 	hasEmbeddedMedia := 0
 	if post.HasEmbeddedMedia {
 		hasEmbeddedMedia = 1
@@ -43,6 +48,9 @@ func (s *Store) CreatePost(ctx context.Context, post *Post) error {
 
 // GetPostsByActorDID returns all posts for a given actor DID
 func (s *Store) GetPostsByActorDID(ctx context.Context, actorDID string) ([]*Post, error) {
+	ctx, span := tracer.Start(ctx, "GetPostsByActorDID")
+	defer span.End()
+
 	var posts []*Post
 	if err := s.ScyllaSession.Query(`
 		SELECT actor_did, rkey, content, parent_post_uri, parent_relationship, root_post_uri, has_embedded_media, created_at, inserted_at
@@ -56,6 +64,9 @@ func (s *Store) GetPostsByActorDID(ctx context.Context, actorDID string) ([]*Pos
 
 // GetPostsByRootPostURI returns all posts for a given root post URI
 func (s *Store) GetPostsByRootPostURI(ctx context.Context, rootPostURI string) ([]*Post, error) {
+	ctx, span := tracer.Start(ctx, "GetPostsByRootPostURI")
+	defer span.End()
+
 	var posts []*Post
 	if err := s.ScyllaSession.Query(`
 		SELECT actor_did, rkey, content, parent_post_uri, parent_relationship, root_post_uri, has_embedded_media, created_at, inserted_at
@@ -69,6 +80,9 @@ func (s *Store) GetPostsByRootPostURI(ctx context.Context, rootPostURI string) (
 
 // DeletePost deletes a post from the database
 func (s *Store) DeletePost(ctx context.Context, actorDID, rKey string) error {
+	ctx, span := tracer.Start(ctx, "DeletePost")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		DELETE FROM posts
 		WHERE actor_did = ? AND rkey = ?

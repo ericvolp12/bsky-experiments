@@ -1,6 +1,8 @@
 package store
 
-import "context"
+import (
+	"context"
+)
 
 // CREATE TABLE likes (
 //     actor_did text,
@@ -35,6 +37,9 @@ type LikeCount struct {
 
 // CreateLike creates a new like in the database
 func (s *Store) CreateLike(ctx context.Context, like *Like) error {
+	ctx, span := tracer.Start(ctx, "CreateLike")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		INSERT INTO likes (actor_did, rkey, subject_uri, created_at, inserted_at)
 		VALUES (?, ?, ?, ?, ?)
@@ -43,6 +48,9 @@ func (s *Store) CreateLike(ctx context.Context, like *Like) error {
 
 // GetLikesByActorDID returns all likes for a given actor DID
 func (s *Store) GetLikesByActorDID(ctx context.Context, actorDID string) ([]*Like, error) {
+	ctx, span := tracer.Start(ctx, "GetLikesByActorDID")
+	defer span.End()
+
 	var likes []*Like
 	if err := s.ScyllaSession.Query(`
 		SELECT actor_did, rkey, subject_uri, created_at, inserted_at
@@ -56,6 +64,9 @@ func (s *Store) GetLikesByActorDID(ctx context.Context, actorDID string) ([]*Lik
 
 // GetLikesBySubjectURI returns all likes for a given subject URI
 func (s *Store) GetLikesBySubjectURI(ctx context.Context, subjectURI string) ([]*Like, error) {
+	ctx, span := tracer.Start(ctx, "GetLikesBySubjectURI")
+	defer span.End()
+
 	var likes []*Like
 	if err := s.ScyllaSession.Query(`
 		SELECT actor_did, rkey, subject_uri, created_at, inserted_at
@@ -69,6 +80,9 @@ func (s *Store) GetLikesBySubjectURI(ctx context.Context, subjectURI string) ([]
 
 // DeleteLike deletes a like from the database
 func (s *Store) DeleteLike(ctx context.Context, actorDID, rKey string) error {
+	ctx, span := tracer.Start(ctx, "DeleteLike")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		DELETE FROM likes
 		WHERE actor_did = ? AND rkey = ?
@@ -77,6 +91,9 @@ func (s *Store) DeleteLike(ctx context.Context, actorDID, rKey string) error {
 
 // DeleteLikesByActorDID deletes all likes for a given actor DID
 func (s *Store) DeleteLikesByActorDID(ctx context.Context, actorDID string) error {
+	ctx, span := tracer.Start(ctx, "DeleteLikesByActorDID")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		DELETE FROM likes
 		WHERE actor_did = ?
@@ -85,6 +102,9 @@ func (s *Store) DeleteLikesByActorDID(ctx context.Context, actorDID string) erro
 
 // DeleteLikesBySubjectURI deletes all likes for a given subject URI
 func (s *Store) DeleteLikesBySubjectURI(ctx context.Context, subjectURI string) error {
+	ctx, span := tracer.Start(ctx, "DeleteLikesBySubjectURI")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		DELETE FROM likes
 		WHERE subject_uri = ?
@@ -93,6 +113,9 @@ func (s *Store) DeleteLikesBySubjectURI(ctx context.Context, subjectURI string) 
 
 // IncrementLikeCount increments the like count for a given subject URI
 func (s *Store) IncrementLikeCount(ctx context.Context, subjectURI string) error {
+	ctx, span := tracer.Start(ctx, "IncrementLikeCount")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		UPDATE like_counts
 		SET count = count + 1
@@ -102,6 +125,9 @@ func (s *Store) IncrementLikeCount(ctx context.Context, subjectURI string) error
 
 // DecrementLikeCount decrements the like count for a given subject URI
 func (s *Store) DecrementLikeCount(ctx context.Context, subjectURI string) error {
+	ctx, span := tracer.Start(ctx, "DecrementLikeCount")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		UPDATE like_counts
 		SET count = count - 1
@@ -111,6 +137,9 @@ func (s *Store) DecrementLikeCount(ctx context.Context, subjectURI string) error
 
 // GetLikeCount returns the like count for a given subject URI
 func (s *Store) GetLikeCount(ctx context.Context, subjectURI string) (*LikeCount, error) {
+	ctx, span := tracer.Start(ctx, "GetLikeCount")
+	defer span.End()
+
 	var likeCount LikeCount
 	if err := s.ScyllaSession.Query(`
 		SELECT subject_uri, count
@@ -124,6 +153,9 @@ func (s *Store) GetLikeCount(ctx context.Context, subjectURI string) (*LikeCount
 
 // DeleteLikeCount deletes the like count for a given subject URI
 func (s *Store) DeleteLikeCount(ctx context.Context, subjectURI string) error {
+	ctx, span := tracer.Start(ctx, "DeleteLikeCount")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		DELETE FROM like_counts
 		WHERE subject_uri = ?

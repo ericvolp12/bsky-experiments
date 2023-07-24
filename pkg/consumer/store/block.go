@@ -23,6 +23,9 @@ type ActorBlock struct {
 
 // CreateActorBlock creates a new actor block in the database
 func (s *Store) CreateActorBlock(ctx context.Context, actorBlock *ActorBlock) error {
+	ctx, span := tracer.Start(ctx, "CreateActorBlock")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		INSERT INTO actor_blocks (actor_did, rkey, target_did, created_at, inserted_at)
 		VALUES (?, ?, ?, ?, ?)
@@ -31,6 +34,9 @@ func (s *Store) CreateActorBlock(ctx context.Context, actorBlock *ActorBlock) er
 
 // GetActorBlocksByActorDID returns all actor blocks for a given actor DID
 func (s *Store) GetActorBlocksByActorDID(ctx context.Context, actorDID string) ([]*ActorBlock, error) {
+	ctx, span := tracer.Start(ctx, "GetActorBlocksByActorDID")
+	defer span.End()
+
 	var actorBlocks []*ActorBlock
 	if err := s.ScyllaSession.Query(`
 		SELECT actor_did, rkey, target_did, created_at, inserted_at
@@ -44,6 +50,9 @@ func (s *Store) GetActorBlocksByActorDID(ctx context.Context, actorDID string) (
 
 // GetActorBlocksByTargetDID returns all actor blocks for a given target DID
 func (s *Store) GetActorBlocksByTargetDID(ctx context.Context, targetDID string) ([]*ActorBlock, error) {
+	ctx, span := tracer.Start(ctx, "GetActorBlocksByTargetDID")
+	defer span.End()
+
 	var actorBlocks []*ActorBlock
 	if err := s.ScyllaSession.Query(`
 		SELECT actor_did, rkey, target_did, created_at, inserted_at
@@ -57,6 +66,9 @@ func (s *Store) GetActorBlocksByTargetDID(ctx context.Context, targetDID string)
 
 // DeleteActorBlock deletes an actor block from the database
 func (s *Store) DeleteActorBlock(ctx context.Context, actorDID, rKey string) error {
+	ctx, span := tracer.Start(ctx, "DeleteActorBlock")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		DELETE FROM actor_blocks
 		WHERE actor_did = ? AND rkey = ?

@@ -15,10 +15,12 @@ import (
 	"github.com/bluesky-social/indigo/events"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
+	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"github.com/urfave/cli/v2"
@@ -90,6 +92,8 @@ func main() {
 	}
 }
 
+var tracer trace.Tracer
+
 // Consumer is the main function for the consumer
 func Consumer(cctx *cli.Context) error {
 	ctx := cctx.Context
@@ -119,6 +123,20 @@ func Consumer(cctx *cli.Context) error {
 	u, err := url.Parse(cctx.String("ws-url"))
 	if err != nil {
 		log.Fatalf("failed to parse ws-url: %+v\n", err)
+	}
+
+	// Registers a tracer Provider globally if the exporter endpoint is set
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+		log.Info("initializing tracer...")
+		shutdown, err := tracing.InstallExportPipeline(ctx, "Consumer", 0.01)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer func() {
+			if err := shutdown(ctx); err != nil {
+				log.Fatal(err)
+			}
+		}()
 	}
 
 	redisClient := redis.NewClient(&redis.Options{

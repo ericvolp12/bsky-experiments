@@ -22,6 +22,9 @@ type Follow struct {
 
 // CreateFollow creates a new follow in the database
 func (s *Store) CreateFollow(ctx context.Context, follow *Follow) error {
+	ctx, span := tracer.Start(ctx, "CreateFollow")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		INSERT INTO follows (actor_did, rkey, target_did, created_at, inserted_at)
 		VALUES (?, ?, ?, ?, ?)
@@ -30,6 +33,9 @@ func (s *Store) CreateFollow(ctx context.Context, follow *Follow) error {
 
 // GetFollowsByActorDID returns all follows for a given actor DID
 func (s *Store) GetFollowsByActorDID(ctx context.Context, actorDID string) ([]*Follow, error) {
+	ctx, span := tracer.Start(ctx, "GetFollowsByActorDID")
+	defer span.End()
+
 	var follows []*Follow
 	if err := s.ScyllaSession.Query(`
 		SELECT actor_did, rkey, target_did, created_at, inserted_at
@@ -43,6 +49,9 @@ func (s *Store) GetFollowsByActorDID(ctx context.Context, actorDID string) ([]*F
 
 // GetFollowsByTargetDID returns all follows for a given target DID
 func (s *Store) GetFollowsByTargetDID(ctx context.Context, targetDID string) ([]*Follow, error) {
+	ctx, span := tracer.Start(ctx, "GetFollowsByTargetDID")
+	defer span.End()
+
 	var follows []*Follow
 	if err := s.ScyllaSession.Query(`
 		SELECT actor_did, rkey, target_did, created_at, inserted_at
@@ -56,6 +65,9 @@ func (s *Store) GetFollowsByTargetDID(ctx context.Context, targetDID string) ([]
 
 // DeleteFollow deletes a follow from the database
 func (s *Store) DeleteFollow(ctx context.Context, actorDID, rKey string) error {
+	ctx, span := tracer.Start(ctx, "DeleteFollow")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		DELETE FROM follows
 		WHERE actor_did = ? AND rkey = ?

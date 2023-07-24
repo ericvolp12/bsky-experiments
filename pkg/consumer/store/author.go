@@ -13,6 +13,9 @@ type Actor struct {
 
 // CreateActor creates a new actor in the database
 func (s *Store) CreateActor(ctx context.Context, actor *Actor) error {
+	ctx, span := tracer.Start(ctx, "CreateActor")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		INSERT INTO actors (
 			did,
@@ -23,6 +26,9 @@ func (s *Store) CreateActor(ctx context.Context, actor *Actor) error {
 
 // GetActor gets an actor from the database
 func (s *Store) GetActor(ctx context.Context, did string) (*Actor, error) {
+	ctx, span := tracer.Start(ctx, "GetActor")
+	defer span.End()
+
 	var actor Actor
 	err := s.ScyllaSession.Query(`
 		SELECT did,
@@ -39,6 +45,9 @@ func (s *Store) GetActor(ctx context.Context, did string) (*Actor, error) {
 
 // GetActorByHandle gets an actor from the database by handle
 func (s *Store) GetActorByHandle(ctx context.Context, handle string) (*Actor, error) {
+	ctx, span := tracer.Start(ctx, "GetActorByHandle")
+	defer span.End()
+
 	var actor Actor
 	err := s.ScyllaSession.Query(`
 		SELECT did,
@@ -55,6 +64,9 @@ func (s *Store) GetActorByHandle(ctx context.Context, handle string) (*Actor, er
 
 // UpdateActor updates an actor in the database
 func (s *Store) UpdateActor(ctx context.Context, actor *Actor) error {
+	ctx, span := tracer.Start(ctx, "UpdateActor")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		UPDATE actors
 		SET handle = ?
@@ -64,6 +76,9 @@ func (s *Store) UpdateActor(ctx context.Context, actor *Actor) error {
 
 // DeleteActor deletes an actor from the database
 func (s *Store) DeleteActor(ctx context.Context, did string) error {
+	ctx, span := tracer.Start(ctx, "DeleteActor")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		DELETE FROM actors
 		WHERE did = ?

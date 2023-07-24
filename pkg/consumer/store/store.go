@@ -1,3 +1,4 @@
+// Package store represents a store of ScyllaDB tables
 package store
 
 import (
@@ -5,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/gocql/gocql"
+	"go.opentelemetry.io/otel"
 )
 
 // Store represents a store
@@ -33,3 +35,5 @@ func NewStore(ctx context.Context, connectionString string, keyspace string) (*S
 func TeardownStore(ctx context.Context, store *Store) {
 	store.ScyllaSession.Close()
 }
+
+var tracer = otel.Tracer("store")

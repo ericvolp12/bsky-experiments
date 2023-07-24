@@ -43,9 +43,11 @@ type Progress struct {
 	LastSeqProcessedAt time.Time `json:"last_seq_processed_at"`
 }
 
+var tracer = otel.Tracer("consumer")
+
 // WriteCursor writes the cursor to redis
 func (c *Consumer) WriteCursor(ctx context.Context) error {
-	ctx, span := otel.Tracer("consumer").Start(ctx, "WriteCursor")
+	ctx, span := tracer.Start(ctx, "WriteCursor")
 	defer span.End()
 
 	// Marshal the cursor JSON
@@ -67,7 +69,7 @@ func (c *Consumer) WriteCursor(ctx context.Context) error {
 
 // ReadCursor reads the cursor from redis
 func (c *Consumer) ReadCursor(ctx context.Context) error {
-	ctx, span := otel.Tracer("consumer").Start(ctx, "ReadCursor")
+	ctx, span := tracer.Start(ctx, "ReadCursor")
 	defer span.End()
 
 	// Read the cursor from redis
@@ -115,7 +117,7 @@ func NewConsumer(logger *zap.SugaredLogger, redisClient *redis.Client, redisPref
 
 // HandleStreamEvent handles a stream event from the firehose
 func (c *Consumer) HandleStreamEvent(ctx context.Context, xe *events.XRPCStreamEvent) error {
-	ctx, span := otel.Tracer("consumer").Start(ctx, "HandleStreamEvent")
+	ctx, span := tracer.Start(ctx, "HandleStreamEvent")
 	defer span.End()
 
 	switch {
@@ -172,7 +174,7 @@ func (c *Consumer) HandleStreamEvent(ctx context.Context, xe *events.XRPCStreamE
 
 // HandleRepoCommit handles a repo commit event from the firehose and processes the records
 func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubscribeRepos_Commit) error {
-	ctx, span := otel.Tracer("consumer").Start(ctx, "HandleRepoCommit")
+	ctx, span := tracer.Start(ctx, "HandleRepoCommit")
 	defer span.End()
 
 	processedAt := time.Now()

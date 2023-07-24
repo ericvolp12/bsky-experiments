@@ -29,6 +29,9 @@ type Label struct {
 
 // CreateLabel creates a new label in the database
 func (s *Store) CreateLabel(ctx context.Context, label *Label) error {
+	ctx, span := tracer.Start(ctx, "CreateLabel")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		INSERT INTO labels (alias, display_name, description, inserted_at)
 		VALUES (?, ?, ?, ?)
@@ -37,6 +40,9 @@ func (s *Store) CreateLabel(ctx context.Context, label *Label) error {
 
 // GetLabelByAlias returns a label for a given alias
 func (s *Store) GetLabelByAlias(ctx context.Context, alias string) (*Label, error) {
+	ctx, span := tracer.Start(ctx, "GetLabelByAlias")
+	defer span.End()
+
 	var label Label
 	if err := s.ScyllaSession.Query(`
 		SELECT alias, display_name, description, inserted_at
@@ -50,6 +56,9 @@ func (s *Store) GetLabelByAlias(ctx context.Context, alias string) (*Label, erro
 
 // GetLabelPage returns a page of labels
 func (s *Store) GetLabelPage(ctx context.Context, limit int, startAfter string) ([]*Label, error) {
+	ctx, span := tracer.Start(ctx, "GetLabelPage")
+	defer span.End()
+
 	var labels []*Label
 	if err := s.ScyllaSession.Query(`
 		SELECT alias, display_name, description, inserted_at
@@ -64,12 +73,16 @@ func (s *Store) GetLabelPage(ctx context.Context, limit int, startAfter string) 
 
 // DeleteLabel deletes a label from the database
 func (s *Store) DeleteLabel(ctx context.Context, alias string) error {
+	ctx, span := tracer.Start(ctx, "DeleteLabel")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		DELETE FROM labels
 		WHERE alias = ?
 	`, alias).WithContext(ctx).Exec()
 }
 
+// LabelAssignment represents a label assignment in the database
 type LabelAssignment struct {
 	URI        string `json:"uri"`
 	Label      string `json:"label"`
@@ -78,6 +91,9 @@ type LabelAssignment struct {
 
 // CreateLabelAssignment creates a new label assignment in the database
 func (s *Store) CreateLabelAssignment(ctx context.Context, labelAssignment *LabelAssignment) error {
+	ctx, span := tracer.Start(ctx, "CreateLabelAssignment")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		INSERT INTO label_assignments (uri, label, inserted_at)
 		VALUES (?, ?, ?)
@@ -86,6 +102,9 @@ func (s *Store) CreateLabelAssignment(ctx context.Context, labelAssignment *Labe
 
 // GetLabelAssignmentsByURI returns all label assignments for a given URI
 func (s *Store) GetLabelAssignmentsByURI(ctx context.Context, uri string) ([]*LabelAssignment, error) {
+	ctx, span := tracer.Start(ctx, "GetLabelAssignmentsByURI")
+	defer span.End()
+
 	var labelAssignments []*LabelAssignment
 	if err := s.ScyllaSession.Query(`
 		SELECT uri, label, inserted_at
@@ -99,6 +118,9 @@ func (s *Store) GetLabelAssignmentsByURI(ctx context.Context, uri string) ([]*La
 
 // GetLabelAssignmentsByLabel returns all label assignments for a given label
 func (s *Store) GetLabelAssignmentsByLabel(ctx context.Context, label string) ([]*LabelAssignment, error) {
+	ctx, span := tracer.Start(ctx, "GetLabelAssignmentsByLabel")
+	defer span.End()
+
 	var labelAssignments []*LabelAssignment
 	if err := s.ScyllaSession.Query(`
 		SELECT uri, label, inserted_at
@@ -112,6 +134,9 @@ func (s *Store) GetLabelAssignmentsByLabel(ctx context.Context, label string) ([
 
 // DeleteLabelAssignment deletes a label assignment from the database
 func (s *Store) DeleteLabelAssignment(ctx context.Context, uri, label string) error {
+	ctx, span := tracer.Start(ctx, "DeleteLabelAssignment")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		DELETE FROM label_assignments
 		WHERE uri = ? AND label = ?
@@ -120,6 +145,9 @@ func (s *Store) DeleteLabelAssignment(ctx context.Context, uri, label string) er
 
 // DeleteLabelAssignmentsByURI deletes all label assignments for a given URI
 func (s *Store) DeleteLabelAssignmentsByURI(ctx context.Context, uri string) error {
+	ctx, span := tracer.Start(ctx, "DeleteLabelAssignmentsByURI")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		DELETE FROM label_assignments
 		WHERE uri = ?

@@ -27,6 +27,9 @@ type Image struct {
 
 // CreateImage creates a new image in the database
 func (s *Store) CreateImage(ctx context.Context, image *Image) error {
+	ctx, span := tracer.Start(ctx, "CreateImage")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		INSERT INTO images (cid, post_uri, alt_text, mime_type, fullsize_url, thumbnail_url, inserted_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -35,6 +38,9 @@ func (s *Store) CreateImage(ctx context.Context, image *Image) error {
 
 // GetImagesByPostURI returns all images for a given post URI
 func (s *Store) GetImagesByPostURI(ctx context.Context, postURI string) ([]*Image, error) {
+	ctx, span := tracer.Start(ctx, "GetImagesByPostURI")
+	defer span.End()
+
 	var images []*Image
 	if err := s.ScyllaSession.Query(`
 		SELECT cid, post_uri, alt_text, mime_type, fullsize_url, thumbnail_url, inserted_at
@@ -48,6 +54,9 @@ func (s *Store) GetImagesByPostURI(ctx context.Context, postURI string) ([]*Imag
 
 // DeleteImage deletes an image from the database
 func (s *Store) DeleteImage(ctx context.Context, postURI, cid string) error {
+	ctx, span := tracer.Start(ctx, "DeleteImage")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		DELETE FROM images
 		WHERE post_uri = ? AND cid = ?
@@ -56,6 +65,9 @@ func (s *Store) DeleteImage(ctx context.Context, postURI, cid string) error {
 
 // DeleteImagesByPostURI deletes all images for a given post URI
 func (s *Store) DeleteImagesByPostURI(ctx context.Context, postURI string) error {
+	ctx, span := tracer.Start(ctx, "DeleteImagesByPostURI")
+	defer span.End()
+
 	return s.ScyllaSession.Query(`
 		DELETE FROM images
 		WHERE post_uri = ?
