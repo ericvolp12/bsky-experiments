@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/gocql/gocql"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gocql/gocql/otelgocql"
 	"go.opentelemetry.io/otel"
 )
 
@@ -20,7 +21,7 @@ func NewStore(ctx context.Context, connectionString string, keyspace string) (*S
 	cluster := gocql.NewCluster(connectionString)
 	cluster.Keyspace = keyspace
 
-	session, err := cluster.CreateSession()
+	session, err := otelgocql.NewSessionWithTracing(ctx, cluster)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scylla session: %w", err)
 	}
