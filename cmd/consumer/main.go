@@ -30,7 +30,7 @@ func main() {
 	app := cli.App{
 		Name:    "consumer",
 		Usage:   "atproto firehose consumer",
-		Version: "0.0.1",
+		Version: "0.0.2",
 	}
 
 	app.Flags = []cli.Flag{
@@ -71,16 +71,10 @@ func main() {
 			EnvVars: []string{"REDIS_PREFIX"},
 		},
 		&cli.StringFlag{
-			Name:    "scylla-connection-string",
-			Usage:   "scylla connection string",
-			Value:   "localhost:9042",
-			EnvVars: []string{"SCYLLA_CONNECTION_STRING"},
-		},
-		&cli.StringFlag{
-			Name:    "scylla-keyspace",
-			Usage:   "scylla keyspace",
-			Value:   "atproto_events",
-			EnvVars: []string{"SCYLLA_KEYSPACE"},
+			Name:    "postgres-url",
+			Usage:   "postgres url for storing events",
+			Value:   "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable",
+			EnvVars: []string{"POSTGRES_URL"},
 		},
 	}
 
@@ -165,7 +159,7 @@ func Consumer(cctx *cli.Context) error {
 	}
 
 	// Create a Store
-	store, err := store.NewStore(ctx, cctx.String("scylla-connection-string"), cctx.String("scylla-keyspace"))
+	store, err := store.NewStore(cctx.String("postgres-url"))
 	if err != nil {
 		log.Fatalf("failed to create store: %+v\n", err)
 	}

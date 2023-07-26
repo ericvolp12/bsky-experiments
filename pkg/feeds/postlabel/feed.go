@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/bits-and-blooms/bloom/v3"
@@ -12,6 +11,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"go.opentelemetry.io/otel"
+	"golang.org/x/exp/slices"
 )
 
 type PostLabelFeed struct {
@@ -53,14 +53,27 @@ var feedAliases = map[string]string{
 	"negativifeed": "sentiment:neg",
 }
 
+var deprecatedLabels = []string{
+	"hellthread",
+	"hellthread:pics",
+}
+
 type NotFoundError struct {
 	error
 }
 
 func NewPostLabelFeed(ctx context.Context, feedActorDID string, postRegistry *search.PostRegistry) (*PostLabelFeed, []string, error) {
-	labels, err := postRegistry.GetUniquePostLabels(ctx)
+	sourceLabels, err := postRegistry.GetUniquePostLabels(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error getting unique post labels: %w", err)
+	}
+
+	// Filter deprecated labels
+	labels := []string{}
+	for _, label := range sourceLabels {
+		if !slices.Contains(deprecatedLabels, label) {
+			labels = append(labels, label)
+		}
 	}
 
 	for alias := range feedAliases {
@@ -92,13 +105,13 @@ func (plf *PostLabelFeed) GetPage(ctx context.Context, feed string, userDID stri
 	// var postID string
 	var cursorBloomFilter *bloom.BloomFilter
 	var cursorHotness float64
-	var createdAt time.Time
+	// var createdAt time.Time
 	var err error
 
 	cursorType := "standard"
-	if strings.HasPrefix(feed, "hellthread") {
-		cursorType = "timebased"
-	}
+	// if strings.HasPrefix(feed, "hellthread") {
+	// 	cursorType = "timebased"
+	// }
 
 	if cursorType == "standard" {
 		_, cursorBloomFilter, cursorHotness, err = feeds.ParseCursor(cursor, plf.BloomFilterSize, plf.BloomFilterFalsePositiveRate)
@@ -106,10 +119,10 @@ func (plf *PostLabelFeed) GetPage(ctx context.Context, feed string, userDID stri
 			return nil, nil, fmt.Errorf("error parsing cursor: %w", err)
 		}
 	} else {
-		createdAt, cursorBloomFilter, cursorHotness, err = feeds.ParseTimebasedCursor(cursor, plf.BloomFilterSize, plf.BloomFilterFalsePositiveRate)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error parsing cursor: %w", err)
-		}
+		// createdAt, cursorBloomFilter, cursorHotness, err = feeds.ParseTimebasedCursor(cursor, plf.BloomFilterSize, plf.BloomFilterFalsePositiveRate)
+		// if err != nil {
+		// 	return nil, nil, fmt.Errorf("error parsing cursor: %w", err)
+		// }
 	}
 
 	switch feed {
@@ -117,12 +130,6 @@ func (plf *PostLabelFeed) GetPage(ctx context.Context, feed string, userDID stri
 		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelsByHotness(ctx, animalLabels, int32(limit), cursorHotness)
 	case "food":
 		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelsByHotness(ctx, foodLabels, int32(limit), cursorHotness)
-	case "hellthread":
-		// Sort hellthread by chronological order instead of hotness
-		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelChronological(ctx, feed, int32(limit), createdAt)
-	case "hellthread:pics":
-		// Sort hellthread by chronological order instead of hotness
-		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelChronological(ctx, feed, int32(limit), createdAt)
 	default:
 		postsFromRegistry, err = plf.PostRegistry.GetPostsPageForPostLabelByHotness(ctx, feed, int32(limit), cursorHotness)
 	}

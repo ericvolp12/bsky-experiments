@@ -3,6 +3,7 @@ package consumer
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"github.com/bluesky-social/indigo/api/bsky"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	"github.com/goccy/go-json"
 	"github.com/labstack/gommon/log"
 	"github.com/redis/go-redis/v9"
@@ -246,69 +248,117 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 			case *bsky.FeedPost:
 				recordsProcessedCounter.WithLabelValues("feed_post", c.SocketURL).Inc()
 				parentRelationship := ""
-				parentURI := ""
+				parentActorDid := ""
+				parentActorRkey := ""
 
 				if rec.Embed != nil && rec.Embed.EmbedRecord != nil && rec.Embed.EmbedRecord.Record != nil {
 					quoteRepostsProcessedCounter.WithLabelValues(c.SocketURL).Inc()
-					parentURI = rec.Embed.EmbedRecord.Record.Uri
+					u, err := getURI(rec.Embed.EmbedRecord.Record.Uri)
+					if err != nil {
+						log.Errorf("failed to get Quoted Record uri: %+v", err)
+						continue
+					}
+					parentActorDid = u.Did
+					parentActorRkey = u.RKey
 					parentRelationship = "q"
 				}
-				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
-
 				if rec.Reply != nil && rec.Reply.Parent != nil {
-					parentURI = rec.Reply.Parent.Uri
+					u, err := getURI(rec.Reply.Parent.Uri)
+					if err != nil {
+						log.Errorf("failed to get Reply uri: %+v", err)
+						continue
+					}
+					parentActorDid = u.Did
+					parentActorRkey = u.RKey
 					parentRelationship = "r"
 				}
 
-				rootURI := ""
+				rootActorDid := ""
+				rootActorRkey := ""
 				if rec.Reply != nil && rec.Reply.Root != nil {
-					rootURI = rec.Reply.Root.Uri
+					u, err := getURI(rec.Reply.Root.Uri)
+					if err != nil {
+						log.Errorf("failed to get Root uri: %+v", err)
+						continue
+					}
+					rootActorDid = u.Did
+					rootActorRkey = u.RKey
 				}
 
-				post := store.Post{
-					ActorDID:           evt.Repo,
-					RKey:               rkey,
-					Content:            rec.Text,
-					ParentPostURI:      parentURI,
-					ParentRelationship: parentRelationship,
-					RootPostURI:        rootURI,
+				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+
+				err = c.Store.Queries.CreatePost(ctx, store_queries.CreatePostParams{
+					ActorDid:           evt.Repo,
+					Rkey:               rkey,
+					Content:            sql.NullString{String: rec.Text, Valid: true},
+					ParentPostActorDid: sql.NullString{String: parentActorDid, Valid: parentActorDid != ""},
+					ParentPostRkey:     sql.NullString{String: parentActorRkey, Valid: parentActorRkey != ""},
+					ParentRelationship: sql.NullString{String: parentRelationship, Valid: parentRelationship != ""},
+					RootPostActorDid:   sql.NullString{String: rootActorDid, Valid: rootActorDid != ""},
+					RootPostRkey:       sql.NullString{String: rootActorRkey, Valid: rootActorRkey != ""},
 					HasEmbeddedMedia:   rec.Embed != nil && rec.Embed.EmbedImages != nil,
-					CreatedAt:          recCreatedAt.UnixMilli(),
-					InsertedAt:         processedAt.UnixMilli(),
-				}
-
-				err = c.Store.CreatePost(ctx, &post)
+					CreatedAt:          sql.NullTime{Time: recCreatedAt, Valid: true},
+				})
 				if err != nil {
 					log.Errorf("failed to create post: %+v", err)
+				}
+
+				// Create images for the post
+				if rec.Embed != nil && rec.Embed.EmbedImages != nil {
+					for _, img := range rec.Embed.EmbedImages.Images {
+						if img.Image == nil {
+							continue
+						}
+						err = c.Store.Queries.CreateImage(ctx, store_queries.CreateImageParams{
+							Cid:          img.Image.Ref.String(),
+							PostActorDid: evt.Repo,
+							PostRkey:     rkey,
+							AltText:      sql.NullString{String: img.Alt, Valid: img.Alt != ""},
+							CreatedAt:    sql.NullTime{Time: recCreatedAt, Valid: true},
+						})
+						if err != nil {
+							log.Errorf("failed to create image: %+v", err)
+						}
+					}
 				}
 
 			case *bsky.FeedLike:
 				recordsProcessedCounter.WithLabelValues("feed_like", c.SocketURL).Inc()
 				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 
-				subject := ""
+				var subjectURI *URI
 				if rec.Subject != nil {
-					subject = rec.Subject.Uri
+					subjectURI, err = getURI(rec.Subject.Uri)
+					if err != nil {
+						log.Errorf("failed to get Subject uri: %+v", err)
+						continue
+					}
 				}
 
-				like := store.Like{
-					ActorDID:   evt.Repo,
-					RKey:       rkey,
-					SubjectURI: subject,
-					CreatedAt:  recCreatedAt.UnixMilli(),
-					InsertedAt: processedAt.UnixMilli(),
+				if subjectURI == nil {
+					log.Errorf("invalid like subject: %+v", rec.Subject)
+					continue
 				}
 
-				err = c.Store.CreateLike(ctx, &like)
+				err = c.Store.Queries.CreateLike(ctx, store_queries.CreateLikeParams{
+					ActorDid:        evt.Repo,
+					Rkey:            rkey,
+					SubjectActorDid: subjectURI.Did,
+					SubjectRkey:     subjectURI.RKey,
+					CreatedAt:       sql.NullTime{Time: recCreatedAt, Valid: true},
+				})
 				if err != nil {
 					log.Errorf("failed to create like: %+v", err)
 				}
 
 				// Increment the like count
-				err = c.Store.IncrementLikeCount(ctx, subject)
-				if err != nil {
-					log.Errorf("failed to increment like count: %+v", err)
-				}
+				err = c.Store.Queries.IncrementLikeCountByN(ctx, store_queries.IncrementLikeCountByNParams{
+					ActorDid: subjectURI.Did,
+					Ns:       subjectURI.Namespace,
+					Rkey:     subjectURI.RKey,
+					NumLikes: 1,
+				})
+
 			case *bsky.FeedRepost:
 				recordsProcessedCounter.WithLabelValues("feed_repost", c.SocketURL).Inc()
 				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
@@ -316,31 +366,25 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				recordsProcessedCounter.WithLabelValues("graph_block", c.SocketURL).Inc()
 				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 
-				block := store.ActorBlock{
-					ActorDID:   evt.Repo,
-					RKey:       rkey,
-					TargetDID:  rec.Subject,
-					CreatedAt:  recCreatedAt.UnixMilli(),
-					InsertedAt: processedAt.UnixMilli(),
-				}
-
-				err = c.Store.CreateActorBlock(ctx, &block)
+				err = c.Store.Queries.CreateBlock(ctx, store_queries.CreateBlockParams{
+					ActorDid:  evt.Repo,
+					Rkey:      rkey,
+					TargetDid: rec.Subject,
+					CreatedAt: sql.NullTime{Time: recCreatedAt, Valid: true},
+				})
 				if err != nil {
-					log.Errorf("failed to create actor block: %+v", err)
+					log.Errorf("failed to create block: %+v", err)
 				}
 			case *bsky.GraphFollow:
 				recordsProcessedCounter.WithLabelValues("graph_follow", c.SocketURL).Inc()
 				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 
-				follow := store.Follow{
-					ActorDID:   evt.Repo,
-					RKey:       rkey,
-					TargetDID:  rec.Subject,
-					CreatedAt:  recCreatedAt.UnixMilli(),
-					InsertedAt: processedAt.UnixMilli(),
-				}
-
-				err = c.Store.CreateFollow(ctx, &follow)
+				err = c.Store.Queries.CreateFollow(ctx, store_queries.CreateFollowParams{
+					ActorDid:  evt.Repo,
+					Rkey:      rkey,
+					TargetDid: rec.Subject,
+					CreatedAt: sql.NullTime{Time: recCreatedAt, Valid: true},
+				})
 				if err != nil {
 					log.Errorf("failed to create follow: %+v", err)
 				}
@@ -374,30 +418,68 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 			recordType := strings.Split(op.Path, "/")[0]
 			switch recordType {
 			case "app.bsky.feed.post":
-				err = c.Store.DeletePost(ctx, evt.Repo, rkey)
+				err = c.Store.Queries.DeletePost(ctx, store_queries.DeletePostParams{
+					ActorDid: evt.Repo,
+					Rkey:     rkey,
+				})
 				if err != nil {
 					log.Errorf("failed to delete post: %+v", err)
 				}
+				// Delete images for the post
+				err = c.Store.Queries.DeleteImagesForPost(ctx, store_queries.DeleteImagesForPostParams{
+					PostActorDid: evt.Repo,
+					PostRkey:     rkey,
+				})
 			case "app.bsky.feed.like":
-				err = c.Store.DeleteLike(ctx, evt.Repo, rkey)
+				// Get the like from the database to get the subject
+				like, err := c.Store.Queries.GetLike(ctx, store_queries.GetLikeParams{
+					ActorDid: evt.Repo,
+					Rkey:     rkey,
+				})
+				if err != nil {
+					if err == sql.ErrNoRows {
+						log.Warnf("like not found, so we can't delete it: %+v", err)
+						continue
+					}
+					log.Errorf("can't delete like: %+v", err)
+					continue
+				}
+
+				// Delete the like from the database
+				err = c.Store.Queries.DeleteLike(ctx, store_queries.DeleteLikeParams{
+					ActorDid: evt.Repo,
+					Rkey:     rkey,
+				})
 				if err != nil {
 					log.Errorf("failed to delete like: %+v", err)
+					continue
 				}
 
 				// Decrement the like count
-				err = c.Store.DecrementLikeCount(ctx, rkey)
+				err = c.Store.Queries.DecrementLikeCountByN(ctx, store_queries.DecrementLikeCountByNParams{
+					ActorDid: like.SubjectActorDid,
+					Ns:       like.SubjectNamespace,
+					Rkey:     like.SubjectRkey,
+					NumLikes: 1,
+				})
 				if err != nil {
-					log.Errorf("failed to decrement like count: %+v", err)
+					log.Warnf("failed to decrement like count: %+v", err)
 				}
 			case "app.bsky.graph.follow":
-				err = c.Store.DeleteFollow(ctx, evt.Repo, rkey)
+				err = c.Store.Queries.DeleteFollow(ctx, store_queries.DeleteFollowParams{
+					ActorDid: evt.Repo,
+					Rkey:     rkey,
+				})
 				if err != nil {
 					log.Errorf("failed to delete follow: %+v", err)
 				}
 			case "app.bsky.graph.block":
-				err = c.Store.DeleteActorBlock(ctx, evt.Repo, rkey)
+				err = c.Store.Queries.DeleteBlock(ctx, store_queries.DeleteBlockParams{
+					ActorDid: evt.Repo,
+					Rkey:     rkey,
+				})
 				if err != nil {
-					log.Errorf("failed to delete actor block: %+v", err)
+					log.Errorf("failed to delete block: %+v", err)
 				}
 			}
 		default:
@@ -407,4 +489,24 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 
 	eventProcessingDurationHistogram.WithLabelValues(c.SocketURL).Observe(time.Since(processedAt).Seconds())
 	return nil
+}
+
+type URI struct {
+	Did       string
+	RKey      string
+	Namespace string
+}
+
+// URI: at://{did}/{namespace}/{rkey}
+func getURI(uri string) (*URI, error) {
+	trimmed := strings.TrimPrefix(uri, "at://")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("invalid uri: %s", uri)
+	}
+	return &URI{
+		Did:       parts[0],
+		Namespace: parts[1],
+		RKey:      parts[2],
+	}, nil
 }
