@@ -341,11 +341,12 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				}
 
 				err = c.Store.Queries.CreateLike(ctx, store_queries.CreateLikeParams{
-					ActorDid:        evt.Repo,
-					Rkey:            rkey,
-					SubjectActorDid: subjectURI.Did,
-					SubjectRkey:     subjectURI.RKey,
-					CreatedAt:       sql.NullTime{Time: recCreatedAt, Valid: true},
+					ActorDid:         evt.Repo,
+					Rkey:             rkey,
+					SubjectActorDid:  subjectURI.Did,
+					SubjectNamespace: subjectURI.Namespace,
+					SubjectRkey:      subjectURI.RKey,
+					CreatedAt:        sql.NullTime{Time: recCreatedAt, Valid: true},
 				})
 				if err != nil {
 					log.Errorf("failed to create like: %+v", err)
