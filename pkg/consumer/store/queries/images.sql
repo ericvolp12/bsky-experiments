@@ -4,10 +4,9 @@ INSERT INTO images (
         post_actor_did,
         post_rkey,
         alt_text,
-        created_at,
-        inserted_at
+        created_at
     )
-VALUES ($1, $2, $3, $4, $5, $6);
+VALUES ($1, $2, $3, $4, $5);
 -- name: DeleteImage :exec
 DELETE FROM images
 WHERE post_actor_did = $1

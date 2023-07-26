@@ -6,7 +6,6 @@ package store_queries
 import (
 	"context"
 	"database/sql"
-	"time"
 )
 
 const createImage = `-- name: CreateImage :exec
@@ -15,10 +14,9 @@ INSERT INTO images (
         post_actor_did,
         post_rkey,
         alt_text,
-        created_at,
-        inserted_at
+        created_at
     )
-VALUES ($1, $2, $3, $4, $5, $6)
+VALUES ($1, $2, $3, $4, $5)
 `
 
 type CreateImageParams struct {
@@ -27,7 +25,6 @@ type CreateImageParams struct {
 	PostRkey     string         `json:"post_rkey"`
 	AltText      sql.NullString `json:"alt_text"`
 	CreatedAt    sql.NullTime   `json:"created_at"`
-	InsertedAt   time.Time      `json:"inserted_at"`
 }
 
 func (q *Queries) CreateImage(ctx context.Context, arg CreateImageParams) error {
@@ -37,7 +34,6 @@ func (q *Queries) CreateImage(ctx context.Context, arg CreateImageParams) error 
 		arg.PostRkey,
 		arg.AltText,
 		arg.CreatedAt,
-		arg.InsertedAt,
 	)
 	return err
 }
