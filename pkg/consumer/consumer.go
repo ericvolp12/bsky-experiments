@@ -23,6 +23,7 @@ import (
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/repomgr"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
@@ -222,7 +223,11 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 		opsProcessedCounter.WithLabelValues(op.Action, collection, c.SocketURL).Inc()
 
 		// recordURI := "at://" + evt.Repo + "/" + op.Path
-
+		span.SetAttributes(attribute.String("repo", evt.Repo))
+		span.SetAttributes(attribute.String("collection", collection))
+		span.SetAttributes(attribute.String("rkey", rkey))
+		span.SetAttributes(attribute.Int64("seq", evt.Seq))
+		span.SetAttributes(attribute.String("event_kind", op.Action))
 		switch ek {
 		case repomgr.EvtKindCreateRecord, repomgr.EvtKindUpdateRecord:
 			// Grab the record from the merkel tree
@@ -246,6 +251,7 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 			// Unpack the record and process it
 			switch rec := rec.(type) {
 			case *bsky.FeedPost:
+				span.SetAttributes(attribute.String("record_type", "feed_post"))
 				recordsProcessedCounter.WithLabelValues("feed_post", c.SocketURL).Inc()
 				parentRelationship := ""
 				parentActorDid := ""
@@ -323,6 +329,7 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				}
 
 			case *bsky.FeedLike:
+				span.SetAttributes(attribute.String("record_type", "feed_like"))
 				recordsProcessedCounter.WithLabelValues("feed_like", c.SocketURL).Inc()
 				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 
@@ -361,9 +368,11 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				})
 
 			case *bsky.FeedRepost:
+				span.SetAttributes(attribute.String("record_type", "feed_repost"))
 				recordsProcessedCounter.WithLabelValues("feed_repost", c.SocketURL).Inc()
 				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 			case *bsky.GraphBlock:
+				span.SetAttributes(attribute.String("record_type", "graph_block"))
 				recordsProcessedCounter.WithLabelValues("graph_block", c.SocketURL).Inc()
 				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 
@@ -377,6 +386,7 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 					log.Errorf("failed to create block: %+v", err)
 				}
 			case *bsky.GraphFollow:
+				span.SetAttributes(attribute.String("record_type", "graph_follow"))
 				recordsProcessedCounter.WithLabelValues("graph_follow", c.SocketURL).Inc()
 				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 
@@ -390,17 +400,22 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 					log.Errorf("failed to create follow: %+v", err)
 				}
 			case *bsky.ActorProfile:
+				span.SetAttributes(attribute.String("record_type", "actor_profile"))
 				recordsProcessedCounter.WithLabelValues("actor_profile", c.SocketURL).Inc()
 			case *bsky.FeedGenerator:
+				span.SetAttributes(attribute.String("record_type", "feed_generator"))
 				recordsProcessedCounter.WithLabelValues("feed_generator", c.SocketURL).Inc()
 				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 			case *bsky.GraphList:
+				span.SetAttributes(attribute.String("record_type", "graph_list"))
 				recordsProcessedCounter.WithLabelValues("graph_list", c.SocketURL).Inc()
 				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 			case *bsky.GraphListitem:
+				span.SetAttributes(attribute.String("record_type", "graph_listitem"))
 				recordsProcessedCounter.WithLabelValues("graph_listitem", c.SocketURL).Inc()
 				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 			default:
+				span.SetAttributes(attribute.String("record_type", "unknown"))
 				log.Warnf("unknown record type: %+v", rec)
 			}
 			if parseError != nil {
@@ -414,11 +429,10 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 			}
 
 		case repomgr.EvtKindDeleteRecord:
-			// Delete the record from the database
-			// Grab the record from the merkel tree
 			recordType := strings.Split(op.Path, "/")[0]
 			switch recordType {
 			case "app.bsky.feed.post":
+				span.SetAttributes(attribute.String("record_type", "feed_post"))
 				err = c.Store.Queries.DeletePost(ctx, store_queries.DeletePostParams{
 					ActorDid: evt.Repo,
 					Rkey:     rkey,
@@ -432,6 +446,7 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 					PostRkey:     rkey,
 				})
 			case "app.bsky.feed.like":
+				span.SetAttributes(attribute.String("record_type", "feed_like"))
 				// Get the like from the database to get the subject
 				like, err := c.Store.Queries.GetLike(ctx, store_queries.GetLikeParams{
 					ActorDid: evt.Repo,
@@ -467,6 +482,7 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 					log.Warnf("failed to decrement like count: %+v", err)
 				}
 			case "app.bsky.graph.follow":
+				span.SetAttributes(attribute.String("record_type", "graph_follow"))
 				err = c.Store.Queries.DeleteFollow(ctx, store_queries.DeleteFollowParams{
 					ActorDid: evt.Repo,
 					Rkey:     rkey,
@@ -475,6 +491,7 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 					log.Errorf("failed to delete follow: %+v", err)
 				}
 			case "app.bsky.graph.block":
+				span.SetAttributes(attribute.String("record_type", "graph_block"))
 				err = c.Store.Queries.DeleteBlock(ctx, store_queries.DeleteBlockParams{
 					ActorDid: evt.Repo,
 					Rkey:     rkey,
