@@ -11,7 +11,6 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"go.opentelemetry.io/otel"
-	"golang.org/x/exp/slices"
 )
 
 type PostLabelFeed struct {
@@ -53,9 +52,9 @@ var feedAliases = map[string]string{
 	"negativifeed": "sentiment:neg",
 }
 
-var deprecatedLabels = []string{
-	"hellthread",
-	"hellthread:pics",
+var deprecatedLabels = map[string]string{
+	"hellthread":      "at://did:plc:q6gjnaw2blty4crticxkmujt/app.bsky.feed.post/3k3jf5lgbsw24",
+	"hellthread:pics": "at://did:plc:q6gjnaw2blty4crticxkmujt/app.bsky.feed.post/3k3jf5lgbsw24",
 }
 
 type NotFoundError struct {
@@ -63,17 +62,9 @@ type NotFoundError struct {
 }
 
 func NewPostLabelFeed(ctx context.Context, feedActorDID string, postRegistry *search.PostRegistry) (*PostLabelFeed, []string, error) {
-	sourceLabels, err := postRegistry.GetUniquePostLabels(ctx)
+	labels, err := postRegistry.GetUniquePostLabels(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error getting unique post labels: %w", err)
-	}
-
-	// Filter deprecated labels
-	labels := []string{}
-	for _, label := range sourceLabels {
-		if !slices.Contains(deprecatedLabels, label) {
-			labels = append(labels, label)
-		}
 	}
 
 	for alias := range feedAliases {
@@ -98,6 +89,16 @@ func (plf *PostLabelFeed) GetPage(ctx context.Context, feed string, userDID stri
 	// Check if the feed is an alias
 	if alias, ok := feedAliases[feed]; ok {
 		feed = alias
+	}
+
+	if pin, ok := deprecatedLabels[feed]; ok {
+		posts := []*appbsky.FeedDefs_SkeletonFeedPost{
+			{
+				Post: pin,
+			},
+		}
+
+		return posts, nil, nil
 	}
 
 	var postsFromRegistry []*search.Post
