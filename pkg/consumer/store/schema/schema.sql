@@ -1,3 +1,4 @@
+-- Posts
 CREATE TABLE posts (
     actor_did TEXT NOT NULL,
     rkey TEXT NOT NULL,
@@ -13,6 +14,7 @@ CREATE TABLE posts (
     PRIMARY KEY (actor_did, rkey)
 );
 CREATE INDEX posts_inserted_at ON posts (inserted_at DESC);
+-- Likes
 CREATE TABLE likes (
     actor_did TEXT NOT NULL,
     rkey TEXT NOT NULL,
@@ -32,6 +34,7 @@ CREATE TABLE like_counts (
     PRIMARY KEY (actor_did, ns, rkey)
 );
 CREATE INDEX like_counts_count ON like_counts (num_likes DESC);
+-- Blocks
 CREATE TABLE blocks (
     actor_did TEXT NOT NULL,
     rkey TEXT NOT NULL,
@@ -40,6 +43,7 @@ CREATE TABLE blocks (
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (actor_did, rkey)
 );
+-- Follows
 CREATE TABLE follows (
     actor_did TEXT NOT NULL,
     rkey TEXT NOT NULL,
@@ -48,6 +52,7 @@ CREATE TABLE follows (
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (actor_did, rkey)
 );
+-- Images
 CREATE TABLE images (
     cid TEXT NOT NULL,
     post_actor_did TEXT NOT NULL,
@@ -57,12 +62,14 @@ CREATE TABLE images (
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (post_actor_did, post_rkey, cid)
 );
+-- Routines for Like Count
 CREATE FUNCTION update_updated_at() RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = now();
 RETURN NEW;
 END;
 $$ language 'plpgsql';
 CREATE TRIGGER update_like_count_updated_at BEFORE
 UPDATE ON like_counts FOR EACH ROW EXECUTE PROCEDURE update_updated_at();
+-- Hotness View
 CREATE MATERIALIZED VIEW recent_posts_with_score AS
 SELECT p.actor_did,
     p.rkey,
