@@ -305,7 +305,7 @@ func (pr *PostRegistry) GetThreadView(ctx context.Context, postID, authorID stri
 				SentimentConfidence: sentimentConfidencePtr,
 			},
 			AuthorHandle: threadView.Handle.String,
-			Depth:        int(threadView.Depth.(int64)),
+			Depth:        int(threadView.Depth),
 		}
 	}
 

@@ -15,6 +15,7 @@ sql:
         "queries/post_labels",
       ]
     schema: "schema/"
+    strict_order_by: false
     gen:
       go:
         package: "search_queries"

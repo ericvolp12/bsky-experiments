@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/auth"
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	feedgenerator "github.com/ericvolp12/bsky-experiments/pkg/feed-generator"
 	"github.com/ericvolp12/bsky-experiments/pkg/feed-generator/endpoints"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/authorlabel"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/bangers"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/cluster"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/firehose"
+	"github.com/ericvolp12/bsky-experiments/pkg/feeds/hot"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/postlabel"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
@@ -61,6 +63,11 @@ func main() {
 		log.Fatal("REGISTRY_DB_CONNECTION_STRING environment variable is required")
 	}
 
+	firehoseConnectionString := os.Getenv("FIREHOSE_DB_CONNECTION_STRING")
+	if firehoseConnectionString == "" {
+		log.Fatal("FIREHOSE_DB_CONNECTION_STRING environment variable is required")
+	}
+
 	graphJSONUrl := os.Getenv("GRAPH_JSON_URL")
 	if graphJSONUrl == "" {
 		graphJSONUrl = "https://s3.jazco.io/exported_graph_enriched.json"
@@ -86,6 +93,11 @@ func main() {
 		log.Fatalf("Failed to create PostRegistry: %v", err)
 	}
 	defer postRegistry.Close()
+
+	store, err := store.NewStore(firehoseConnectionString)
+	if err != nil {
+		log.Fatalf("Failed to create Store: %v", err)
+	}
 
 	feedActorDID := os.Getenv("FEED_ACTOR_DID")
 	if feedActorDID == "" {
@@ -155,6 +167,13 @@ func main() {
 		log.Fatalf("Failed to create BangersFeed: %v", err)
 	}
 	feedGenerator.AddFeed(bangersFeedAliases, bangersFeed)
+
+	// Create a What's Hot feed
+	hotFeed, hotFeedAliases, err := hot.NewHotFeed(ctx, feedActorDID, store)
+	if err != nil {
+		log.Fatalf("Failed to create HotFeed: %v", err)
+	}
+	feedGenerator.AddFeed(hotFeedAliases, hotFeed)
 
 	router := gin.New()
 

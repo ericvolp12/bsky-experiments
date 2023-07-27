@@ -8,7 +8,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq" // postgres driver
-	"github.com/tabbed/pqtype"
+	"github.com/sqlc-dev/pqtype"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/search/search_queries"
 	"go.opentelemetry.io/otel"
