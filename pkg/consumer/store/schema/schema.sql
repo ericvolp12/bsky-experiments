@@ -79,12 +79,14 @@ SELECT p.actor_did,
 FROM posts p
     LEFT JOIN like_counts lc ON p.actor_did = lc.actor_did
     AND p.rkey = lc.rkey
-WHERE p.inserted_at > (
-        (NOW() - INTERVAL '5 minutes') - INTERVAL '24 hours'
+WHERE p.inserted_at > (NOW() - INTERVAL '24 hours')
+    AND p.inserted_at < (NOW() - INTERVAL '5 minutes')
+    AND (
+        p.parent_relationship is NULL
+        OR p.parent_relationship != 'r'
     )
-    AND p.parent_post_rkey is NULL
     AND p.root_post_rkey is NULL
     AND lc.num_likes > 10
-    AND lc.updated_at > (NOW() - INTERVAL '24 hours');
+ORDER BY score DESC;
 CREATE INDEX recent_posts_with_score_score ON recent_posts_with_score (score DESC);
-CREATE INDEX recent_posts_with_score_actor_rkey ON recent_posts_with_score (actor_did, rkey);
+CREATE UNIQUE INDEX recent_posts_with_score_actor_rkey ON recent_posts_with_score (actor_did, rkey);

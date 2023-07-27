@@ -3,6 +3,7 @@ sql:
   - engine: "postgresql"
     queries: "queries/"
     schema: "schema/"
+    strict_order_by: false
     gen:
       go:
         package: "store_queries"
