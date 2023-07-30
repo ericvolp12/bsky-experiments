@@ -34,19 +34,10 @@ counts AS (
         SUM(CASE WHEN num_posts > 1000 THEN 1 ELSE 0 END)as gt_1000
     FROM
         postcounts
-),
-hellthread_posts AS (
-    SELECT
-        count(id) AS hellthread_post_count
-    FROM
-        posts
-    WHERE
-        root_post_id = '3juzlwllznd24'
 )
 SELECT
     total_authors,
     (SELECT SUM(num_posts) FROM postcounts)::bigint AS total_posts,
-    hellthread_post_count,
     (SELECT AVG(num_posts) FROM postcounts)::float AS mean_posts_per_author,
     gt_1,
     gt_5,
@@ -66,6 +57,5 @@ SELECT
     p99_99
 FROM
     counts,
-    percentiles,
-    hellthread_posts
+    percentiles
 LIMIT 1;

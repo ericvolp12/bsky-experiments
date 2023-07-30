@@ -29,13 +29,12 @@ type Bracket struct {
 }
 
 type AuthorStats struct {
-	TotalAuthors    int64        `json:"total_authors"`
-	TotalPosts      int64        `json:"total_posts"`
-	HellthreadPosts int64        `json:"hellthread_posts"`
-	MeanPostCount   float64      `json:"mean_post_count"`
-	Percentiles     []Percentile `json:"percentiles"`
-	Brackets        []Bracket    `json:"brackets"`
-	UpdatedAt       time.Time    `json:"updated_at"`
+	TotalAuthors  int64        `json:"total_authors"`
+	TotalPosts    int64        `json:"total_posts"`
+	MeanPostCount float64      `json:"mean_post_count"`
+	Percentiles   []Percentile `json:"percentiles"`
+	Brackets      []Bracket    `json:"brackets"`
+	UpdatedAt     time.Time    `json:"updated_at"`
 }
 
 type AuthorBlock struct {
@@ -135,10 +134,9 @@ func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error
 	}
 
 	return &AuthorStats{
-		TotalAuthors:    authorStats.TotalAuthors,
-		TotalPosts:      authorStats.TotalPosts,
-		HellthreadPosts: authorStats.HellthreadPostCount,
-		MeanPostCount:   authorStats.MeanPostsPerAuthor,
+		TotalAuthors:  authorStats.TotalAuthors,
+		TotalPosts:    authorStats.TotalPosts,
+		MeanPostCount: authorStats.MeanPostsPerAuthor,
 		Percentiles: []Percentile{
 			{
 				Percentile: 0.25,
