@@ -9,10 +9,6 @@ services:
       - "host.docker.internal:host-gateway"
     restart: always
     image: bsky-graph-builder
-    # logging:
-    #   driver: loki
-    #   options:
-    #     loki-url: "http://10.0.6.7:3100/loki/api/v1/push"
     container_name: bsky-graph-builder
     env_file:
       - ../../.env

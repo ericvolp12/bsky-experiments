@@ -357,6 +357,7 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				})
 				if err != nil {
 					log.Errorf("failed to create like: %+v", err)
+					continue
 				}
 
 				// Increment the like count
@@ -445,6 +446,9 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 					PostActorDid: evt.Repo,
 					PostRkey:     rkey,
 				})
+				if err != nil {
+					log.Errorf("failed to delete images for post: %+v", err)
+				}
 			case "app.bsky.feed.like":
 				span.SetAttributes(attribute.String("record_type", "feed_like"))
 				// Get the like from the database to get the subject

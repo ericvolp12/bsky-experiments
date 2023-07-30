@@ -121,9 +121,9 @@ func main() {
 		userCount,
 		graphJSONUrl,
 		layoutServiceHost,
-		1*time.Minute, // Thread View Cache TTL
-		1*time.Minute, // Layout Cache TTL
-		5*time.Minute, // Stats Cache TTL
+		10*time.Minute, // Thread View Cache TTL
+		10*time.Minute, // Layout Cache TTL
+		5*time.Minute,  // Stats Cache TTL
 	)
 
 	router := gin.New()
