@@ -4,17 +4,21 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
-	"net/http"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
 
+	_ "net/http/pprof"
+
 	"github.com/ericvolp12/bsky-experiments/pkg/querycheck"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
-	"github.com/jackc/pgx/v5"
+	"github.com/labstack/echo-contrib/pprof"
+	"github.com/labstack/echo/v4"
+
+	"github.com/labstack/echo/v4/middleware"
+
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -54,44 +58,6 @@ func main() {
 
 var tracer trace.Tracer
 
-type Querychecker struct {
-	connectionURL string
-}
-
-func NewQuerychecker(ctx context.Context, connectionURL string) (*Querychecker, error) {
-	return &Querychecker{
-		connectionURL: connectionURL,
-	}, nil
-}
-
-func (q *Querychecker) CheckQueryPlan(ctx context.Context, query string) (*querycheck.QueryPlan, error) {
-	conn, err := pgx.Connect(ctx, q.connectionURL)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close(ctx)
-
-	rows, err := conn.Query(ctx, "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "+query)
-	if err != nil {
-		return nil, err
-	}
-
-	var plan querycheck.QueryPlan
-
-	for rows.Next() {
-		var plans querycheck.QueryPlans
-		err := rows.Scan(&plans)
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range plans {
-			plan = p
-		}
-	}
-
-	return &plan, nil
-}
-
 // Querycheck is the main function for querycheck
 func Querycheck(cctx *cli.Context) error {
 	ctx := cctx.Context
@@ -121,7 +87,7 @@ func Querycheck(cctx *cli.Context) error {
 	// Registers a tracer Provider globally if the exporter endpoint is set
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
 		log.Info("initializing tracer...")
-		shutdown, err := tracing.InstallExportPipeline(ctx, "Querycheck", 0.01)
+		shutdown, err := tracing.InstallExportPipeline(ctx, "Querycheck", 1)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -134,50 +100,21 @@ func Querycheck(cctx *cli.Context) error {
 
 	wg := sync.WaitGroup{}
 
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
-
-	metricServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cctx.Int("port")),
-		Handler: mux,
-	}
-
-	// Startup metrics server
-	go func() {
-		wg.Add(1)
-		defer wg.Done()
-		rawlog, err := zap.NewDevelopment()
-		if err != nil {
-			log.Fatalf("failed to create logger: %+v\n", err)
-		}
-		log := rawlog.Sugar().With("source", "metrics_server")
-
-		log.Infof("metrics server listening on port %d", cctx.Int("port"))
-
-		if err := metricServer.ListenAndServe(); err != http.ErrServerClosed {
-			log.Fatalf("failed to start metrics server: %+v\n", err)
-		}
-		log.Info("metrics server shut down successfully")
-	}()
+	// HTTP Server setup and Middleware Plumbing
+	e := echo.New()
+	e.HideBanner = true
+	e.HidePort = true
+	pprof.Register(e)
+	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()))
+	e.Use(middleware.LoggerWithConfig(middleware.DefaultLoggerConfig))
 
 	// Start the query checker
-	querychecker, err := NewQuerychecker(ctx, cctx.String("postgres-url"))
+	querychecker, err := querycheck.NewQuerychecker(ctx, cctx.String("postgres-url"))
 	if err != nil {
 		log.Fatalf("failed to create querychecker: %+v\n", err)
 	}
 
-	go func() {
-		wg.Add(1)
-		defer wg.Done()
-		rawlog, err := zap.NewDevelopment()
-		if err != nil {
-			log.Fatalf("failed to create logger: %+v\n", err)
-		}
-		log := rawlog.Sugar().With("source", "query_checker")
-
-		log.Infof("query checker started")
-
-		query := `SELECT *
+	getLikesQuery := `SELECT *
 FROM likes
 WHERE subject_actor_did = 'did:plc:q6gjnaw2blty4crticxkmujt'
 	AND subject_namespace = 'app.bsky.feed.post'
@@ -185,49 +122,36 @@ WHERE subject_actor_did = 'did:plc:q6gjnaw2blty4crticxkmujt'
 ORDER BY created_at DESC
 LIMIT 50;`
 
-		log.Infof("Test Query: \n%s\n", query)
+	querychecker.AddQuery(ctx, "get_likes", getLikesQuery, time.Second*30)
 
-		// Check the query plan every 30 seconds
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
+	getLikeCountQuery := `SELECT *
+FROM like_counts
+WHERE actor_did = 'did:plc:q6gjnaw2blty4crticxkmujt'
+	AND ns = 'app.bsky.feed.post'
+	AND rkey = '3k3jf5lgbsw24'
+LIMIT 1;`
 
-		initialQueryPlan, err := querychecker.CheckQueryPlan(ctx, query)
-		if err != nil {
-			log.Errorf("failed to check query plan: %+v\n", err)
+	querychecker.AddQuery(ctx, "get_like_count", getLikeCountQuery, time.Second*20)
+
+	err = querychecker.Start()
+	if err != nil {
+		log.Fatalf("failed to start querychecker: %+v\n", err)
+	}
+
+	e.GET("/query", querychecker.HandleGetQuery)
+	e.GET("/queries", querychecker.HandleGetQueries)
+	e.POST("/query", querychecker.HandleAddQuery)
+	e.PUT("/query", querychecker.HandleUpdateQuery)
+	e.DELETE("/query", querychecker.HandleDeleteQuery)
+
+	// Start the metrics server
+	wg.Add(1)
+	go func() {
+		log.Infof("starting metrics server on port %d", cctx.Int("port"))
+		if err := e.Start(fmt.Sprintf(":%d", cctx.Int("port"))); err != nil {
+			log.Errorf("failed to start metrics server: %+v\n", err)
 		}
-
-		if initialQueryPlan != nil {
-			log.Infof("Initial plan:\n%+v\n", initialQueryPlan.String())
-		}
-
-		for {
-			select {
-			case <-ticker.C:
-				log.Info("checking query plan")
-				qp, err := querychecker.CheckQueryPlan(ctx, query)
-				if err != nil {
-					log.Errorf("failed to check query plan: %+v\n", err)
-					continue
-				}
-				if qp == nil {
-					log.Infof("query plan is nil")
-					continue
-				}
-
-				if !qp.HasSameStructureAs(*initialQueryPlan) {
-					sign := "+"
-					diff := math.Abs(initialQueryPlan.Plan.ActualTotalTime - qp.Plan.ActualTotalTime)
-					if initialQueryPlan.Plan.ActualTotalTime > qp.Plan.ActualTotalTime {
-						sign = "-"
-					}
-					log.Infof("query plan has changed (%s%.03fms): \n%+v\n", sign, diff, qp.String())
-					initialQueryPlan = qp
-				}
-			case <-ctx.Done():
-				log.Info("shutting down query checker")
-				return
-			}
-		}
+		wg.Done()
 	}()
 
 	select {
@@ -240,10 +164,12 @@ LIMIT 50;`
 
 	log.Info("shutting down, waiting for workers to clean up...")
 
-	if err := metricServer.Shutdown(ctx); err != nil {
+	if err := e.Shutdown(ctx); err != nil {
 		log.Errorf("failed to shut down metrics server: %+v\n", err)
 		wg.Done()
 	}
+
+	querychecker.Stop()
 
 	wg.Wait()
 	log.Info("shut down successfully")

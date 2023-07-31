@@ -18,6 +18,8 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/golang-lru/arc/v2 v2.0.3
 	github.com/jackc/pgx/v5 v5.3.0
+	github.com/labstack/echo-contrib v0.15.0
+	github.com/labstack/echo/v4 v4.10.2
 	github.com/labstack/gommon v0.4.0
 	github.com/lib/pq v1.10.9
 	github.com/meilisearch/meilisearch-go v0.25.0
