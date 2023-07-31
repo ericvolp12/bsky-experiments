@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -63,30 +64,32 @@ func NewQuerychecker(ctx context.Context, connectionURL string) (*Querychecker, 
 	}, nil
 }
 
-func (q *Querychecker) CheckQueryPlan(ctx context.Context, query string) error {
+func (q *Querychecker) CheckQueryPlan(ctx context.Context, query string) (*querycheck.QueryPlan, error) {
 	conn, err := pgx.Connect(ctx, q.connectionURL)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer conn.Close(ctx)
 
 	rows, err := conn.Query(ctx, "EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) "+query)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	var plan querycheck.QueryPlan
 
 	for rows.Next() {
 		var plans querycheck.QueryPlans
 		err := rows.Scan(&plans)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		for _, plan := range plans {
-			plan.Print()
+		for _, p := range plans {
+			plan = p
 		}
 	}
 
-	return nil
+	return &plan, nil
 }
 
 // Querycheck is the main function for querycheck
@@ -99,7 +102,7 @@ func Querycheck(cctx *cli.Context) error {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
-	rawlog, err := zap.NewProduction()
+	rawlog, err := zap.NewDevelopment()
 	if err != nil {
 		log.Fatalf("failed to create logger: %+v\n", err)
 	}
@@ -143,7 +146,7 @@ func Querycheck(cctx *cli.Context) error {
 	go func() {
 		wg.Add(1)
 		defer wg.Done()
-		rawlog, err := zap.NewProduction()
+		rawlog, err := zap.NewDevelopment()
 		if err != nil {
 			log.Fatalf("failed to create logger: %+v\n", err)
 		}
@@ -166,7 +169,7 @@ func Querycheck(cctx *cli.Context) error {
 	go func() {
 		wg.Add(1)
 		defer wg.Done()
-		rawlog, err := zap.NewProduction()
+		rawlog, err := zap.NewDevelopment()
 		if err != nil {
 			log.Fatalf("failed to create logger: %+v\n", err)
 		}
@@ -175,28 +178,50 @@ func Querycheck(cctx *cli.Context) error {
 		log.Infof("query checker started")
 
 		query := `SELECT *
-		FROM likes
-		WHERE subject_actor_did = 'did:plc:q6gjnaw2blty4crticxkmujt'
-			AND subject_namespace = 'app.bsky.feed.post'
-			AND subject_rkey = '3k3jf5lgbsw24'
-		ORDER BY created_at DESC
-		LIMIT 50;`
+FROM likes
+WHERE subject_actor_did = 'did:plc:q6gjnaw2blty4crticxkmujt'
+	AND subject_namespace = 'app.bsky.feed.post'
+	AND subject_rkey = '3k3jf5lgbsw24'
+ORDER BY created_at DESC
+LIMIT 50;`
+
+		log.Infof("Test Query: \n%s\n", query)
 
 		// Check the query plan every 30 seconds
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
-		err = querychecker.CheckQueryPlan(ctx, query)
+		initialQueryPlan, err := querychecker.CheckQueryPlan(ctx, query)
 		if err != nil {
 			log.Errorf("failed to check query plan: %+v\n", err)
+		}
+
+		if initialQueryPlan != nil {
+			log.Infof("Initial plan:\n%+v\n", initialQueryPlan.String())
 		}
 
 		for {
 			select {
 			case <-ticker.C:
-				err := querychecker.CheckQueryPlan(ctx, query)
+				log.Info("checking query plan")
+				qp, err := querychecker.CheckQueryPlan(ctx, query)
 				if err != nil {
 					log.Errorf("failed to check query plan: %+v\n", err)
+					continue
+				}
+				if qp == nil {
+					log.Infof("query plan is nil")
+					continue
+				}
+
+				if !qp.HasSameStructureAs(*initialQueryPlan) {
+					sign := "+"
+					diff := math.Abs(initialQueryPlan.Plan.ActualTotalTime - qp.Plan.ActualTotalTime)
+					if initialQueryPlan.Plan.ActualTotalTime > qp.Plan.ActualTotalTime {
+						sign = "-"
+					}
+					log.Infof("query plan has changed (%s%.03fms): \n%+v\n", sign, diff, qp.String())
+					initialQueryPlan = qp
 				}
 			case <-ctx.Done():
 				log.Info("shutting down query checker")

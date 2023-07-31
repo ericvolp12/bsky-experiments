@@ -113,13 +113,15 @@ type Planning struct {
 
 type QueryPlans []QueryPlan
 
-func (q *QueryPlan) Print() {
-	q.Plan.Print(1)
-	fmt.Printf("\n")
+func (q *QueryPlan) String() string {
+	ret := ""
+	ret += q.Plan.String(1)
+	return ret
 }
 
-func (p *Plan) Print(i int) {
-	fmt.Printf("(%s) Timing: %fms | IO Read: %fms (H %d R %d D %d W %d) | IO Write: %fms",
+func (p *Plan) String(i int) string {
+	ret := ""
+	ret += fmt.Sprintf("(%s) Timing: %fms | IO Read: %fms (H %d R %d D %d W %d) | IO Write: %fms",
 		p.NodeType,
 		p.ActualTotalTime,
 		p.IOReadTime,
@@ -131,10 +133,34 @@ func (p *Plan) Print(i int) {
 	)
 
 	for _, plan := range p.Plans {
-		fmt.Printf("\n")
+		ret += "\n"
 		for j := 0; j < i; j++ {
-			fmt.Printf("\t")
+			ret += "\t"
 		}
-		plan.Print(i + 1)
+		ret += plan.String(i + 1)
 	}
+
+	return ret
+}
+
+func (q *QueryPlan) HasSameStructureAs(other QueryPlan) bool {
+	return q.Plan.HasSameStructureAs(other.Plan)
+}
+
+func (p *Plan) HasSameStructureAs(other Plan) bool {
+	if p.NodeType != other.NodeType {
+		return false
+	}
+
+	if len(p.Plans) != len(other.Plans) {
+		return false
+	}
+
+	for i, plan := range p.Plans {
+		if !plan.HasSameStructureAs(other.Plans[i]) {
+			return false
+		}
+	}
+
+	return true
 }
