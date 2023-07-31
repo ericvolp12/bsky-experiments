@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"net/http"
 	_ "net/http/pprof"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/querycheck"
@@ -45,6 +46,12 @@ func main() {
 			Usage:   "port to serve metrics on",
 			Value:   8080,
 			EnvVars: []string{"PORT"},
+		},
+		&cli.StringFlag{
+			Name:    "auth-token",
+			Usage:   "auth token for accessing the querycheck api",
+			Value:   "",
+			EnvVars: []string{"AUTH_TOKEN"},
 		},
 	}
 
@@ -115,21 +122,21 @@ func Querycheck(cctx *cli.Context) error {
 	}
 
 	getLikesQuery := `SELECT *
-FROM likes
-WHERE subject_actor_did = 'did:plc:q6gjnaw2blty4crticxkmujt'
-	AND subject_namespace = 'app.bsky.feed.post'
-	AND subject_rkey = '3k3jf5lgbsw24'
-ORDER BY created_at DESC
-LIMIT 50;`
+	FROM likes
+	WHERE subject_actor_did = 'did:plc:q6gjnaw2blty4crticxkmujt'
+		AND subject_namespace = 'app.bsky.feed.post'
+		AND subject_rkey = '3k3jf5lgbsw24'
+	ORDER BY created_at DESC
+	LIMIT 50;`
 
 	querychecker.AddQuery(ctx, "get_likes", getLikesQuery, time.Second*30)
 
 	getLikeCountQuery := `SELECT *
-FROM like_counts
-WHERE actor_did = 'did:plc:q6gjnaw2blty4crticxkmujt'
-	AND ns = 'app.bsky.feed.post'
-	AND rkey = '3k3jf5lgbsw24'
-LIMIT 1;`
+	FROM like_counts
+	WHERE actor_did = 'did:plc:q6gjnaw2blty4crticxkmujt'
+		AND ns = 'app.bsky.feed.post'
+		AND rkey = '3k3jf5lgbsw24'
+	LIMIT 1;`
 
 	querychecker.AddQuery(ctx, "get_like_count", getLikeCountQuery, time.Second*20)
 
@@ -137,6 +144,15 @@ LIMIT 1;`
 	if err != nil {
 		log.Fatalf("failed to start querychecker: %+v\n", err)
 	}
+
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if cctx.String("auth-token") != "" && c.Request().Header.Get("Authorization") != cctx.String("auth-token") {
+				return c.String(http.StatusUnauthorized, "unauthorized")
+			}
+			return next(c)
+		}
+	})
 
 	e.GET("/query", querychecker.HandleGetQuery)
 	e.GET("/queries", querychecker.HandleGetQueries)
