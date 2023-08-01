@@ -153,6 +153,17 @@ consumer-up:
 	@echo "Starting Consumer..."
 	docker compose -f build/consumer/docker-compose.yml up --build -d
 
+# Build QueryCheck
+.PHONY: build-querycheck
+build-querycheck:
+	@echo "Building QueryCheck Go binary..."
+	$(GO_CMD_W_CGO) build -o querycheck cmd/querycheck/*.go
+
+.PHONY: querycheck-up
+querycheck-up:
+	@echo "Starting QueryCheck..."
+	docker compose -f build/querycheck/docker-compose.yml up --build -d
+
 # Generate SQLC Code
 .PHONY: sqlc
 sqlc:

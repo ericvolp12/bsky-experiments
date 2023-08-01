@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  querycheck:
+    build:
+      context: ../../
+      dockerfile: build/querycheck/Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    image: querycheck
+    container_name: querycheck
+    env_file:
+      - ../../.consumer.env
+    ports:
+      - "8115:8080"

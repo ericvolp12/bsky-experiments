@@ -2,6 +2,7 @@ package querycheck
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"sync"
@@ -41,7 +42,7 @@ type Querychecker struct {
 
 // NewQuerychecker creates a new querychecker
 func NewQuerychecker(ctx context.Context, connectionURL string) (*Querychecker, error) {
-	logger, err := zap.NewDevelopment()
+	logger, err := zap.NewProduction()
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +168,7 @@ func (q *Querychecker) Start() error {
 
 	for _, qu := range q.Queries {
 		go func(query *Query) {
-			rawlog, err := zap.NewDevelopment()
+			rawlog, err := zap.NewProduction()
 			if err != nil {
 				log.Fatalf("failed to create logger: %+v\n", err)
 			}
@@ -189,6 +190,16 @@ func (q *Querychecker) Start() error {
 				log.Infof("Initial plan:\n%+v\n", query.LatestPlan.String())
 				query.RecordPlanMetrics(*query.LatestPlan)
 				query.LastChecked = time.Now()
+				log.Infof("sending query plan to dalibo")
+				planID, deleteKey, err := query.SendToDalibo(ctx)
+				if err != nil {
+					log.Errorf("failed to send query plan to dalibo: %+v\n", err)
+				} else {
+					planURL := "https://explain.dalibo.com/plan/" + planID
+					log.Infow(
+						fmt.Sprintf("Access plan at: %s (plan id: %s, delete key: %s)", planURL, planID, deleteKey),
+						"plan_url", planURL, "plan_id", planID, "delete_key", deleteKey)
+				}
 			}
 
 			for {
@@ -237,6 +248,17 @@ func (q *Querychecker) Start() error {
 						query.PreviousPlan = query.LatestPlan
 						query.LatestPlan = qp
 						query.lk.Unlock()
+
+						log.Infof("sending query plan to dalibo")
+						planID, deleteKey, err := query.SendToDalibo(ctx)
+						if err != nil {
+							log.Errorf("failed to send query plan to dalibo: %+v\n", err)
+						} else {
+							planURL := "https://explain.dalibo.com/plan/" + planID
+							log.Infow(
+								fmt.Sprintf("Access plan at: %s (plan id: %s, delete key: %s)", planURL, planID, deleteKey),
+								"plan_url", planURL, "plan_id", planID, "delete_key", deleteKey)
+						}
 					}
 				case <-query.in:
 					log.Info("shutting down query checker routine")

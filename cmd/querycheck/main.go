@@ -75,7 +75,7 @@ func Querycheck(cctx *cli.Context) error {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
-	rawlog, err := zap.NewDevelopment()
+	rawlog, err := zap.NewProduction()
 	if err != nil {
 		log.Fatalf("failed to create logger: %+v\n", err)
 	}
