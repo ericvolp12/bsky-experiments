@@ -230,7 +230,7 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 		span.SetAttributes(attribute.Int64("seq", evt.Seq))
 		span.SetAttributes(attribute.String("event_kind", op.Action))
 		switch ek {
-		case repomgr.EvtKindCreateRecord, repomgr.EvtKindUpdateRecord:
+		case repomgr.EvtKindCreateRecord:
 			// Grab the record from the merkel tree
 			rc, rec, err := rr.GetRecord(ctx, op.Path)
 			if err != nil {
@@ -245,10 +245,18 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				log.Errorf("failed to LexLink the record in the event: %+v", e)
 				break
 			}
-			err = c.HandleCreateRecord(ctx, evt.Repo, op.Path, rec, evtCreatedAt, processedAt)
+			recCreatedAt, err := c.HandleCreateRecord(ctx, evt.Repo, op.Path, rec)
 			if err != nil {
 				log.Errorf("failed to handle create record: %+v", err)
 			}
+
+			if recCreatedAt != nil && !recCreatedAt.IsZero() {
+				lastEvtCreatedAtGauge.WithLabelValues(c.SocketURL).Set(float64(recCreatedAt.UnixNano()))
+				lastEvtCreatedRecordCreatedGapGauge.WithLabelValues(c.SocketURL).Set(float64(evtCreatedAt.Sub(*recCreatedAt).Seconds()))
+				lastRecordCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(processedAt.Sub(*recCreatedAt).Seconds()))
+			}
+		case repomgr.EvtKindUpdateRecord:
+			// For now we don't do anything with updates
 		case repomgr.EvtKindDeleteRecord:
 			recordType := strings.Split(op.Path, "/")[0]
 			switch recordType {
@@ -339,9 +347,7 @@ func (c *Consumer) HandleCreateRecord(
 	repo string,
 	path string,
 	rec typegen.CBORMarshaler,
-	evtCreatedAt time.Time,
-	evtProcessedAt time.Time,
-) error {
+) (*time.Time, error) {
 	ctx, span := tracer.Start(ctx, "HandleCreateRecord")
 
 	// collection := strings.Split(path, "/")[0]
@@ -364,7 +370,7 @@ func (c *Consumer) HandleCreateRecord(
 			quoteRepostsProcessedCounter.WithLabelValues(c.SocketURL).Inc()
 			u, err := getURI(rec.Embed.EmbedRecord.Record.Uri)
 			if err != nil {
-				return fmt.Errorf("failed to get Quoted Record uri: %w", err)
+				return nil, fmt.Errorf("failed to get Quoted Record uri: %w", err)
 			}
 			parentActorDid = u.Did
 			parentActorRkey = u.RKey
@@ -373,7 +379,7 @@ func (c *Consumer) HandleCreateRecord(
 		if rec.Reply != nil && rec.Reply.Parent != nil {
 			u, err := getURI(rec.Reply.Parent.Uri)
 			if err != nil {
-				return fmt.Errorf("failed to get Reply uri: %w", err)
+				return nil, fmt.Errorf("failed to get Reply uri: %w", err)
 			}
 			parentActorDid = u.Did
 			parentActorRkey = u.RKey
@@ -385,7 +391,7 @@ func (c *Consumer) HandleCreateRecord(
 		if rec.Reply != nil && rec.Reply.Root != nil {
 			u, err := getURI(rec.Reply.Root.Uri)
 			if err != nil {
-				return fmt.Errorf("failed to get Root uri: %w", err)
+				return nil, fmt.Errorf("failed to get Root uri: %w", err)
 			}
 			rootActorDid = u.Did
 			rootActorRkey = u.RKey
@@ -437,12 +443,12 @@ func (c *Consumer) HandleCreateRecord(
 		if rec.Subject != nil {
 			subjectURI, err = getURI(rec.Subject.Uri)
 			if err != nil {
-				return fmt.Errorf("failed to get Subject uri: %w", err)
+				return nil, fmt.Errorf("failed to get Subject uri: %w", err)
 			}
 		}
 
 		if subjectURI == nil {
-			return fmt.Errorf("invalid like subject: %+v", rec.Subject)
+			return nil, fmt.Errorf("invalid like subject: %+v", rec.Subject)
 		}
 
 		err = c.Store.Queries.CreateLike(ctx, store_queries.CreateLikeParams{
@@ -454,7 +460,7 @@ func (c *Consumer) HandleCreateRecord(
 			CreatedAt:        sql.NullTime{Time: recCreatedAt, Valid: true},
 		})
 		if err != nil {
-			return fmt.Errorf("failed to create like: %w", err)
+			return nil, fmt.Errorf("failed to create like: %w", err)
 		}
 
 		// Increment the like count
@@ -517,14 +523,10 @@ func (c *Consumer) HandleCreateRecord(
 		log.Warnf("unknown record type: %+v", rec)
 	}
 	if parseError != nil {
-		return fmt.Errorf("error parsing time: %w", parseError)
+		return nil, fmt.Errorf("error parsing time: %w", parseError)
 	}
-	if !recCreatedAt.IsZero() {
-		lastEvtCreatedAtGauge.WithLabelValues(c.SocketURL).Set(float64(recCreatedAt.UnixNano()))
-		lastEvtCreatedRecordCreatedGapGauge.WithLabelValues(c.SocketURL).Set(float64(evtCreatedAt.Sub(recCreatedAt).Seconds()))
-		lastRecordCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(evtProcessedAt.Sub(recCreatedAt).Seconds()))
-	}
-	return nil
+
+	return &recCreatedAt, nil
 }
 
 type URI struct {
