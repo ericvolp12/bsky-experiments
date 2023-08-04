@@ -46,7 +46,7 @@ type Consumer struct {
 
 	BackfillStatus map[string]*BackfillRepoStatus
 	statusLock     sync.RWMutex
-	SyncLimiter    rate.Limiter
+	SyncLimiter    *rate.Limiter
 }
 
 type BackfillRepoStatus struct {
@@ -123,7 +123,7 @@ func NewConsumer(ctx context.Context, logger *zap.SugaredLogger, redisClient *re
 		Store:       store,
 
 		BackfillStatus: map[string]*BackfillRepoStatus{},
-		SyncLimiter:    *rate.NewLimiter(rate.Every(2*time.Second), 1),
+		SyncLimiter:    rate.NewLimiter(2, 1),
 	}
 
 	// Check to see if the cursor exists in redis

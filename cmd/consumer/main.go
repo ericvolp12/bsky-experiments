@@ -225,8 +225,8 @@ func Consumer(cctx *cli.Context) error {
 				c.ProgMux.Lock()
 				seq := c.Progress.LastSeq
 				c.ProgMux.Unlock()
-				if seq <= lastSeq {
-					log.Errorf("no new events in last 15 seconds, shutting down for docker to restart me")
+				if seq == lastSeq {
+					log.Errorf("no new events in last 15 seconds, shutting down for docker to restart me (last seq: %d)", seq)
 					cancel()
 				} else {
 					log.Infof("last event sequence: %d", seq)
