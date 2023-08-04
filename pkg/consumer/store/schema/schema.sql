@@ -14,6 +14,12 @@ CREATE TABLE posts (
     PRIMARY KEY (actor_did, rkey)
 );
 CREATE INDEX posts_inserted_at ON posts (inserted_at DESC);
+CREATE INDEX posts_roots_or_quotes_only_inserted_at ON posts (inserted_at DESC)
+WHERE (root_post_rkey IS NULL)
+    AND (
+        (parent_relationship IS NULL)
+        OR (parent_relationship <> 'r'::text)
+    );
 -- Likes
 CREATE TABLE likes (
     actor_did TEXT NOT NULL,

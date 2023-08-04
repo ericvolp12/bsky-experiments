@@ -18,6 +18,7 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/labstack/gommon/log"
 	"github.com/redis/go-redis/v9"
+	typegen "github.com/whyrusleeping/cbor-gen"
 
 	"github.com/bluesky-social/indigo/events"
 	"github.com/bluesky-social/indigo/repo"
@@ -244,191 +245,10 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				log.Errorf("failed to LexLink the record in the event: %+v", e)
 				break
 			}
-
-			var recCreatedAt time.Time
-			var parseError error
-
-			// Unpack the record and process it
-			switch rec := rec.(type) {
-			case *bsky.FeedPost:
-				span.SetAttributes(attribute.String("record_type", "feed_post"))
-				recordsProcessedCounter.WithLabelValues("feed_post", c.SocketURL).Inc()
-				parentRelationship := ""
-				parentActorDid := ""
-				parentActorRkey := ""
-
-				if rec.Embed != nil && rec.Embed.EmbedRecord != nil && rec.Embed.EmbedRecord.Record != nil {
-					quoteRepostsProcessedCounter.WithLabelValues(c.SocketURL).Inc()
-					u, err := getURI(rec.Embed.EmbedRecord.Record.Uri)
-					if err != nil {
-						log.Errorf("failed to get Quoted Record uri: %+v", err)
-						continue
-					}
-					parentActorDid = u.Did
-					parentActorRkey = u.RKey
-					parentRelationship = "q"
-				}
-				if rec.Reply != nil && rec.Reply.Parent != nil {
-					u, err := getURI(rec.Reply.Parent.Uri)
-					if err != nil {
-						log.Errorf("failed to get Reply uri: %+v", err)
-						continue
-					}
-					parentActorDid = u.Did
-					parentActorRkey = u.RKey
-					parentRelationship = "r"
-				}
-
-				rootActorDid := ""
-				rootActorRkey := ""
-				if rec.Reply != nil && rec.Reply.Root != nil {
-					u, err := getURI(rec.Reply.Root.Uri)
-					if err != nil {
-						log.Errorf("failed to get Root uri: %+v", err)
-						continue
-					}
-					rootActorDid = u.Did
-					rootActorRkey = u.RKey
-				}
-
-				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
-
-				err = c.Store.Queries.CreatePost(ctx, store_queries.CreatePostParams{
-					ActorDid:           evt.Repo,
-					Rkey:               rkey,
-					Content:            sql.NullString{String: rec.Text, Valid: true},
-					ParentPostActorDid: sql.NullString{String: parentActorDid, Valid: parentActorDid != ""},
-					ParentPostRkey:     sql.NullString{String: parentActorRkey, Valid: parentActorRkey != ""},
-					ParentRelationship: sql.NullString{String: parentRelationship, Valid: parentRelationship != ""},
-					RootPostActorDid:   sql.NullString{String: rootActorDid, Valid: rootActorDid != ""},
-					RootPostRkey:       sql.NullString{String: rootActorRkey, Valid: rootActorRkey != ""},
-					HasEmbeddedMedia:   rec.Embed != nil && rec.Embed.EmbedImages != nil,
-					CreatedAt:          sql.NullTime{Time: recCreatedAt, Valid: true},
-				})
-				if err != nil {
-					log.Errorf("failed to create post: %+v", err)
-				}
-
-				// Create images for the post
-				if rec.Embed != nil && rec.Embed.EmbedImages != nil {
-					for _, img := range rec.Embed.EmbedImages.Images {
-						if img.Image == nil {
-							continue
-						}
-						err = c.Store.Queries.CreateImage(ctx, store_queries.CreateImageParams{
-							Cid:          img.Image.Ref.String(),
-							PostActorDid: evt.Repo,
-							PostRkey:     rkey,
-							AltText:      sql.NullString{String: img.Alt, Valid: img.Alt != ""},
-							CreatedAt:    sql.NullTime{Time: recCreatedAt, Valid: true},
-						})
-						if err != nil {
-							log.Errorf("failed to create image: %+v", err)
-						}
-					}
-				}
-
-			case *bsky.FeedLike:
-				span.SetAttributes(attribute.String("record_type", "feed_like"))
-				recordsProcessedCounter.WithLabelValues("feed_like", c.SocketURL).Inc()
-				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
-
-				var subjectURI *URI
-				if rec.Subject != nil {
-					subjectURI, err = getURI(rec.Subject.Uri)
-					if err != nil {
-						log.Errorf("failed to get Subject uri: %+v", err)
-						continue
-					}
-				}
-
-				if subjectURI == nil {
-					log.Errorf("invalid like subject: %+v", rec.Subject)
-					continue
-				}
-
-				err = c.Store.Queries.CreateLike(ctx, store_queries.CreateLikeParams{
-					ActorDid:         evt.Repo,
-					Rkey:             rkey,
-					SubjectActorDid:  subjectURI.Did,
-					SubjectNamespace: subjectURI.Namespace,
-					SubjectRkey:      subjectURI.RKey,
-					CreatedAt:        sql.NullTime{Time: recCreatedAt, Valid: true},
-				})
-				if err != nil {
-					log.Errorf("failed to create like: %+v", err)
-					continue
-				}
-
-				// Increment the like count
-				err = c.Store.Queries.IncrementLikeCountByN(ctx, store_queries.IncrementLikeCountByNParams{
-					ActorDid: subjectURI.Did,
-					Ns:       subjectURI.Namespace,
-					Rkey:     subjectURI.RKey,
-					NumLikes: 1,
-				})
-
-			case *bsky.FeedRepost:
-				span.SetAttributes(attribute.String("record_type", "feed_repost"))
-				recordsProcessedCounter.WithLabelValues("feed_repost", c.SocketURL).Inc()
-				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
-			case *bsky.GraphBlock:
-				span.SetAttributes(attribute.String("record_type", "graph_block"))
-				recordsProcessedCounter.WithLabelValues("graph_block", c.SocketURL).Inc()
-				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
-
-				err = c.Store.Queries.CreateBlock(ctx, store_queries.CreateBlockParams{
-					ActorDid:  evt.Repo,
-					Rkey:      rkey,
-					TargetDid: rec.Subject,
-					CreatedAt: sql.NullTime{Time: recCreatedAt, Valid: true},
-				})
-				if err != nil {
-					log.Errorf("failed to create block: %+v", err)
-				}
-			case *bsky.GraphFollow:
-				span.SetAttributes(attribute.String("record_type", "graph_follow"))
-				recordsProcessedCounter.WithLabelValues("graph_follow", c.SocketURL).Inc()
-				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
-
-				err = c.Store.Queries.CreateFollow(ctx, store_queries.CreateFollowParams{
-					ActorDid:  evt.Repo,
-					Rkey:      rkey,
-					TargetDid: rec.Subject,
-					CreatedAt: sql.NullTime{Time: recCreatedAt, Valid: true},
-				})
-				if err != nil {
-					log.Errorf("failed to create follow: %+v", err)
-				}
-			case *bsky.ActorProfile:
-				span.SetAttributes(attribute.String("record_type", "actor_profile"))
-				recordsProcessedCounter.WithLabelValues("actor_profile", c.SocketURL).Inc()
-			case *bsky.FeedGenerator:
-				span.SetAttributes(attribute.String("record_type", "feed_generator"))
-				recordsProcessedCounter.WithLabelValues("feed_generator", c.SocketURL).Inc()
-				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
-			case *bsky.GraphList:
-				span.SetAttributes(attribute.String("record_type", "graph_list"))
-				recordsProcessedCounter.WithLabelValues("graph_list", c.SocketURL).Inc()
-				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
-			case *bsky.GraphListitem:
-				span.SetAttributes(attribute.String("record_type", "graph_listitem"))
-				recordsProcessedCounter.WithLabelValues("graph_listitem", c.SocketURL).Inc()
-				recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
-			default:
-				span.SetAttributes(attribute.String("record_type", "unknown"))
-				log.Warnf("unknown record type: %+v", rec)
+			err = c.HandleCreateRecord(ctx, evt.Repo, op.Path, rec, evtCreatedAt, processedAt)
+			if err != nil {
+				log.Errorf("failed to handle create record: %+v", err)
 			}
-			if parseError != nil {
-				log.Errorf("error parsing time: %+v", parseError)
-				continue
-			}
-			if !recCreatedAt.IsZero() {
-				lastEvtCreatedAtGauge.WithLabelValues(c.SocketURL).Set(float64(recCreatedAt.UnixNano()))
-				lastEvtCreatedRecordCreatedGapGauge.WithLabelValues(c.SocketURL).Set(float64(evtCreatedAt.Sub(recCreatedAt).Seconds()))
-				lastRecordCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(processedAt.Sub(recCreatedAt).Seconds()))
-			}
-
 		case repomgr.EvtKindDeleteRecord:
 			recordType := strings.Split(op.Path, "/")[0]
 			switch recordType {
@@ -510,6 +330,200 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 	}
 
 	eventProcessingDurationHistogram.WithLabelValues(c.SocketURL).Observe(time.Since(processedAt).Seconds())
+	return nil
+}
+
+// HandleCreateRecord handles a create record event from the firehose
+func (c *Consumer) HandleCreateRecord(
+	ctx context.Context,
+	repo string,
+	path string,
+	rec typegen.CBORMarshaler,
+	evtCreatedAt time.Time,
+	evtProcessedAt time.Time,
+) error {
+	ctx, span := tracer.Start(ctx, "HandleCreateRecord")
+
+	// collection := strings.Split(path, "/")[0]
+	rkey := strings.Split(path, "/")[1]
+
+	var recCreatedAt time.Time
+	var parseError error
+	var err error
+
+	// Unpack the record and process it
+	switch rec := rec.(type) {
+	case *bsky.FeedPost:
+		span.SetAttributes(attribute.String("record_type", "feed_post"))
+		recordsProcessedCounter.WithLabelValues("feed_post", c.SocketURL).Inc()
+		parentRelationship := ""
+		parentActorDid := ""
+		parentActorRkey := ""
+
+		if rec.Embed != nil && rec.Embed.EmbedRecord != nil && rec.Embed.EmbedRecord.Record != nil {
+			quoteRepostsProcessedCounter.WithLabelValues(c.SocketURL).Inc()
+			u, err := getURI(rec.Embed.EmbedRecord.Record.Uri)
+			if err != nil {
+				return fmt.Errorf("failed to get Quoted Record uri: %w", err)
+			}
+			parentActorDid = u.Did
+			parentActorRkey = u.RKey
+			parentRelationship = "q"
+		}
+		if rec.Reply != nil && rec.Reply.Parent != nil {
+			u, err := getURI(rec.Reply.Parent.Uri)
+			if err != nil {
+				return fmt.Errorf("failed to get Reply uri: %w", err)
+			}
+			parentActorDid = u.Did
+			parentActorRkey = u.RKey
+			parentRelationship = "r"
+		}
+
+		rootActorDid := ""
+		rootActorRkey := ""
+		if rec.Reply != nil && rec.Reply.Root != nil {
+			u, err := getURI(rec.Reply.Root.Uri)
+			if err != nil {
+				return fmt.Errorf("failed to get Root uri: %w", err)
+			}
+			rootActorDid = u.Did
+			rootActorRkey = u.RKey
+		}
+
+		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+
+		err = c.Store.Queries.CreatePost(ctx, store_queries.CreatePostParams{
+			ActorDid:           repo,
+			Rkey:               rkey,
+			Content:            sql.NullString{String: rec.Text, Valid: true},
+			ParentPostActorDid: sql.NullString{String: parentActorDid, Valid: parentActorDid != ""},
+			ParentPostRkey:     sql.NullString{String: parentActorRkey, Valid: parentActorRkey != ""},
+			ParentRelationship: sql.NullString{String: parentRelationship, Valid: parentRelationship != ""},
+			RootPostActorDid:   sql.NullString{String: rootActorDid, Valid: rootActorDid != ""},
+			RootPostRkey:       sql.NullString{String: rootActorRkey, Valid: rootActorRkey != ""},
+			HasEmbeddedMedia:   rec.Embed != nil && rec.Embed.EmbedImages != nil,
+			CreatedAt:          sql.NullTime{Time: recCreatedAt, Valid: true},
+		})
+		if err != nil {
+			log.Errorf("failed to create post: %+v", err)
+		}
+
+		// Create images for the post
+		if rec.Embed != nil && rec.Embed.EmbedImages != nil {
+			for _, img := range rec.Embed.EmbedImages.Images {
+				if img.Image == nil {
+					continue
+				}
+				err = c.Store.Queries.CreateImage(ctx, store_queries.CreateImageParams{
+					Cid:          img.Image.Ref.String(),
+					PostActorDid: repo,
+					PostRkey:     rkey,
+					AltText:      sql.NullString{String: img.Alt, Valid: img.Alt != ""},
+					CreatedAt:    sql.NullTime{Time: recCreatedAt, Valid: true},
+				})
+				if err != nil {
+					log.Errorf("failed to create image: %+v", err)
+				}
+			}
+		}
+
+	case *bsky.FeedLike:
+		span.SetAttributes(attribute.String("record_type", "feed_like"))
+		recordsProcessedCounter.WithLabelValues("feed_like", c.SocketURL).Inc()
+		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+
+		var subjectURI *URI
+		if rec.Subject != nil {
+			subjectURI, err = getURI(rec.Subject.Uri)
+			if err != nil {
+				return fmt.Errorf("failed to get Subject uri: %w", err)
+			}
+		}
+
+		if subjectURI == nil {
+			return fmt.Errorf("invalid like subject: %+v", rec.Subject)
+		}
+
+		err = c.Store.Queries.CreateLike(ctx, store_queries.CreateLikeParams{
+			ActorDid:         repo,
+			Rkey:             rkey,
+			SubjectActorDid:  subjectURI.Did,
+			SubjectNamespace: subjectURI.Namespace,
+			SubjectRkey:      subjectURI.RKey,
+			CreatedAt:        sql.NullTime{Time: recCreatedAt, Valid: true},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create like: %w", err)
+		}
+
+		// Increment the like count
+		err = c.Store.Queries.IncrementLikeCountByN(ctx, store_queries.IncrementLikeCountByNParams{
+			ActorDid: subjectURI.Did,
+			Ns:       subjectURI.Namespace,
+			Rkey:     subjectURI.RKey,
+			NumLikes: 1,
+		})
+
+	case *bsky.FeedRepost:
+		span.SetAttributes(attribute.String("record_type", "feed_repost"))
+		recordsProcessedCounter.WithLabelValues("feed_repost", c.SocketURL).Inc()
+		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+	case *bsky.GraphBlock:
+		span.SetAttributes(attribute.String("record_type", "graph_block"))
+		recordsProcessedCounter.WithLabelValues("graph_block", c.SocketURL).Inc()
+		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+
+		err = c.Store.Queries.CreateBlock(ctx, store_queries.CreateBlockParams{
+			ActorDid:  repo,
+			Rkey:      rkey,
+			TargetDid: rec.Subject,
+			CreatedAt: sql.NullTime{Time: recCreatedAt, Valid: true},
+		})
+		if err != nil {
+			log.Errorf("failed to create block: %+v", err)
+		}
+	case *bsky.GraphFollow:
+		span.SetAttributes(attribute.String("record_type", "graph_follow"))
+		recordsProcessedCounter.WithLabelValues("graph_follow", c.SocketURL).Inc()
+		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+
+		err = c.Store.Queries.CreateFollow(ctx, store_queries.CreateFollowParams{
+			ActorDid:  repo,
+			Rkey:      rkey,
+			TargetDid: rec.Subject,
+			CreatedAt: sql.NullTime{Time: recCreatedAt, Valid: true},
+		})
+		if err != nil {
+			log.Errorf("failed to create follow: %+v", err)
+		}
+	case *bsky.ActorProfile:
+		span.SetAttributes(attribute.String("record_type", "actor_profile"))
+		recordsProcessedCounter.WithLabelValues("actor_profile", c.SocketURL).Inc()
+	case *bsky.FeedGenerator:
+		span.SetAttributes(attribute.String("record_type", "feed_generator"))
+		recordsProcessedCounter.WithLabelValues("feed_generator", c.SocketURL).Inc()
+		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+	case *bsky.GraphList:
+		span.SetAttributes(attribute.String("record_type", "graph_list"))
+		recordsProcessedCounter.WithLabelValues("graph_list", c.SocketURL).Inc()
+		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+	case *bsky.GraphListitem:
+		span.SetAttributes(attribute.String("record_type", "graph_listitem"))
+		recordsProcessedCounter.WithLabelValues("graph_listitem", c.SocketURL).Inc()
+		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+	default:
+		span.SetAttributes(attribute.String("record_type", "unknown"))
+		log.Warnf("unknown record type: %+v", rec)
+	}
+	if parseError != nil {
+		return fmt.Errorf("error parsing time: %w", parseError)
+	}
+	if !recCreatedAt.IsZero() {
+		lastEvtCreatedAtGauge.WithLabelValues(c.SocketURL).Set(float64(recCreatedAt.UnixNano()))
+		lastEvtCreatedRecordCreatedGapGauge.WithLabelValues(c.SocketURL).Set(float64(evtCreatedAt.Sub(recCreatedAt).Seconds()))
+		lastRecordCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(evtProcessedAt.Sub(recCreatedAt).Seconds()))
+	}
 	return nil
 }
 
