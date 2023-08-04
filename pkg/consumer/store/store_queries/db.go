@@ -51,6 +51,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createPostStmt, err = db.PrepareContext(ctx, createPost); err != nil {
 		return nil, fmt.Errorf("error preparing query CreatePost: %w", err)
 	}
+	if q.createRepoBackfillRecordStmt, err = db.PrepareContext(ctx, createRepoBackfillRecord); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateRepoBackfillRecord: %w", err)
+	}
 	if q.decrementLikeCountByNStmt, err = db.PrepareContext(ctx, decrementLikeCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query DecrementLikeCountByN: %w", err)
 	}
@@ -132,8 +135,17 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPostsByActorStmt, err = db.PrepareContext(ctx, getPostsByActor); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsByActor: %w", err)
 	}
+	if q.getRepoBackfillRecordStmt, err = db.PrepareContext(ctx, getRepoBackfillRecord); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRepoBackfillRecord: %w", err)
+	}
+	if q.getRepoBackfillRecordsStmt, err = db.PrepareContext(ctx, getRepoBackfillRecords); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRepoBackfillRecords: %w", err)
+	}
 	if q.incrementLikeCountByNStmt, err = db.PrepareContext(ctx, incrementLikeCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query IncrementLikeCountByN: %w", err)
+	}
+	if q.updateRepoBackfillRecordStmt, err = db.PrepareContext(ctx, updateRepoBackfillRecord); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateRepoBackfillRecord: %w", err)
 	}
 	return &q, nil
 }
@@ -183,6 +195,11 @@ func (q *Queries) Close() error {
 	if q.createPostStmt != nil {
 		if cerr := q.createPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createPostStmt: %w", cerr)
+		}
+	}
+	if q.createRepoBackfillRecordStmt != nil {
+		if cerr := q.createRepoBackfillRecordStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createRepoBackfillRecordStmt: %w", cerr)
 		}
 	}
 	if q.decrementLikeCountByNStmt != nil {
@@ -320,9 +337,24 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPostsByActorStmt: %w", cerr)
 		}
 	}
+	if q.getRepoBackfillRecordStmt != nil {
+		if cerr := q.getRepoBackfillRecordStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRepoBackfillRecordStmt: %w", cerr)
+		}
+	}
+	if q.getRepoBackfillRecordsStmt != nil {
+		if cerr := q.getRepoBackfillRecordsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRepoBackfillRecordsStmt: %w", cerr)
+		}
+	}
 	if q.incrementLikeCountByNStmt != nil {
 		if cerr := q.incrementLikeCountByNStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing incrementLikeCountByNStmt: %w", cerr)
+		}
+	}
+	if q.updateRepoBackfillRecordStmt != nil {
+		if cerr := q.updateRepoBackfillRecordStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateRepoBackfillRecordStmt: %w", cerr)
 		}
 	}
 	return err
@@ -373,6 +405,7 @@ type Queries struct {
 	createImageStmt                      *sql.Stmt
 	createLikeStmt                       *sql.Stmt
 	createPostStmt                       *sql.Stmt
+	createRepoBackfillRecordStmt         *sql.Stmt
 	decrementLikeCountByNStmt            *sql.Stmt
 	deleteBlockStmt                      *sql.Stmt
 	deleteFollowStmt                     *sql.Stmt
@@ -400,7 +433,10 @@ type Queries struct {
 	getLikesBySubjectStmt                *sql.Stmt
 	getPostStmt                          *sql.Stmt
 	getPostsByActorStmt                  *sql.Stmt
+	getRepoBackfillRecordStmt            *sql.Stmt
+	getRepoBackfillRecordsStmt           *sql.Stmt
 	incrementLikeCountByNStmt            *sql.Stmt
+	updateRepoBackfillRecordStmt         *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -416,6 +452,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createImageStmt:                      q.createImageStmt,
 		createLikeStmt:                       q.createLikeStmt,
 		createPostStmt:                       q.createPostStmt,
+		createRepoBackfillRecordStmt:         q.createRepoBackfillRecordStmt,
 		decrementLikeCountByNStmt:            q.decrementLikeCountByNStmt,
 		deleteBlockStmt:                      q.deleteBlockStmt,
 		deleteFollowStmt:                     q.deleteFollowStmt,
@@ -443,6 +480,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getLikesBySubjectStmt:                q.getLikesBySubjectStmt,
 		getPostStmt:                          q.getPostStmt,
 		getPostsByActorStmt:                  q.getPostsByActorStmt,
+		getRepoBackfillRecordStmt:            q.getRepoBackfillRecordStmt,
+		getRepoBackfillRecordsStmt:           q.getRepoBackfillRecordsStmt,
 		incrementLikeCountByNStmt:            q.incrementLikeCountByNStmt,
+		updateRepoBackfillRecordStmt:         q.updateRepoBackfillRecordStmt,
 	}
 }

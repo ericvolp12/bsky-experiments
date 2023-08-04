@@ -72,3 +72,23 @@ var lastRecordCreatedEvtProcessedGapGauge = promauto.NewGaugeVec(prometheus.Gaug
 	Name: "consumer_last_record_created_evt_processed_gap",
 	Help: "The gap between the last record's record timestamp and when it was processed by consumer",
 }, []string{"socket_url"})
+
+var backfillJobsEnqueued = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "consumer_backfill_jobs_enqueued_total",
+	Help: "The total number of backfill jobs enqueued",
+}, []string{"socket_url"})
+
+var backfillJobsProcessed = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "consumer_backfill_jobs_processed_total",
+	Help: "The total number of backfill jobs processed",
+}, []string{"socket_url"})
+
+var backfillRecordsProcessed = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "consumer_backfill_records_processed_total",
+	Help: "The total number of backfill records processed",
+}, []string{"socket_url"})
+
+var backfillEventsBuffered = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "consumer_backfill_events_buffered",
+	Help: "The number of backfill events buffered",
+}, []string{"socket_url"})

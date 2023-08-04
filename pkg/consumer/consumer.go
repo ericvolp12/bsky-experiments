@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -16,13 +17,16 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	"github.com/goccy/go-json"
+	"github.com/ipfs/go-cid"
 	"github.com/labstack/gommon/log"
 	"github.com/redis/go-redis/v9"
 	typegen "github.com/whyrusleeping/cbor-gen"
+	"golang.org/x/time/rate"
 
 	"github.com/bluesky-social/indigo/events"
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/repomgr"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
@@ -39,6 +43,18 @@ type Consumer struct {
 	ProgressKey string
 
 	Store *store.Store
+
+	BackfillStatus map[string]*BackfillRepoStatus
+	statusLock     sync.RWMutex
+	SyncLimiter    rate.Limiter
+}
+
+type BackfillRepoStatus struct {
+	RepoDid     string
+	Seq         int64
+	State       string
+	EventBuffer []*comatproto.SyncSubscribeRepos_Commit
+	lk          sync.Mutex
 }
 
 // Progress is the cursor for the consumer
@@ -94,7 +110,7 @@ func (c *Consumer) ReadCursor(ctx context.Context) error {
 }
 
 // NewConsumer creates a new consumer
-func NewConsumer(logger *zap.SugaredLogger, redisClient *redis.Client, redisPrefix string, store *store.Store, socketURL string) (*Consumer, error) {
+func NewConsumer(ctx context.Context, logger *zap.SugaredLogger, redisClient *redis.Client, redisPrefix string, store *store.Store, socketURL string) (*Consumer, error) {
 	c := Consumer{
 		SocketURL: socketURL,
 		Progress: &Progress{
@@ -105,6 +121,9 @@ func NewConsumer(logger *zap.SugaredLogger, redisClient *redis.Client, redisPref
 		RedisClient: redisClient,
 		ProgressKey: fmt.Sprintf("%s:progress", redisPrefix),
 		Store:       store,
+
+		BackfillStatus: map[string]*BackfillRepoStatus{},
+		SyncLimiter:    *rate.NewLimiter(rate.Every(2*time.Second), 1),
 	}
 
 	// Check to see if the cursor exists in redis
@@ -115,6 +134,27 @@ func NewConsumer(logger *zap.SugaredLogger, redisClient *redis.Client, redisPref
 		}
 		logger.Warn("cursor not found in redis, starting from live")
 	}
+
+	// Populate the backfill status from the database
+	backfillRecords, err := c.Store.Queries.GetRepoBackfillRecords(context.Background(), store_queries.GetRepoBackfillRecordsParams{
+		Limit:  1000000,
+		Offset: 0,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list backfill records: %+v", err)
+	}
+
+	for _, backfillRecord := range backfillRecords {
+		c.BackfillStatus[backfillRecord.Repo] = &BackfillRepoStatus{
+			RepoDid:     backfillRecord.Repo,
+			Seq:         backfillRecord.SeqStarted,
+			State:       backfillRecord.State,
+			EventBuffer: []*comatproto.SyncSubscribeRepos_Commit{},
+		}
+	}
+
+	// Start the backfill processor
+	go c.BackfillProcessor(ctx)
 
 	return &c, nil
 }
@@ -191,6 +231,43 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 	lastSeqGauge.WithLabelValues(c.SocketURL).Set(float64(evt.Seq))
 
 	log := c.Logger.With("repo", evt.Repo, "seq", evt.Seq, "commit", evt.Commit)
+
+	c.statusLock.RLock()
+	if _, ok := c.BackfillStatus[evt.Repo]; !ok {
+		c.statusLock.RUnlock()
+		c.statusLock.Lock()
+		log.Infof("backfill not in progress, adding repo %s to queue", evt.Repo)
+		c.BackfillStatus[evt.Repo] = &BackfillRepoStatus{
+			RepoDid:     evt.Repo,
+			Seq:         evt.Seq,
+			State:       "enqueued",
+			EventBuffer: []*comatproto.SyncSubscribeRepos_Commit{evt},
+		}
+		c.statusLock.Unlock()
+		err := c.Store.Queries.CreateRepoBackfillRecord(ctx, store_queries.CreateRepoBackfillRecordParams{
+			Repo:         evt.Repo,
+			LastBackfill: time.Now(),
+			SeqStarted:   evt.Seq,
+			State:        "enqueued",
+		})
+		if err != nil {
+			log.Errorf("failed to create repo backfill record: %+v", err)
+		}
+		backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
+		return nil
+	}
+	backfill := c.BackfillStatus[evt.Repo]
+	c.statusLock.RUnlock()
+
+	backfill.lk.Lock()
+	if backfill.State == "enqueued" || backfill.State == "in_progress" {
+		log.Debugf("backfill scheduled for %s, buffering event", evt.Repo)
+		backfill.EventBuffer = append(backfill.EventBuffer, evt)
+		backfill.lk.Unlock()
+		backfillEventsBuffered.WithLabelValues(c.SocketURL).Inc()
+		return nil
+	}
+	backfill.lk.Unlock()
 
 	rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
 	if err != nil {
@@ -527,6 +604,200 @@ func (c *Consumer) HandleCreateRecord(
 	}
 
 	return &recCreatedAt, nil
+}
+
+func (c *Consumer) BackfillProcessor(ctx context.Context) {
+	ctx, span := tracer.Start(ctx, "BackfillProcessor")
+	defer span.End()
+
+	log := c.Logger.With("source", "backfill_main")
+	log.Info("starting backfill processor")
+
+	// Create a semaphore with a capacity of 50
+	sem := make(chan struct{}, 50)
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info("stopping backfill processor")
+			return
+		default:
+		}
+
+		// Get the next backfill
+		var backfill *BackfillRepoStatus
+		c.statusLock.RLock()
+		for _, b := range c.BackfillStatus {
+			b.lk.Lock()
+			if b.State == "enqueued" {
+				backfill = b
+				b.State = "in_progress"
+				b.lk.Unlock()
+				break
+			}
+			b.lk.Unlock()
+		}
+		c.statusLock.RUnlock()
+
+		if backfill == nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		sem <- struct{}{} // Block until there is a slot in the semaphore
+		go func(b *BackfillRepoStatus) {
+			// Process the backfill
+			c.ProcessBackfill(ctx, b.RepoDid)
+			backfillJobsProcessed.WithLabelValues(c.SocketURL).Inc()
+			<-sem // Release a slot in the semaphore when the goroutine finishes
+		}(backfill)
+	}
+}
+
+type RecordJob struct {
+	RecordPath string
+	NodeCid    cid.Cid
+}
+
+type RecordResult struct {
+	RecordPath string
+	Error      error
+}
+
+func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
+	ctx, span := tracer.Start(ctx, "ProcessBackfill")
+	defer span.End()
+
+	log := c.Logger.With("source", "backfill", "repo", repoDID)
+	log.Infof("processing backfill for %s", repoDID)
+
+	var url = "https://bsky.social/xrpc/com.atproto.sync.getCheckout?did=" + repoDID
+
+	// GET and CAR decode the body
+	client := &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+		Timeout:   120 * time.Second,
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		log.Errorf("Error creating request: %v", err)
+		return
+	}
+
+	req.Header.Set("Accept", "application/vnd.ipld.car")
+
+	c.SyncLimiter.Wait(ctx)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Errorf("Error sending request: %v", err)
+		return
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		log.Errorf("Error response: %v", resp.StatusCode)
+		return
+	}
+
+	r, err := repo.ReadRepoFromCar(ctx, resp.Body)
+	if err != nil {
+		log.Errorf("Error reading repo: %v", err)
+		return
+	}
+
+	numRecords := 0
+	numRoutines := 50
+	recordJobs := make(chan RecordJob, numRoutines)
+	recordResults := make(chan RecordResult, numRoutines)
+
+	wg := sync.WaitGroup{}
+
+	// Producer routine
+	go func() {
+		defer close(recordJobs)
+		r.ForEach(ctx, "", func(recordPath string, nodeCid cid.Cid) error {
+			numRecords++
+			recordJobs <- RecordJob{RecordPath: recordPath, NodeCid: nodeCid}
+			return nil
+		})
+	}()
+
+	// Consumer routines
+	for i := 0; i < numRoutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range recordJobs {
+				recordCid, rec, err := r.GetRecord(ctx, job.RecordPath)
+				if err != nil {
+					log.Errorf("Error getting record: %v", err)
+					recordResults <- RecordResult{RecordPath: job.RecordPath, Error: err}
+					continue
+				}
+
+				// Verify that the record cid matches the cid in the event
+				if recordCid != job.NodeCid {
+					log.Errorf("mismatch in record and op cid: %s != %s", recordCid, job.NodeCid)
+					recordResults <- RecordResult{RecordPath: job.RecordPath, Error: err}
+					continue
+				}
+
+				_, err = c.HandleCreateRecord(ctx, repoDID, job.RecordPath, rec)
+				if err != nil {
+					log.Errorf("failed to handle create record: %+v", err)
+				}
+
+				backfillRecordsProcessed.WithLabelValues(c.SocketURL).Inc()
+				recordResults <- RecordResult{RecordPath: job.RecordPath, Error: err}
+			}
+		}()
+	}
+
+	resultWG := sync.WaitGroup{}
+	resultWG.Add(1)
+	// Handle results
+	go func() {
+		defer resultWG.Done()
+		for result := range recordResults {
+			if result.Error != nil {
+				log.Errorf("Error processing record %s: %v", result.RecordPath, result.Error)
+			}
+		}
+	}()
+
+	wg.Wait()
+	close(recordResults)
+	resultWG.Wait()
+
+	log.Infof("processed %d records", numRecords)
+
+	c.statusLock.RLock()
+	bf := c.BackfillStatus[repoDID]
+	c.statusLock.RUnlock()
+
+	// Update the backfill record
+	bf.lk.Lock()
+	err = c.Store.Queries.UpdateRepoBackfillRecord(ctx, store_queries.UpdateRepoBackfillRecordParams{
+		Repo:         repoDID,
+		LastBackfill: time.Now(),
+		SeqStarted:   bf.Seq,
+		State:        "complete",
+	})
+	if err != nil {
+		log.Errorf("failed to update repo backfill record: %+v", err)
+	}
+
+	// Update the backfill status
+	bf.State = "complete"
+	bf.lk.Unlock()
+
+	// Playback the buffered events
+	for _, evt := range bf.EventBuffer {
+		err = c.HandleRepoCommit(ctx, evt)
+		if err != nil {
+			log.Errorf("failed to handle repo commit: %+v", err)
+		}
+	}
 }
 
 type URI struct {

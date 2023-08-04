@@ -68,6 +68,14 @@ CREATE TABLE images (
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (post_actor_did, post_rkey, cid)
 );
+-- Backfill Status
+CREATE TABLE repo_backfill_status (
+    repo TEXT NOT NULL,
+    last_backfill TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    seq_started BIGINT DEFAULT 0 NOT NULL,
+    state TEXT DEFAULT 'in_progress'::text NOT NULL,
+    PRIMARY KEY (repo)
+);
 -- Routines for Like Count
 CREATE FUNCTION update_updated_at() RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = now();
 RETURN NEW;

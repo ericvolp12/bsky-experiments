@@ -73,3 +73,10 @@ type RecentPostsWithScore struct {
 	InsertedAt time.Time    `json:"inserted_at"`
 	Score      float64      `json:"score"`
 }
+
+type RepoBackfillStatus struct {
+	Repo         string    `json:"repo"`
+	LastBackfill time.Time `json:"last_backfill"`
+	SeqStarted   int64     `json:"seq_started"`
+	State        string    `json:"state"`
+}

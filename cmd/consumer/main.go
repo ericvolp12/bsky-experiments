@@ -164,7 +164,7 @@ func Consumer(cctx *cli.Context) error {
 		log.Fatalf("failed to create store: %+v\n", err)
 	}
 
-	c, err := consumer.NewConsumer(log, redisClient, cctx.String("redis-prefix"), store, u.String())
+	c, err := consumer.NewConsumer(ctx, log, redisClient, cctx.String("redis-prefix"), store, u.String())
 	if err != nil {
 		log.Fatalf("failed to create consumer: %+v\n", err)
 	}

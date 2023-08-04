@@ -31,6 +31,8 @@ func NewStore(connectionString string) (*Store, error) {
 			return nil, err
 		}
 
+		db.SetMaxOpenConns(50)
+
 		err = otelsql.RegisterDBStatsMetrics(db, otelsql.WithAttributes(
 			semconv.DBSystemPostgreSQL,
 		))
