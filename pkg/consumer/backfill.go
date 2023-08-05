@@ -83,6 +83,8 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 	ctx, span := tracer.Start(ctx, "ProcessBackfill")
 	defer span.End()
 
+	start := time.Now()
+
 	log := c.Logger.With("source", "backfill", "repo", repoDID)
 	log.Infof("processing backfill for %s", repoDID)
 
@@ -184,30 +186,16 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 	close(recordResults)
 	resultWG.Wait()
 
-	log.Infof("processed %d records", numRecords)
-
 	c.statusLock.RLock()
 	bf := c.BackfillStatus[repoDID]
 	c.statusLock.RUnlock()
 
-	// Update the backfill record
-	bf.lk.Lock()
-	err = c.Store.Queries.UpdateRepoBackfillRecord(ctx, store_queries.UpdateRepoBackfillRecordParams{
-		Repo:         repoDID,
-		LastBackfill: time.Now(),
-		SeqStarted:   bf.Seq,
-		State:        "complete",
-	})
-	if err != nil {
-		log.Errorf("failed to update repo backfill record: %+v", err)
-	}
-
 	// Update the backfill status
+	bf.lk.Lock()
 	bf.State = "complete"
 	bf.lk.Unlock()
 
 	bufferedEventsProcessed := 0
-	log.Infof("processing %d buffered events", len(bf.EventBuffer))
 	// Playback the buffered events
 	for _, evt := range bf.EventBuffer {
 		err = c.HandleRepoCommit(ctx, evt)
@@ -218,5 +206,19 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 		bufferedEventsProcessed++
 	}
 
-	log.Infof("processed %d buffered events", bufferedEventsProcessed)
+	// Clear the buffer
+	bf.EventBuffer = []*comatproto.SyncSubscribeRepos_Commit{}
+
+	// Update the backfill record in the DB
+	err = c.Store.Queries.UpdateRepoBackfillRecord(ctx, store_queries.UpdateRepoBackfillRecordParams{
+		Repo:         repoDID,
+		LastBackfill: time.Now(),
+		SeqStarted:   bf.Seq,
+		State:        "complete",
+	})
+	if err != nil {
+		log.Errorf("failed to update repo backfill record: %+v", err)
+	}
+
+	log.Infow("backfill complete", "buffered_events_processed", bufferedEventsProcessed, "records_backfilled", numRecords, "duration", time.Since(start))
 }
