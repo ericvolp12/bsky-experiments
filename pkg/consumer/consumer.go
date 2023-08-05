@@ -112,7 +112,7 @@ func NewConsumer(ctx context.Context, logger *zap.SugaredLogger, redisClient *re
 		Store:       store,
 
 		BackfillStatus: map[string]*BackfillRepoStatus{},
-		SyncLimiter:    rate.NewLimiter(2, 1),
+		SyncLimiter:    rate.NewLimiter(4, 1),
 	}
 
 	// Check to see if the cursor exists in redis
@@ -435,6 +435,20 @@ func (c *Consumer) HandleCreateRecord(
 		parentActorDid := ""
 		parentActorRkey := ""
 
+		// Check if we've already processed this record
+		_, err = c.Store.Queries.GetPost(ctx, store_queries.GetPostParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			if err != sql.ErrNoRows {
+				return nil, fmt.Errorf("failed to get post: %w", err)
+			}
+		} else {
+			// We've already processed this record, so skip it
+			return nil, nil
+		}
+
 		if rec.Embed != nil && rec.Embed.EmbedRecord != nil && rec.Embed.EmbedRecord.Record != nil {
 			quoteRepostsProcessedCounter.WithLabelValues(c.SocketURL).Inc()
 			u, err := getURI(rec.Embed.EmbedRecord.Record.Uri)
@@ -520,6 +534,20 @@ func (c *Consumer) HandleCreateRecord(
 			return nil, fmt.Errorf("invalid like subject: %+v", rec.Subject)
 		}
 
+		// Check if we've already processed this record
+		_, err = c.Store.Queries.GetLike(ctx, store_queries.GetLikeParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			if err != sql.ErrNoRows {
+				return nil, fmt.Errorf("failed to get like: %w", err)
+			}
+		} else {
+			// We've already processed this record, so skip it
+			return nil, nil
+		}
+
 		err = c.Store.Queries.CreateLike(ctx, store_queries.CreateLikeParams{
 			ActorDid:         repo,
 			Rkey:             rkey,
@@ -539,7 +567,9 @@ func (c *Consumer) HandleCreateRecord(
 			Rkey:     subjectURI.RKey,
 			NumLikes: 1,
 		})
-
+		if err != nil {
+			log.Errorf("failed to increment like count: %+v", err)
+		}
 	case *bsky.FeedRepost:
 		span.SetAttributes(attribute.String("record_type", "feed_repost"))
 		recordsProcessedCounter.WithLabelValues("feed_repost", c.SocketURL).Inc()
@@ -548,6 +578,20 @@ func (c *Consumer) HandleCreateRecord(
 		span.SetAttributes(attribute.String("record_type", "graph_block"))
 		recordsProcessedCounter.WithLabelValues("graph_block", c.SocketURL).Inc()
 		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+
+		// Check if we've already processed this record
+		_, err = c.Store.Queries.GetBlock(ctx, store_queries.GetBlockParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			if err != sql.ErrNoRows {
+				return nil, fmt.Errorf("failed to get block: %w", err)
+			}
+		} else {
+			// We've already processed this record, so skip it
+			return nil, nil
+		}
 
 		err = c.Store.Queries.CreateBlock(ctx, store_queries.CreateBlockParams{
 			ActorDid:  repo,
@@ -562,6 +606,20 @@ func (c *Consumer) HandleCreateRecord(
 		span.SetAttributes(attribute.String("record_type", "graph_follow"))
 		recordsProcessedCounter.WithLabelValues("graph_follow", c.SocketURL).Inc()
 		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+
+		// Check if we've already processed this record
+		_, err = c.Store.Queries.GetFollow(ctx, store_queries.GetFollowParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			if err != sql.ErrNoRows {
+				return nil, fmt.Errorf("failed to get follow: %w", err)
+			}
+		} else {
+			// We've already processed this record, so skip it
+			return nil, nil
+		}
 
 		err = c.Store.Queries.CreateFollow(ctx, store_queries.CreateFollowParams{
 			ActorDid:  repo,
