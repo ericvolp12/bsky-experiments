@@ -7,8 +7,6 @@ package search_queries
 
 import (
 	"context"
-	"database/sql"
-	"time"
 )
 
 const getUnindexedPostPage = `-- name: GetUnindexedPostPage :many
@@ -22,15 +20,8 @@ SELECT p.id,
     p.parent_relationship,
     p.sentiment,
     p.sentiment_confidence,
-    p.indexed_at,
-    COALESCE(
-        json_agg(l.label) FILTER (
-            WHERE l.label IS NOT NULL
-        ),
-        '[]'
-    ) as labels
+    p.indexed_at
 FROM posts p
-    LEFT JOIN post_labels l on l.post_id = p.id
 WHERE p.indexed_at IS NULL
 GROUP BY p.id
 ORDER BY p.id
@@ -42,30 +33,15 @@ type GetUnindexedPostPageParams struct {
 	Offset int32 `json:"offset"`
 }
 
-type GetUnindexedPostPageRow struct {
-	ID                  string          `json:"id"`
-	Text                string          `json:"text"`
-	ParentPostID        sql.NullString  `json:"parent_post_id"`
-	RootPostID          sql.NullString  `json:"root_post_id"`
-	AuthorDid           string          `json:"author_did"`
-	CreatedAt           time.Time       `json:"created_at"`
-	HasEmbeddedMedia    bool            `json:"has_embedded_media"`
-	ParentRelationship  sql.NullString  `json:"parent_relationship"`
-	Sentiment           sql.NullString  `json:"sentiment"`
-	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
-	IndexedAt           sql.NullTime    `json:"indexed_at"`
-	Labels              interface{}     `json:"labels"`
-}
-
-func (q *Queries) GetUnindexedPostPage(ctx context.Context, arg GetUnindexedPostPageParams) ([]GetUnindexedPostPageRow, error) {
+func (q *Queries) GetUnindexedPostPage(ctx context.Context, arg GetUnindexedPostPageParams) ([]Post, error) {
 	rows, err := q.query(ctx, q.getUnindexedPostPageStmt, getUnindexedPostPage, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetUnindexedPostPageRow
+	var items []Post
 	for rows.Next() {
-		var i GetUnindexedPostPageRow
+		var i Post
 		if err := rows.Scan(
 			&i.ID,
 			&i.Text,
@@ -78,7 +54,6 @@ func (q *Queries) GetUnindexedPostPage(ctx context.Context, arg GetUnindexedPost
 			&i.Sentiment,
 			&i.SentimentConfidence,
 			&i.IndexedAt,
-			&i.Labels,
 		); err != nil {
 			return nil, err
 		}

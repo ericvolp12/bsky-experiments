@@ -9,15 +9,8 @@ SELECT p.id,
     p.parent_relationship,
     p.sentiment,
     p.sentiment_confidence,
-    p.indexed_at,
-    COALESCE(
-        json_agg(l.label) FILTER (
-            WHERE l.label IS NOT NULL
-        ),
-        '[]'
-    ) as labels
+    p.indexed_at
 FROM posts p
-    LEFT JOIN post_labels l on l.post_id = p.id
 WHERE p.indexed_at IS NULL
 GROUP BY p.id
 ORDER BY p.id

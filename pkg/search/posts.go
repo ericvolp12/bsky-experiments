@@ -791,7 +791,7 @@ func postFromCursorPagePost(p search_queries.GetPostPageCursorRow) (*Post, error
 	}, nil
 }
 
-func postFromUnindexedPage(p search_queries.GetUnindexedPostPageRow) (*Post, error) {
+func postFromUnindexedPage(p search_queries.Post) (*Post, error) {
 	var parentPostIDPtr *string
 	if p.ParentPostID.Valid {
 		parentPostIDPtr = &p.ParentPostID.String
@@ -822,17 +822,6 @@ func postFromUnindexedPage(p search_queries.GetUnindexedPostPageRow) (*Post, err
 		indexedAt = &p.IndexedAt.Time
 	}
 
-	var labels []string
-	switch v := p.Labels.(type) {
-	case []byte:
-		// Convert labels from an array of strings to a slice of strings
-		if err := json.Unmarshal(v, &labels); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal labels: %v", err)
-		}
-	default:
-		return nil, fmt.Errorf("unexpected type for labels: %T", v)
-	}
-
 	return &Post{
 		ID:                  p.ID,
 		Text:                p.Text,
@@ -844,7 +833,6 @@ func postFromUnindexedPage(p search_queries.GetUnindexedPostPageRow) (*Post, err
 		ParentRelationship:  parentRelationshipPtr,
 		Sentiment:           sentiment,
 		SentimentConfidence: sentimentConfidence,
-		Labels:              labels,
 		IndexedAt:           indexedAt,
 	}, nil
 }
