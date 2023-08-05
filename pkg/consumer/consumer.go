@@ -151,6 +151,9 @@ func NewConsumer(ctx context.Context, logger *zap.SugaredLogger, redisClient *re
 			State:       backfillRecord.State,
 			EventBuffer: []*comatproto.SyncSubscribeRepos_Commit{},
 		}
+		if backfillRecord.State == "enqueued" {
+			backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
+		}
 	}
 
 	// Start the backfill processor
