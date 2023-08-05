@@ -76,6 +76,18 @@ func main() {
 			Value:   "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable",
 			EnvVars: []string{"POSTGRES_URL"},
 		},
+		&cli.StringFlag{
+			Name:    "magic-header-key",
+			Usage:   "magic header key (don't use this if you don't know what it is)",
+			Value:   "",
+			EnvVars: []string{"MAGIC_HEADER_KEY"},
+		},
+		&cli.StringFlag{
+			Name:    "magic-header-val",
+			Usage:   "magic header value (don't use this if you don't know what it is)",
+			Value:   "",
+			EnvVars: []string{"MAGIC_HEADER_VAL"},
+		},
 	}
 
 	app.Action = Consumer
@@ -164,7 +176,16 @@ func Consumer(cctx *cli.Context) error {
 		log.Fatalf("failed to create store: %+v\n", err)
 	}
 
-	c, err := consumer.NewConsumer(ctx, log, redisClient, cctx.String("redis-prefix"), store, u.String())
+	c, err := consumer.NewConsumer(
+		ctx,
+		log,
+		redisClient,
+		cctx.String("redis-prefix"),
+		store,
+		u.String(),
+		cctx.String("magic-header-key"),
+		cctx.String("magic-header-val"),
+	)
 	if err != nil {
 		log.Fatalf("failed to create consumer: %+v\n", err)
 	}

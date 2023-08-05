@@ -44,6 +44,9 @@ type Consumer struct {
 	BackfillStatus map[string]*BackfillRepoStatus
 	statusLock     sync.RWMutex
 	SyncLimiter    *rate.Limiter
+
+	magicHeaderKey string
+	magicHeaderVal string
 }
 
 // Progress is the cursor for the consumer
@@ -99,7 +102,16 @@ func (c *Consumer) ReadCursor(ctx context.Context) error {
 }
 
 // NewConsumer creates a new consumer
-func NewConsumer(ctx context.Context, logger *zap.SugaredLogger, redisClient *redis.Client, redisPrefix string, store *store.Store, socketURL string) (*Consumer, error) {
+func NewConsumer(
+	ctx context.Context,
+	logger *zap.SugaredLogger,
+	redisClient *redis.Client,
+	redisPrefix string,
+	store *store.Store,
+	socketURL string,
+	magicHeaderKey string,
+	magicHeaderVal string,
+) (*Consumer, error) {
 	c := Consumer{
 		SocketURL: socketURL,
 		Progress: &Progress{
@@ -112,7 +124,14 @@ func NewConsumer(ctx context.Context, logger *zap.SugaredLogger, redisClient *re
 		Store:       store,
 
 		BackfillStatus: map[string]*BackfillRepoStatus{},
-		SyncLimiter:    rate.NewLimiter(4, 1),
+		SyncLimiter:    rate.NewLimiter(2, 1),
+
+		magicHeaderKey: magicHeaderKey,
+		magicHeaderVal: magicHeaderVal,
+	}
+
+	if magicHeaderKey != "" && magicHeaderVal != "" {
+		c.SyncLimiter = rate.NewLimiter(20, 1)
 	}
 
 	// Check to see if the cursor exists in redis

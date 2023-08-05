@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -102,6 +103,10 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 	}
 
 	req.Header.Set("Accept", "application/vnd.ipld.car")
+	req.Header.Set("User-Agent", "jaz-atproto-backfill/0.0.1")
+	if c.magicHeaderKey != "" && c.magicHeaderVal != "" {
+		req.Header.Set(c.magicHeaderKey, c.magicHeaderVal)
+	}
 
 	c.SyncLimiter.Wait(ctx)
 
@@ -113,6 +118,30 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 
 	if resp.StatusCode != http.StatusOK {
 		log.Errorf("Error response: %v", resp.StatusCode)
+		reason := "unknown error"
+		if resp.StatusCode == http.StatusBadRequest {
+			reason = "repo not found"
+		}
+		state := fmt.Sprintf("failed (%s)", reason)
+
+		// Mark the backfill as "failed"
+		c.statusLock.RLock()
+		bf := c.BackfillStatus[repoDID]
+		c.statusLock.RUnlock()
+
+		bf.lk.Lock()
+		bf.State = state
+		bf.lk.Unlock()
+
+		err = c.Store.Queries.UpdateRepoBackfillRecord(ctx, store_queries.UpdateRepoBackfillRecordParams{
+			Repo:         repoDID,
+			LastBackfill: time.Now(),
+			SeqStarted:   bf.Seq,
+			State:        state,
+		})
+		if err != nil {
+			log.Errorf("failed to update repo backfill record: %+v", err)
+		}
 		return
 	}
 
