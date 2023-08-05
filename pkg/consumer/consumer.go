@@ -791,13 +791,19 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 	bf.State = "complete"
 	bf.lk.Unlock()
 
+	bufferedEventsProcessed := 0
+	log.Infof("processing %d buffered events", len(bf.EventBuffer))
 	// Playback the buffered events
 	for _, evt := range bf.EventBuffer {
 		err = c.HandleRepoCommit(ctx, evt)
 		if err != nil {
 			log.Errorf("failed to handle repo commit: %+v", err)
 		}
+		backfillEventsBuffered.WithLabelValues(c.SocketURL).Dec()
+		bufferedEventsProcessed++
 	}
+
+	log.Infof("processed %d buffered events", bufferedEventsProcessed)
 }
 
 type URI struct {
