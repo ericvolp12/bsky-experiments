@@ -253,15 +253,11 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 	c.statusLock.RUnlock()
 
 	backfill.lk.Lock()
-	if backfill.State == "in_progress" {
+	if backfill.State == "in_progress" || backfill.State == "enqueued" {
 		log.Debugf("backfill scheduled for %s, buffering event", evt.Repo)
 		backfill.EventBuffer = append(backfill.EventBuffer, evt)
 		backfill.lk.Unlock()
 		backfillEventsBuffered.WithLabelValues(c.SocketURL).Inc()
-		return nil
-	} else if backfill.State == "enqueued" {
-		// Skip the event if we've enqueued a backfill for the repo but haven't started it yet
-		// The Checkout when the backfill starts will include this commit
 		return nil
 	}
 	backfill.lk.Unlock()
