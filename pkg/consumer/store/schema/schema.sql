@@ -31,6 +31,12 @@ CREATE TABLE likes (
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (actor_did, rkey)
 );
+CREATE INDEX likes_inserted_at ON likes (inserted_at DESC);
+CREATE INDEX likes_subject ON likes (
+    subject_actor_did,
+    subject_namespace,
+    subject_rkey
+);
 CREATE TABLE like_counts (
     actor_did TEXT NOT NULL,
     ns TEXT NOT NULL,
@@ -111,3 +117,44 @@ WHERE p.inserted_at > (NOW() - INTERVAL '24 hours')
 ORDER BY score DESC;
 CREATE INDEX recent_posts_with_score_score ON recent_posts_with_score (score DESC);
 CREATE UNIQUE INDEX recent_posts_with_score_actor_rkey ON recent_posts_with_score (actor_did, rkey);
+-- Daily Stats View
+CREATE MATERIALIZED VIEW daily_summary AS
+SELECT COALESCE(
+        likes_per_day.date,
+        daily_active_likers.date,
+        daily_active_posters.date,
+        posts_per_day.date
+    ) AS date,
+    likes_per_day."Likes per Day",
+    daily_active_likers."Daily Active Likers",
+    daily_active_posters."Daily Active Posters",
+    posts_per_day."Posts per Day"
+FROM (
+        SELECT date_trunc('day', inserted_at) AS date,
+            COUNT(*) AS "Likes per Day"
+        FROM likes
+        GROUP BY date
+    ) AS likes_per_day
+    FULL OUTER JOIN (
+        SELECT date_trunc('day', inserted_at) AS date,
+            COUNT(DISTINCT likes.actor_did) AS "Daily Active Likers"
+        FROM likes
+        GROUP BY date
+    ) AS daily_active_likers ON likes_per_day.date = daily_active_likers.date
+    FULL OUTER JOIN (
+        SELECT date_trunc('day', inserted_at) AS date,
+            COUNT(DISTINCT posts.actor_did) AS "Daily Active Posters"
+        FROM posts
+        GROUP BY date
+    ) AS daily_active_posters ON COALESCE(likes_per_day.date, daily_active_likers.date) = daily_active_posters.date
+    FULL OUTER JOIN (
+        SELECT date_trunc('day', inserted_at) AS date,
+            COUNT(*) AS "Posts per Day"
+        FROM posts
+        GROUP BY date
+    ) AS posts_per_day ON COALESCE(
+        likes_per_day.date,
+        daily_active_likers.date,
+        daily_active_posters.date
+    ) = posts_per_day.date
+ORDER BY date;

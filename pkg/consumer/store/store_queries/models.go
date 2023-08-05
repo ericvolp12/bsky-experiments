@@ -17,6 +17,14 @@ type Block struct {
 	InsertedAt time.Time    `json:"inserted_at"`
 }
 
+type DailySummary struct {
+	Date               int64 `json:"date"`
+	LikesPerDay        int64 `json:"Likes per Day"`
+	DailyActiveLikers  int64 `json:"Daily Active Likers"`
+	DailyActivePosters int64 `json:"Daily Active Posters"`
+	PostsPerDay        int64 `json:"Posts per Day"`
+}
+
 type Follow struct {
 	ActorDid   string       `json:"actor_did"`
 	Rkey       string       `json:"rkey"`
