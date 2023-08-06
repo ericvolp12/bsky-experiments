@@ -14,7 +14,8 @@ CREATE TABLE posts (
     PRIMARY KEY (actor_did, rkey)
 );
 CREATE INDEX posts_inserted_at ON posts (inserted_at DESC);
-CREATE INDEX posts_roots_or_quotes_only_inserted_at ON posts (inserted_at DESC)
+CREATE INDEX posts_created_at_index ON posts (created_at DESC);
+CREATE INDEX posts_roots_or_quotes_only_created_at ON posts (created_at DESC)
 WHERE (root_post_rkey IS NULL)
     AND (
         (parent_relationship IS NULL)
@@ -45,7 +46,8 @@ CREATE TABLE like_counts (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (actor_did, ns, rkey)
 );
-CREATE INDEX like_counts_count ON like_counts (num_likes DESC);
+CREATE INDEX idx_like_counts_num_likes_gt_10 ON like_counts (actor_did, rkey)
+WHERE num_likes > 10;
 -- Blocks
 CREATE TABLE blocks (
     actor_did TEXT NOT NULL,
