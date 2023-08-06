@@ -129,7 +129,11 @@ SELECT COALESCE(
         posts_with_images_per_day.date,
         images_per_day.date,
         images_with_alt_text_per_day.date,
-        first_time_posters.date
+        first_time_posters.date,
+        follows_per_day.date,
+        daily_active_followers.date,
+        blocks_per_day.date,
+        daily_active_blockers.date
     ) AS date,
     likes_per_day."Likes per Day",
     daily_active_likers."Daily Active Likers",
@@ -138,7 +142,11 @@ SELECT COALESCE(
     posts_with_images_per_day."Posts with Images per Day",
     images_per_day."Images per Day",
     images_with_alt_text_per_day."Images with Alt Text per Day",
-    first_time_posters."First Time Posters"
+    first_time_posters."First Time Posters",
+    follows_per_day."Follows per Day",
+    daily_active_followers."Daily Active Followers",
+    blocks_per_day."Blocks per Day",
+    daily_active_blockers."Daily Active Blockers"
 FROM (
         SELECT date_trunc('day', created_at) AS date,
             COUNT(*) AS "Likes per Day"
@@ -223,4 +231,70 @@ FROM (
         images_per_day.date,
         images_with_alt_text_per_day.date
     ) = first_time_posters.date
+    FULL OUTER JOIN (
+        SELECT date_trunc('day', created_at) AS date,
+            COUNT(*) AS "Follows per Day"
+        FROM follows
+        GROUP BY date
+    ) AS follows_per_day ON COALESCE(
+        likes_per_day.date,
+        daily_active_likers.date,
+        daily_active_posters.date,
+        posts_per_day.date,
+        posts_with_images_per_day.date,
+        images_per_day.date,
+        images_with_alt_text_per_day.date,
+        first_time_posters.date
+    ) = follows_per_day.date
+    FULL OUTER JOIN (
+        SELECT date_trunc('day', created_at) AS date,
+            COUNT(DISTINCT actor_did) AS "Daily Active Followers"
+        FROM follows
+        GROUP BY date
+    ) AS daily_active_followers ON COALESCE(
+        likes_per_day.date,
+        daily_active_likers.date,
+        daily_active_posters.date,
+        posts_per_day.date,
+        posts_with_images_per_day.date,
+        images_per_day.date,
+        images_with_alt_text_per_day.date,
+        first_time_posters.date,
+        follows_per_day.date
+    ) = daily_active_followers.date
+    FULL OUTER JOIN (
+        SELECT date_trunc('day', created_at) AS date,
+            COUNT(*) AS "Blocks per Day"
+        FROM blocks
+        GROUP BY date
+    ) AS blocks_per_day ON COALESCE(
+        likes_per_day.date,
+        daily_active_likers.date,
+        daily_active_posters.date,
+        posts_per_day.date,
+        posts_with_images_per_day.date,
+        images_per_day.date,
+        images_with_alt_text_per_day.date,
+        first_time_posters.date,
+        follows_per_day.date,
+        daily_active_followers.date
+    ) = blocks_per_day.date
+    FULL OUTER JOIN (
+        SELECT date_trunc('day', created_at) AS date,
+            COUNT(DISTINCT actor_did) AS "Daily Active Blockers"
+        FROM blocks
+        GROUP BY date
+    ) AS daily_active_blockers ON COALESCE(
+        likes_per_day.date,
+        daily_active_likers.date,
+        daily_active_posters.date,
+        posts_per_day.date,
+        posts_with_images_per_day.date,
+        images_per_day.date,
+        images_with_alt_text_per_day.date,
+        first_time_posters.date,
+        follows_per_day.date,
+        daily_active_followers.date,
+        blocks_per_day.date
+    ) = daily_active_blockers.date
 ORDER BY date;

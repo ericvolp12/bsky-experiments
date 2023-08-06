@@ -27,6 +27,10 @@ type DailySummary struct {
 	ImagesPerDay            int64 `json:"Images per Day"`
 	ImagesWithAltTextPerDay int64 `json:"Images with Alt Text per Day"`
 	FirstTimePosters        int64 `json:"First Time Posters"`
+	FollowsPerDay           int64 `json:"Follows per Day"`
+	DailyActiveFollowers    int64 `json:"Daily Active Followers"`
+	BlocksPerDay            int64 `json:"Blocks per Day"`
+	DailyActiveBlockers     int64 `json:"Daily Active Blockers"`
 }
 
 type Follow struct {
