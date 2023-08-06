@@ -3,7 +3,7 @@ import io
 import logging
 import os
 from time import time
-from typing import List
+from typing import List, Tuple
 
 import aiohttp
 
@@ -114,7 +114,7 @@ images_submitted = Counter("images_submitted", "Number of images submitted")
 # Async function to download an image
 async def download_image(
     session: aiohttp.ClientSession, image_meta: ImageMeta
-) -> Image.Image | None:
+) -> Tuple[ImageMeta, Image.Image] | None:
     tracer = trace.get_tracer("bsky-object-detection")
     with tracer.start_as_current_span("download_image") as span:
         span.add_event("Download image")
@@ -131,47 +131,32 @@ async def download_image(
                 return None
             span.add_event("Read image data")
             imageData = await resp.read()
-            return Image.open(io.BytesIO(imageData))
+            return image_meta, Image.open(io.BytesIO(imageData))
 
 
 @app.post("/detect_objects", response_model=List[ImageResult])
 async def detect_objects_endpoint(image_metas: List[ImageMeta]):
-    images_submitted.inc(len(image_metas))
     image_results: List[ImageResult] = []
 
-    # Grab all the images first and convert them to PIL images
     async with aiohttp.ClientSession() as session:
-        tasks = [download_image(session, image_meta) for image_meta in image_metas]
-        pil_images = await asyncio.gather(*tasks)
+        download_tasks = [download_image(session, img) for img in image_metas]
 
-    # Separate successfully downloaded images and failed ones
-    successful_images = [img for img in pil_images if img is not None]
-    failed_indices = [i for i, img in enumerate(pil_images) if img is None]
+        for i in range(0, len(image_metas), 10):
+            download_batch = download_tasks[i : i + 10]
+            pil_images: List[
+                Tuple[ImageMeta, Image.Image] | None
+            ] = await asyncio.gather(*download_batch)
 
-    # Run the object detection model on successful images
-    all_batch_detection_results = []
-    for i in range(0, len(successful_images), 10):
-        image_batch = successful_images[i : i + 10]
-        try:
-            batch_detection_results = detect_objects(images=image_batch)
-        except Exception as e:
-            logging.error(f"Error running object detection model: {e}")
-            batch_detection_results = [[] for _ in image_batch]  # Create empty results
-        all_batch_detection_results.extend(batch_detection_results)
+            # Detect objects on successful downloads
+            successful = [img_pair for img_pair in pil_images if img_pair]
+            if successful:
+                detection_results = detect_objects(image_pairs=successful)
+            else:
+                detection_results = []
 
-    # Populate the image results
-    succ_idx = 0
-    for idx, image_meta in enumerate(image_metas):
-        if idx in failed_indices:
-            image_results.append(ImageResult(meta=image_meta, results=[]))
-            images_failed.inc()
-        else:
-            image_results.append(
-                ImageResult(
-                    meta=image_meta, results=all_batch_detection_results[succ_idx]
+            # Populate image results
+            for image_meta, detection_result in detection_results:
+                image_results.append(
+                    ImageResult(meta=image_meta, results=detection_result)
                 )
-            )
-            succ_idx += 1
-            images_processed_successfully.inc()
-
     return image_results

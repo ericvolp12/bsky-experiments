@@ -1,14 +1,14 @@
 import logging
 import os
 import time
-from typing import List
+from typing import List, Tuple
 
 import torch
 from opentelemetry import trace
 from PIL import Image
 from transformers import DetrForObjectDetection, DetrImageProcessor
 
-from .models import DetectionResult
+from .models import DetectionResult, ImageMeta
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +22,14 @@ model = DetrForObjectDetection.from_pretrained(MODEL).to(device)
 model.save_pretrained(f"{os.getcwd()}/{MODEL}")
 
 
-def detect_objects(images: List[Image.Image]) -> List[List[DetectionResult]]:
+def detect_objects(
+    image_pairs: List[Tuple[ImageMeta, Image.Image]]
+) -> List[Tuple[ImageMeta, List[DetectionResult]]]:
     tracer = trace.get_tracer("bsky-object-detection")
     with tracer.start_as_current_span("detect_objects") as span:
         start = time.time()
+
+        images = [img for _, img in image_pairs]
 
         inputs = processor(images=images, return_tensors="pt").to(device)
         with tracer.start_as_current_span("model_inference"):
@@ -41,7 +45,7 @@ def detect_objects(images: List[Image.Image]) -> List[List[DetectionResult]]:
         processing_time = time.time() - start
         span.set_attribute("processing_time", processing_time)
 
-        batch_detection_results: List[List[DetectionResult]] = []
+        batch_detection_results: List[Tuple[ImageMeta, List[DetectionResult]]] = []
 
         for idx, result in enumerate(model_results):
             detection_results: List[DetectionResult] = []
@@ -59,6 +63,6 @@ def detect_objects(images: List[Image.Image]) -> List[List[DetectionResult]]:
                     )
                 )
 
-            batch_detection_results.append(detection_results)
+            batch_detection_results.append((image_pairs[idx][0], detection_results))
 
         return batch_detection_results
