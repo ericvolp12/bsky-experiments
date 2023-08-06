@@ -147,15 +147,26 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
                 Tuple[ImageMeta, Image.Image] | None
             ] = await asyncio.gather(*download_batch)
 
+            # Log failed downloads
+            failed = [img_pair for img_pair in pil_images if not img_pair]
+            for _ in failed:
+                images_failed.inc()
+
             # Detect objects on successful downloads
             successful = [img_pair for img_pair in pil_images if img_pair]
             if successful:
-                detection_results = detect_objects(image_pairs=successful)
+                try:
+                    detection_results = detect_objects(image_pairs=successful)
+                except Exception as e:
+                    logging.error(f"Error detecting objects: {e}")
+                    detection_results = []
             else:
                 detection_results = []
 
             # Populate image results
             for image_meta, detection_result in detection_results:
+                if detection_result:
+                    images_processed_successfully.inc()
                 image_results.append(
                     ImageResult(meta=image_meta, results=detection_result)
                 )
