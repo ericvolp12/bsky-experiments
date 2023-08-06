@@ -38,6 +38,7 @@ CREATE INDEX likes_subject ON likes (
     subject_namespace,
     subject_rkey
 );
+create index likes_created_at_index on likes (created_at desc);
 CREATE TABLE like_counts (
     actor_did TEXT NOT NULL,
     ns TEXT NOT NULL,
@@ -57,6 +58,7 @@ CREATE TABLE blocks (
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (actor_did, rkey)
 );
+create index blocks_created_at_index on blocks (created_at desc);
 -- Follows
 CREATE TABLE follows (
     actor_did TEXT NOT NULL,
@@ -66,6 +68,7 @@ CREATE TABLE follows (
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (actor_did, rkey)
 );
+create index follows_created_at_index on follows (created_at desc);
 -- Images
 CREATE TABLE images (
     cid TEXT NOT NULL,
@@ -76,6 +79,7 @@ CREATE TABLE images (
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (post_actor_did, post_rkey, cid)
 );
+create index images_created_at_index on images (created_at desc);
 -- Backfill Status
 CREATE TABLE repo_backfill_status (
     repo TEXT NOT NULL,
