@@ -70,14 +70,15 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 otel_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 if otel_endpoint:
     resource = Resource(attributes={SERVICE_NAME: "bsky-object-detection"})
-    trace.set_tracer_provider(TracerProvider(resource=resource))
-    trace.get_tracer_provider().add_span_processor(
+    tp = TracerProvider(resource=resource)
+    tp.add_span_processor(
         BatchSpanProcessor(
             OTLPSpanExporter(
                 endpoint=otel_endpoint + "v1/traces",
             )
         )
     )
+    trace.set_tracer_provider(tp)
 
 # Set up Pyroscope Continuous Profiler (Disabling for now because of big spike in CPU usage when running)
 # pyroscope_endpoint = os.getenv("PYROSCOPE_SERVER_ADDRESS")
@@ -112,28 +113,25 @@ images_submitted = Counter("images_submitted", "Number of images submitted")
 
 # Async function to download an image
 async def download_image(
-    session: aiohttp.ClientSession, semaphore: asyncio.Semaphore, image_meta: ImageMeta
-) -> Image.Image:
+    session: aiohttp.ClientSession, image_meta: ImageMeta
+) -> Image.Image | None:
     tracer = trace.get_tracer("bsky-object-detection")
     with tracer.start_as_current_span("download_image") as span:
-        span.add_event("Wait for semaphore")
-        async with semaphore:
-            span.add_event("Acquired semaphore")
-            span.add_event("Download image")
-            async with session.get(image_meta.url) as resp:
-                # If the response is not 200, log an error and continue to the next image
-                if resp.status != 200:
-                    logging.error(
-                        f"Error fetching image from {image_meta.url} - {resp.status}"
-                    )
-                    span.set_attribute("error", True)
-                    span.set_attribute(
-                        "error.message", f"Error fetching image: {resp.status}"
-                    )
-                    return None
-                span.add_event("Read image data")
-                imageData = await resp.read()
-                return Image.open(io.BytesIO(imageData))
+        span.add_event("Download image")
+        async with session.get(image_meta.url) as resp:
+            # If the response is not 200, log an error and continue to the next image
+            if resp.status != 200:
+                logging.error(
+                    f"Error fetching image from {image_meta.url} - {resp.status}"
+                )
+                span.set_attribute("error", True)
+                span.set_attribute(
+                    "error.message", f"Error fetching image: {resp.status}"
+                )
+                return None
+            span.add_event("Read image data")
+            imageData = await resp.read()
+            return Image.open(io.BytesIO(imageData))
 
 
 @app.post("/detect_objects", response_model=List[ImageResult])
@@ -141,14 +139,9 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     images_submitted.inc(len(image_metas))
     image_results: List[ImageResult] = []
 
-    # Create a semaphore with a limit of 10 concurrent tasks
-    semaphore = asyncio.Semaphore(10)
-
     # Grab all the images first and convert them to PIL images
     async with aiohttp.ClientSession() as session:
-        tasks = [
-            download_image(session, semaphore, image_meta) for image_meta in image_metas
-        ]
+        tasks = [download_image(session, image_meta) for image_meta in image_metas]
         pil_images = await asyncio.gather(*tasks)
 
     # Separate successfully downloaded images and failed ones
@@ -160,7 +153,7 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     for i in range(0, len(successful_images), 10):
         image_batch = successful_images[i : i + 10]
         try:
-            batch_detection_results = detect_objects(image_batch)
+            batch_detection_results = detect_objects(images=image_batch)
         except Exception as e:
             logging.error(f"Error running object detection model: {e}")
             batch_detection_results = [[] for _ in image_batch]  # Create empty results
