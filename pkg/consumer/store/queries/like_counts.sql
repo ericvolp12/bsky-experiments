@@ -1,54 +1,64 @@
 -- name: IncrementLikeCountByN :exec
-INSERT INTO like_counts (
-        actor_did,
-        ns,
-        rkey,
-        num_likes
-    )
-VALUES (
-        $1,
-        $2,
-        $3,
-        $4
-    ) ON CONFLICT (actor_did, ns, rkey) DO
+WITH subj AS (
+    SELECT id
+    FROM subjects
+    WHERE actor_did = $1
+        AND col = (
+            SELECT id
+            FROM collections
+            WHERE name = sqlc.arg('collection')
+        )
+        AND rkey = $2
+)
+INSERT INTO like_counts (subject_id, num_likes)
+SELECT id,
+    $3
+FROM subj ON CONFLICT (subject_id) DO
 UPDATE
-SET num_likes = like_counts.num_likes + $4;
+SET num_likes = like_counts.num_likes + EXCLUDED.num_likes;
 -- name: DecrementLikeCountByN :exec
-INSERT INTO like_counts (
-        actor_did,
-        ns,
-        rkey,
-        num_likes
-    )
-VALUES (
-        $1,
-        $2,
-        $3,
-        $4
-    ) ON CONFLICT (actor_did, ns, rkey) DO
+WITH subj AS (
+    SELECT id
+    FROM subjects
+    WHERE actor_did = $1
+        AND col = (
+            SELECT id
+            FROM collections
+            WHERE name = sqlc.arg('collection')
+        )
+        AND rkey = $2
+)
+INSERT INTO like_counts (subject_id, num_likes)
+SELECT id,
+    - sqlc.arg('num_likes')::int
+FROM subj ON CONFLICT (subject_id) DO
 UPDATE
-SET num_likes = like_counts.num_likes - $4;
+SET num_likes = GREATEST(
+        0,
+        like_counts.num_likes + EXCLUDED.num_likes
+    );
 -- name: DeleteLikeCount :exec
 DELETE FROM like_counts
-WHERE actor_did = $1
-    AND ns = $2
-    AND rkey = $3;
+WHERE subject_id IN (
+        SELECT id
+        FROM subjects
+        WHERE actor_did = $1
+            AND col = (
+                SELECT id
+                FROM collections
+                WHERE name = sqlc.arg('collection')
+            )
+            AND rkey = $2
+    );
 -- name: GetLikeCount :one
-SELECT *
-FROM like_counts
-WHERE actor_did = $1
-    AND ns = $2
-    AND rkey = $3;
--- name: GetLikeCountsByActor :many
-SELECT *
-FROM like_counts
-WHERE actor_did = $1
-ORDER BY updated_at DESC
-LIMIT $2;
--- name: GetLikeCountsByActorAndNamespace :many
-SELECT *
-FROM like_counts
-WHERE actor_did = $1
-    AND ns = $2
-ORDER BY updated_at DESC
-LIMIT $3;
+SELECT nlc.*
+FROM like_counts nlc
+    JOIN subjects s ON nlc.subject_id = s.id
+WHERE s.actor_did = $1
+    AND s.col = (
+        SELECT id
+        FROM collections
+        WHERE name = sqlc.arg('collection')
+    )
+    AND s.rkey = $2
+LIMIT 1;

@@ -6,9 +6,9 @@ import (
 )
 
 type URI struct {
-	Did       string
-	RKey      string
-	Namespace string
+	Did        string
+	RKey       string
+	Collection string
 }
 
 // URI: at://{did}/{namespace}/{rkey}
@@ -19,8 +19,8 @@ func getURI(uri string) (*URI, error) {
 		return nil, fmt.Errorf("invalid uri: %s", uri)
 	}
 	return &URI{
-		Did:       parts[0],
-		Namespace: parts[1],
-		RKey:      parts[2],
+		Did:        parts[0],
+		Collection: parts[1],
+		RKey:       parts[2],
 	}, nil
 }

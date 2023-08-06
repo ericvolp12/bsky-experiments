@@ -21,33 +21,38 @@ WHERE (root_post_rkey IS NULL)
         (parent_relationship IS NULL)
         OR (parent_relationship <> 'r'::text)
     );
--- Likes
+-- New Likes
+CREATE TABLE collections (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    UNIQUE (name)
+);
+CREATE TABLE subjects (
+    id BIGSERIAL PRIMARY KEY,
+    actor_did TEXT NOT NULL,
+    rkey TEXT NOT NULL,
+    col INTEGER NOT NULL,
+    UNIQUE (actor_did, col, rkey)
+);
 CREATE TABLE likes (
     actor_did TEXT NOT NULL,
     rkey TEXT NOT NULL,
-    subject_actor_did TEXT NOT NULL,
-    subject_namespace TEXT NOT NULL,
-    subject_rkey TEXT NOT NULL,
+    subj BIGINT NOT NULL,
     created_at TIMESTAMPTZ,
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (actor_did, rkey)
 );
+create index likes_created_at on likes (created_at desc);
 CREATE INDEX likes_inserted_at ON likes (inserted_at DESC);
-CREATE INDEX likes_subject ON likes (
-    subject_actor_did,
-    subject_namespace,
-    subject_rkey
-);
-create index likes_created_at_index on likes (created_at desc);
+CREATE INDEX likes_subject ON likes (subj);
+-- Like Counts
 CREATE TABLE like_counts (
-    actor_did TEXT NOT NULL,
-    ns TEXT NOT NULL,
-    rkey TEXT NOT NULL,
+    subject_id BIGINT NOT NULL,
     num_likes BIGINT NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    PRIMARY KEY (actor_did, ns, rkey)
+    PRIMARY KEY (subject_id)
 );
-CREATE INDEX idx_like_counts_num_likes_gt_10 ON like_counts (actor_did, rkey)
+CREATE INDEX idx_like_counts_num_likes_gt_10 ON like_counts (subject_id)
 WHERE num_likes > 10;
 -- Blocks
 CREATE TABLE blocks (
@@ -96,33 +101,59 @@ $$ language 'plpgsql';
 CREATE TRIGGER update_like_count_updated_at BEFORE
 UPDATE ON like_counts FOR EACH ROW EXECUTE PROCEDURE update_updated_at();
 -- Hotness View
-CREATE MATERIALIZED VIEW recent_posts_with_score AS
-SELECT p.actor_did,
-    p.rkey,
-    p.created_at,
-    p.inserted_at,
+CREATE MATERIALIZED VIEW recent_posts_with_score AS WITH RecentPosts AS (
+    -- First CTE to narrow down the posts based on the given criteria
+    SELECT p.actor_did,
+        p.rkey,
+        p.created_at
+    FROM posts p
+    WHERE p.created_at > (NOW() - INTERVAL '24 hours')
+        AND p.created_at < (NOW() - INTERVAL '5 minutes')
+        AND (
+            p.parent_relationship IS NULL
+            OR p.parent_relationship != 'r'
+        )
+        AND p.root_post_rkey IS NULL
+),
+FilteredSubjects AS (
+    -- Second CTE to determine the subject_ids for the filtered posts
+    SELECT s.id AS subject_id,
+        rp.actor_did,
+        rp.rkey,
+        rp.created_at
+    FROM RecentPosts rp
+        JOIN subjects s ON rp.actor_did = s.actor_did
+        AND rp.rkey = s.rkey
+    WHERE s.col = 1
+),
+FilteredLCs AS (
+    SELECT lc.subject_id,
+        fs.actor_did,
+        fs.rkey,
+        fs.created_at,
+        lc.num_likes
+    FROM like_counts lc
+        JOIN FilteredSubjects fs ON fs.subject_id = lc.subject_id
+    WHERE num_likes > 10
+) -- Main query to compute the scores for the reduced set of posts
+SELECT lc.actor_did,
+    lc.subject_id,
+    lc.rkey,
+    lc.created_at,
+    NOW() AS inserted_at,
+    -- since it was present in the original materialized view
     (
         (COALESCE(lc.num_likes, 0) - 1) / (
             EXTRACT(
                 EPOCH
-                FROM now() - p.created_at
+                FROM now() - lc.created_at
             ) / 3600 + 2
         ) ^ 1.8
     )::float AS score
-FROM posts p
-    LEFT JOIN like_counts lc ON p.actor_did = lc.actor_did
-    AND p.rkey = lc.rkey
-WHERE p.created_at > (NOW() - INTERVAL '24 hours')
-    AND p.created_at < (NOW() - INTERVAL '5 minutes')
-    AND (
-        p.parent_relationship is NULL
-        OR p.parent_relationship != 'r'
-    )
-    AND p.root_post_rkey is NULL
-    AND lc.num_likes > 10
+FROM FilteredLCs lc
 ORDER BY score DESC;
 CREATE INDEX recent_posts_with_score_score ON recent_posts_with_score (score DESC);
-CREATE UNIQUE INDEX recent_posts_with_score_actor_rkey ON recent_posts_with_score (actor_did, rkey);
+CREATE UNIQUE INDEX recent_posts_with_score_subject_id_idx ON recent_posts_with_score (subject_id);
 -- Daily Stats View
 CREATE MATERIALIZED VIEW daily_summary AS
 SELECT COALESCE(

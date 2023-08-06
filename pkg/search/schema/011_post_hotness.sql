@@ -1,4 +1,4 @@
-CREATE VIEW post_hotness AS
+CREATE MATERIALIZED VIEW post_hotness AS
 SELECT p.id,
       p.text,
       p.parent_post_id,

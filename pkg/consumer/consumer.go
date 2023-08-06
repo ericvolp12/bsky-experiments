@@ -394,10 +394,10 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 
 				// Decrement the like count
 				err = c.Store.Queries.DecrementLikeCountByN(ctx, store_queries.DecrementLikeCountByNParams{
-					ActorDid: like.SubjectActorDid,
-					Ns:       like.SubjectNamespace,
-					Rkey:     like.SubjectRkey,
-					NumLikes: 1,
+					ActorDid:   like.SubjectActorDid,
+					Collection: like.SubjectNamespace,
+					Rkey:       like.SubjectRkey,
+					NumLikes:   1,
 				})
 				if err != nil {
 					log.Warnf("failed to decrement like count: %+v", err)
@@ -569,12 +569,12 @@ func (c *Consumer) HandleCreateRecord(
 		}
 
 		err = c.Store.Queries.CreateLike(ctx, store_queries.CreateLikeParams{
-			ActorDid:         repo,
-			Rkey:             rkey,
-			SubjectActorDid:  subjectURI.Did,
-			SubjectNamespace: subjectURI.Namespace,
-			SubjectRkey:      subjectURI.RKey,
-			CreatedAt:        sql.NullTime{Time: recCreatedAt, Valid: true},
+			ActorDid:        repo,
+			Rkey:            rkey,
+			SubjectActorDid: subjectURI.Did,
+			Collection:      subjectURI.Collection,
+			SubjectRkey:     subjectURI.RKey,
+			CreatedAt:       sql.NullTime{Time: recCreatedAt, Valid: true},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create like: %w", err)
@@ -582,10 +582,10 @@ func (c *Consumer) HandleCreateRecord(
 
 		// Increment the like count
 		err = c.Store.Queries.IncrementLikeCountByN(ctx, store_queries.IncrementLikeCountByNParams{
-			ActorDid: subjectURI.Did,
-			Ns:       subjectURI.Namespace,
-			Rkey:     subjectURI.RKey,
-			NumLikes: 1,
+			ActorDid:   subjectURI.Did,
+			Collection: subjectURI.Collection,
+			Rkey:       subjectURI.RKey,
+			NumLikes:   1,
 		})
 		if err != nil {
 			log.Errorf("failed to increment like count: %+v", err)
