@@ -4,6 +4,8 @@ from pydantic import BaseModel
 
 
 class ImageMeta(BaseModel):
+    post_id: str
+    actor_did: str
     cid: str
     url: str
     mime_type: str

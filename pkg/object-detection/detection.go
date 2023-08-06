@@ -13,6 +13,8 @@ import (
 )
 
 type ImageMeta struct {
+	PostID    string    `json:"post_id"`
+	ActorDID  string    `json:"actor_did"`
 	CID       string    `json:"cid"`
 	URL       string    `json:"url"`
 	MimeType  string    `json:"mime_type"`

@@ -345,6 +345,8 @@ func (indexer *Indexer) ProcessImages(ctx context.Context) {
 	imageMetas := make([]*objectdetection.ImageMeta, len(unprocessedImages))
 	for i, image := range unprocessedImages {
 		imageMetas[i] = &objectdetection.ImageMeta{
+			PostID:    image.PostID,
+			ActorDID:  image.AuthorDID,
 			CID:       image.CID,
 			URL:       image.FullsizeURL,
 			MimeType:  image.MimeType,
@@ -362,7 +364,7 @@ func (indexer *Indexer) ProcessImages(ctx context.Context) {
 
 	successCount := 0
 
-	for idx, result := range results {
+	for _, result := range results {
 		if len(result.Results) > 0 {
 			successCount++
 		}
@@ -376,7 +378,7 @@ func (indexer *Indexer) ProcessImages(ctx context.Context) {
 		err = indexer.PostRegistry.AddCVDataToImage(
 			ctx,
 			result.Meta.CID,
-			unprocessedImages[idx].PostID,
+			result.Meta.PostID,
 			executionTime,
 			cvClasses,
 		)
@@ -394,7 +396,7 @@ func (indexer *Indexer) ProcessImages(ctx context.Context) {
 
 		for _, label := range imageLabels {
 			postLabel := fmt.Sprintf("%s:%s", "cv", label)
-			err = indexer.PostRegistry.AddPostLabel(ctx, unprocessedImages[idx].PostID, unprocessedImages[idx].AuthorDID, postLabel)
+			err = indexer.PostRegistry.AddPostLabel(ctx, result.Meta.PostID, result.Meta.ActorDID, postLabel)
 			if err != nil {
 				log.Errorf("Failed to add label to post: %v", err)
 				continue
