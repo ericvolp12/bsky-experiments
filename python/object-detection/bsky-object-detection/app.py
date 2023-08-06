@@ -137,6 +137,7 @@ async def download_image(
 @app.post("/detect_objects", response_model=List[ImageResult])
 async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     image_results: List[ImageResult] = []
+    images_submitted.inc(len(image_metas))
 
     async with aiohttp.ClientSession() as session:
         download_tasks = [download_image(session, img) for img in image_metas]
