@@ -277,7 +277,7 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 		for _, op := range evt.Ops {
 			paths = append(paths, op.Path)
 		}
-		log.Infof("backfill scheduled for %s, buffering event (%+v)", evt.Repo, paths)
+		log.Debugf("backfill scheduled for %s, buffering event (%+v)", evt.Repo, paths)
 		backfill.EventBuffer = append(backfill.EventBuffer, evt)
 		backfill.lk.Unlock()
 		backfillEventsBuffered.WithLabelValues(c.SocketURL).Inc()
