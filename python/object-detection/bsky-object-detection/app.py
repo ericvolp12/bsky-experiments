@@ -21,7 +21,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger import jsonlogger
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .models import DetectionResult, ImageMeta, ImageResult
+from .models import ImageMeta, ImageResult
 from .object_detection import detect_objects
 
 # Set up JSON logging
@@ -138,61 +138,40 @@ async def download_image(
 async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     image_results: List[ImageResult] = []
     images_submitted.inc(len(image_metas))
-    download_queue: asyncio.Queue[
-        Tuple[ImageMeta, Image.Image | None]
-    ] = asyncio.Queue()
-    detection_queue: asyncio.Queue[
-        Tuple[ImageMeta, Image.Image] | None
-    ] = asyncio.Queue()
 
-    async def download_worker():
-        async with aiohttp.ClientSession() as session:
-            for img in image_metas:
-                img_meta, img_data = await download_image(session, img)
-                await download_queue.put((img_meta, img_data))
+    async with aiohttp.ClientSession() as session:
+        download_tasks = [download_image(session, img) for img in image_metas]
+        for i in range(0, len(image_metas), 10):
+            download_batch = download_tasks[i : i + 10]
+            pil_images: List[
+                Tuple[ImageMeta, Image.Image | None]
+            ] = await asyncio.gather(*download_batch)
 
-    async def detect_worker():
-        while True:
-            batch: List[Tuple[ImageMeta, Image.Image]] = []
-            finished = False
-            for _ in range(10):
-                next_item = await detection_queue.get()
-                if next_item is None:
-                    finished = True
-                    break
-                batch.append(next_item)
+            # Log failed downloads
+            failed = [img_pair[0] for img_pair in pil_images if not img_pair[1]]
+            for image_meta in failed:
+                images_failed.inc()
+                image_results.append(ImageResult(meta=image_meta, results=[]))
 
-            detection_results = []
-
-            if batch:
+            # Detect objects on successful downloads
+            successful = []
+            for image_meta, pil_image in pil_images:
+                if pil_image:
+                    successful.append((image_meta, pil_image))
+            if successful:
                 try:
-                    detection_results = detect_objects(image_pairs=batch)
+                    detection_results = detect_objects(image_pairs=successful)
                 except Exception as e:
                     logging.error(f"Error detecting objects: {e}")
-                    detection_results = zip([img_meta for img_meta, _ in batch], [[]])
+                    detection_results = []
+            else:
+                detection_results = []
 
-            for img_meta, detection_result in detection_results:
-                if detection_result:
-                    images_processed_successfully.inc()
+            # Populate image results
+            for image_meta, detection_result in detection_results:
+                images_processed_successfully.inc()
                 image_results.append(
-                    ImageResult(meta=img_meta, results=detection_result)
+                    ImageResult(meta=image_meta, results=detection_result)
                 )
-            if finished:
-                return
-
-    download_task = asyncio.create_task(download_worker())
-    detect_task = asyncio.create_task(detect_worker())
-
-    for img in image_metas:
-        img_meta, img_data = await download_queue.get()
-        if img_data:
-            await detection_queue.put((img_meta, img_data))
-        else:
-            images_failed.inc()
-            image_results.append(ImageResult(meta=img_meta, results=[]))
-
-    await download_task
-    await detection_queue.put(None)  # Signal to exit
-    await detect_task
 
     return image_results
