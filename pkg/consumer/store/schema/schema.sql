@@ -21,7 +21,7 @@ WHERE (root_post_rkey IS NULL)
         (parent_relationship IS NULL)
         OR (parent_relationship <> 'r'::text)
     );
--- New Likes
+-- Likes
 CREATE TABLE collections (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
@@ -43,7 +43,6 @@ CREATE TABLE likes (
     PRIMARY KEY (actor_did, rkey)
 );
 create index likes_created_at on likes (created_at desc);
-CREATE INDEX likes_inserted_at ON likes (inserted_at DESC);
 CREATE INDEX likes_subject ON likes (subj);
 -- Like Counts
 CREATE TABLE like_counts (
