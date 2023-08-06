@@ -142,12 +142,54 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 		if err != nil {
 			log.Errorf("failed to update repo backfill record: %+v", err)
 		}
+		// Process buffered events
+		for _, evt := range bf.EventBuffer {
+			err = c.HandleRepoCommit(ctx, evt)
+			if err != nil {
+				log.Errorf("failed to handle repo commit: %+v", err)
+			}
+			backfillEventsBuffered.WithLabelValues(c.SocketURL).Dec()
+		}
+
+		bf.EventBuffer = []*comatproto.SyncSubscribeRepos_Commit{}
+
 		return
 	}
 
 	r, err := repo.ReadRepoFromCar(ctx, resp.Body)
 	if err != nil {
 		log.Errorf("Error reading repo: %v", err)
+		// Mark the backfill as "failed"
+		c.statusLock.RLock()
+		bf := c.BackfillStatus[repoDID]
+		c.statusLock.RUnlock()
+
+		state := "failed (couldn't read repo CAR from response body)"
+
+		bf.lk.Lock()
+		bf.State = state
+		bf.lk.Unlock()
+		updateErr := c.Store.Queries.UpdateRepoBackfillRecord(ctx, store_queries.UpdateRepoBackfillRecordParams{
+			Repo:         repoDID,
+			LastBackfill: time.Now(),
+			SeqStarted:   bf.Seq,
+			State:        state,
+		})
+		if updateErr != nil {
+			log.Errorf("failed to update repo backfill record: %+v", updateErr)
+		}
+
+		// Process buffered events
+		for _, evt := range bf.EventBuffer {
+			err = c.HandleRepoCommit(ctx, evt)
+			if err != nil {
+				log.Errorf("failed to handle repo commit: %+v", err)
+			}
+			backfillEventsBuffered.WithLabelValues(c.SocketURL).Dec()
+		}
+
+		bf.EventBuffer = []*comatproto.SyncSubscribeRepos_Commit{}
+
 		return
 	}
 
