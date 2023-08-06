@@ -114,7 +114,7 @@ images_submitted = Counter("images_submitted", "Number of images submitted")
 # Async function to download an image
 async def download_image(
     session: aiohttp.ClientSession, image_meta: ImageMeta
-) -> Tuple[ImageMeta, Image.Image] | None:
+) -> Tuple[ImageMeta, Image.Image | None]:
     tracer = trace.get_tracer("bsky-object-detection")
     with tracer.start_as_current_span("download_image") as span:
         span.add_event("Download image")
@@ -128,7 +128,7 @@ async def download_image(
                 span.set_attribute(
                     "error.message", f"Error fetching image: {resp.status}"
                 )
-                return None
+                return image_meta, None
             span.add_event("Read image data")
             imageData = await resp.read()
             return image_meta, Image.open(io.BytesIO(imageData))
@@ -141,20 +141,23 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
 
     async with aiohttp.ClientSession() as session:
         download_tasks = [download_image(session, img) for img in image_metas]
-
         for i in range(0, len(image_metas), 10):
             download_batch = download_tasks[i : i + 10]
             pil_images: List[
-                Tuple[ImageMeta, Image.Image] | None
+                Tuple[ImageMeta, Image.Image | None]
             ] = await asyncio.gather(*download_batch)
 
             # Log failed downloads
-            failed = [img_pair for img_pair in pil_images if not img_pair]
-            for _ in failed:
+            failed = [img_pair[0] for img_pair in pil_images if not img_pair[1]]
+            for image_meta in failed:
                 images_failed.inc()
+                image_results += [ImageResult(meta=image_meta, results=[])]
 
             # Detect objects on successful downloads
-            successful = [img_pair for img_pair in pil_images if img_pair]
+            successful = []
+            for image_meta, pil_image in pil_images:
+                if pil_image:
+                    successful.append((image_meta, pil_image))
             if successful:
                 try:
                     detection_results = detect_objects(image_pairs=successful)
@@ -170,4 +173,5 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
                 image_results.append(
                     ImageResult(meta=image_meta, results=detection_result)
                 )
+
     return image_results
