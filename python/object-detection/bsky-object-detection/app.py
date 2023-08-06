@@ -166,8 +166,7 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
 
             # Populate image results
             for image_meta, detection_result in detection_results:
-                if detection_result:
-                    images_processed_successfully.inc()
+                images_processed_successfully.inc()
                 image_results.append(
                     ImageResult(meta=image_meta, results=detection_result)
                 )
