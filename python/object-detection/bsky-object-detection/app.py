@@ -151,7 +151,7 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
             failed = [img_pair[0] for img_pair in pil_images if not img_pair[1]]
             for image_meta in failed:
                 images_failed.inc()
-                image_results += [ImageResult(meta=image_meta, results=[])]
+                image_results.append(ImageResult(meta=image_meta, results=[]))
 
             # Detect objects on successful downloads
             successful = []
