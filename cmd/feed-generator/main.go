@@ -18,6 +18,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/bangers"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/cluster"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/firehose"
+	"github.com/ericvolp12/bsky-experiments/pkg/feeds/followers"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/hot"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/postlabel"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
@@ -174,6 +175,13 @@ func main() {
 		log.Fatalf("Failed to create HotFeed: %v", err)
 	}
 	feedGenerator.AddFeed(hotFeedAliases, hotFeed)
+
+	// Create a My Followers feed
+	followersFeed, followersFeedAliases, err := followers.NewFollowersFeed(ctx, feedActorDID, store)
+	if err != nil {
+		log.Fatalf("Failed to create FollowersFeed: %v", err)
+	}
+	feedGenerator.AddFeed(followersFeedAliases, followersFeed)
 
 	router := gin.New()
 

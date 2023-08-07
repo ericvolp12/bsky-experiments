@@ -73,6 +73,8 @@ CREATE TABLE follows (
     PRIMARY KEY (actor_did, rkey)
 );
 create index follows_created_at_index on follows (created_at desc);
+CREATE INDEX follows_target ON follows (target_did);
+CREATE INDEX follows_actor ON follows (actor_did);
 -- Images
 CREATE TABLE images (
     cid TEXT NOT NULL,

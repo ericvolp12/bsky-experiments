@@ -38,3 +38,57 @@ FROM posts
 WHERE actor_did = $1
 ORDER BY created_at DESC
 LIMIT $2;
+-- name: GetPostsByActorsFollowingTarget :many
+WITH followers AS (
+    SELECT actor_did
+    FROM follows
+    WHERE target_did = $1
+)
+SELECT p.*
+FROM posts p
+    JOIN followers f ON f.actor_did = p.actor_did
+WHERE (p.created_at, p.actor_did, p.rkey) < (
+        sqlc.arg('cursor_created_at')::TIMESTAMPTZ,
+        sqlc.arg('cursor_actor_did')::TEXT,
+        sqlc.arg('cursor_rkey')::TEXT
+    )
+    AND (p.root_post_rkey IS NULL)
+    AND (
+        (p.parent_relationship IS NULL)
+        OR (p.parent_relationship <> 'r'::text)
+    )
+ORDER BY p.created_at DESC,
+    p.actor_did DESC,
+    p.rkey DESC
+LIMIT $2;
+-- name: GetPostsFromNonMoots :many
+WITH my_follows AS (
+    SELECT target_did
+    FROM follows
+    WHERE follows.actor_did = $1
+),
+non_moot_followers AS (
+    SELECT actor_did
+    FROM follows f
+        LEFT OUTER JOIN my_follows ON f.target_did = my_follows.target_did
+    WHERE f.target_did = $1
+        AND my_follows.target_did IS NULL
+)
+SELECT p.*
+FROM posts p
+    JOIN non_moot_followers f ON f.actor_did = p.actor_did
+WHERE (p.created_at, p.actor_did, p.rkey) < (
+        sqlc.arg('cursor_created_at')::TIMESTAMPTZ,
+        sqlc.arg('cursor_actor_did')::TEXT,
+        sqlc.arg('cursor_rkey')::TEXT
+    )
+    AND (p.root_post_rkey IS NULL)
+    AND (
+        (p.parent_relationship IS NULL)
+        OR (p.parent_relationship <> 'r'::text)
+    )
+    AND p.created_at > NOW() - make_interval(hours := 24)
+ORDER BY p.created_at DESC,
+    p.actor_did DESC,
+    p.rkey DESC
+LIMIT $2;

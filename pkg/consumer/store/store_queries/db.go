@@ -129,6 +129,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPostsByActorStmt, err = db.PrepareContext(ctx, getPostsByActor); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsByActor: %w", err)
 	}
+	if q.getPostsByActorsFollowingTargetStmt, err = db.PrepareContext(ctx, getPostsByActorsFollowingTarget); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsByActorsFollowingTarget: %w", err)
+	}
+	if q.getPostsFromNonMootsStmt, err = db.PrepareContext(ctx, getPostsFromNonMoots); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostsFromNonMoots: %w", err)
+	}
 	if q.getRepoBackfillRecordStmt, err = db.PrepareContext(ctx, getRepoBackfillRecord); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRepoBackfillRecord: %w", err)
 	}
@@ -321,6 +327,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPostsByActorStmt: %w", cerr)
 		}
 	}
+	if q.getPostsByActorsFollowingTargetStmt != nil {
+		if cerr := q.getPostsByActorsFollowingTargetStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsByActorsFollowingTargetStmt: %w", cerr)
+		}
+	}
+	if q.getPostsFromNonMootsStmt != nil {
+		if cerr := q.getPostsFromNonMootsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostsFromNonMootsStmt: %w", cerr)
+		}
+	}
 	if q.getRepoBackfillRecordStmt != nil {
 		if cerr := q.getRepoBackfillRecordStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getRepoBackfillRecordStmt: %w", cerr)
@@ -378,91 +394,95 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                             DBTX
-	tx                             *sql.Tx
-	countBlockersByTargetStmt      *sql.Stmt
-	countBlocksByActorStmt         *sql.Stmt
-	countFollowersByTargetStmt     *sql.Stmt
-	countFollowsByActorStmt        *sql.Stmt
-	createBlockStmt                *sql.Stmt
-	createFollowStmt               *sql.Stmt
-	createImageStmt                *sql.Stmt
-	createLikeStmt                 *sql.Stmt
-	createPostStmt                 *sql.Stmt
-	createRepoBackfillRecordStmt   *sql.Stmt
-	decrementLikeCountByNStmt      *sql.Stmt
-	deleteBlockStmt                *sql.Stmt
-	deleteFollowStmt               *sql.Stmt
-	deleteImageStmt                *sql.Stmt
-	deleteImagesForPostStmt        *sql.Stmt
-	deleteLikeStmt                 *sql.Stmt
-	deleteLikeCountStmt            *sql.Stmt
-	deletePostStmt                 *sql.Stmt
-	getBlockStmt                   *sql.Stmt
-	getBlocksByActorStmt           *sql.Stmt
-	getBlocksByActorAndTargetStmt  *sql.Stmt
-	getBlocksByTargetStmt          *sql.Stmt
-	getFollowStmt                  *sql.Stmt
-	getFollowsByActorStmt          *sql.Stmt
-	getFollowsByActorAndTargetStmt *sql.Stmt
-	getFollowsByTargetStmt         *sql.Stmt
-	getHotPageStmt                 *sql.Stmt
-	getImageStmt                   *sql.Stmt
-	getImagesForPostStmt           *sql.Stmt
-	getLikeStmt                    *sql.Stmt
-	getLikeCountStmt               *sql.Stmt
-	getLikesByActorStmt            *sql.Stmt
-	getLikesBySubjectStmt          *sql.Stmt
-	getPostStmt                    *sql.Stmt
-	getPostsByActorStmt            *sql.Stmt
-	getRepoBackfillRecordStmt      *sql.Stmt
-	getRepoBackfillRecordsStmt     *sql.Stmt
-	incrementLikeCountByNStmt      *sql.Stmt
-	updateRepoBackfillRecordStmt   *sql.Stmt
+	db                                  DBTX
+	tx                                  *sql.Tx
+	countBlockersByTargetStmt           *sql.Stmt
+	countBlocksByActorStmt              *sql.Stmt
+	countFollowersByTargetStmt          *sql.Stmt
+	countFollowsByActorStmt             *sql.Stmt
+	createBlockStmt                     *sql.Stmt
+	createFollowStmt                    *sql.Stmt
+	createImageStmt                     *sql.Stmt
+	createLikeStmt                      *sql.Stmt
+	createPostStmt                      *sql.Stmt
+	createRepoBackfillRecordStmt        *sql.Stmt
+	decrementLikeCountByNStmt           *sql.Stmt
+	deleteBlockStmt                     *sql.Stmt
+	deleteFollowStmt                    *sql.Stmt
+	deleteImageStmt                     *sql.Stmt
+	deleteImagesForPostStmt             *sql.Stmt
+	deleteLikeStmt                      *sql.Stmt
+	deleteLikeCountStmt                 *sql.Stmt
+	deletePostStmt                      *sql.Stmt
+	getBlockStmt                        *sql.Stmt
+	getBlocksByActorStmt                *sql.Stmt
+	getBlocksByActorAndTargetStmt       *sql.Stmt
+	getBlocksByTargetStmt               *sql.Stmt
+	getFollowStmt                       *sql.Stmt
+	getFollowsByActorStmt               *sql.Stmt
+	getFollowsByActorAndTargetStmt      *sql.Stmt
+	getFollowsByTargetStmt              *sql.Stmt
+	getHotPageStmt                      *sql.Stmt
+	getImageStmt                        *sql.Stmt
+	getImagesForPostStmt                *sql.Stmt
+	getLikeStmt                         *sql.Stmt
+	getLikeCountStmt                    *sql.Stmt
+	getLikesByActorStmt                 *sql.Stmt
+	getLikesBySubjectStmt               *sql.Stmt
+	getPostStmt                         *sql.Stmt
+	getPostsByActorStmt                 *sql.Stmt
+	getPostsByActorsFollowingTargetStmt *sql.Stmt
+	getPostsFromNonMootsStmt            *sql.Stmt
+	getRepoBackfillRecordStmt           *sql.Stmt
+	getRepoBackfillRecordsStmt          *sql.Stmt
+	incrementLikeCountByNStmt           *sql.Stmt
+	updateRepoBackfillRecordStmt        *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                             tx,
-		tx:                             tx,
-		countBlockersByTargetStmt:      q.countBlockersByTargetStmt,
-		countBlocksByActorStmt:         q.countBlocksByActorStmt,
-		countFollowersByTargetStmt:     q.countFollowersByTargetStmt,
-		countFollowsByActorStmt:        q.countFollowsByActorStmt,
-		createBlockStmt:                q.createBlockStmt,
-		createFollowStmt:               q.createFollowStmt,
-		createImageStmt:                q.createImageStmt,
-		createLikeStmt:                 q.createLikeStmt,
-		createPostStmt:                 q.createPostStmt,
-		createRepoBackfillRecordStmt:   q.createRepoBackfillRecordStmt,
-		decrementLikeCountByNStmt:      q.decrementLikeCountByNStmt,
-		deleteBlockStmt:                q.deleteBlockStmt,
-		deleteFollowStmt:               q.deleteFollowStmt,
-		deleteImageStmt:                q.deleteImageStmt,
-		deleteImagesForPostStmt:        q.deleteImagesForPostStmt,
-		deleteLikeStmt:                 q.deleteLikeStmt,
-		deleteLikeCountStmt:            q.deleteLikeCountStmt,
-		deletePostStmt:                 q.deletePostStmt,
-		getBlockStmt:                   q.getBlockStmt,
-		getBlocksByActorStmt:           q.getBlocksByActorStmt,
-		getBlocksByActorAndTargetStmt:  q.getBlocksByActorAndTargetStmt,
-		getBlocksByTargetStmt:          q.getBlocksByTargetStmt,
-		getFollowStmt:                  q.getFollowStmt,
-		getFollowsByActorStmt:          q.getFollowsByActorStmt,
-		getFollowsByActorAndTargetStmt: q.getFollowsByActorAndTargetStmt,
-		getFollowsByTargetStmt:         q.getFollowsByTargetStmt,
-		getHotPageStmt:                 q.getHotPageStmt,
-		getImageStmt:                   q.getImageStmt,
-		getImagesForPostStmt:           q.getImagesForPostStmt,
-		getLikeStmt:                    q.getLikeStmt,
-		getLikeCountStmt:               q.getLikeCountStmt,
-		getLikesByActorStmt:            q.getLikesByActorStmt,
-		getLikesBySubjectStmt:          q.getLikesBySubjectStmt,
-		getPostStmt:                    q.getPostStmt,
-		getPostsByActorStmt:            q.getPostsByActorStmt,
-		getRepoBackfillRecordStmt:      q.getRepoBackfillRecordStmt,
-		getRepoBackfillRecordsStmt:     q.getRepoBackfillRecordsStmt,
-		incrementLikeCountByNStmt:      q.incrementLikeCountByNStmt,
-		updateRepoBackfillRecordStmt:   q.updateRepoBackfillRecordStmt,
+		db:                                  tx,
+		tx:                                  tx,
+		countBlockersByTargetStmt:           q.countBlockersByTargetStmt,
+		countBlocksByActorStmt:              q.countBlocksByActorStmt,
+		countFollowersByTargetStmt:          q.countFollowersByTargetStmt,
+		countFollowsByActorStmt:             q.countFollowsByActorStmt,
+		createBlockStmt:                     q.createBlockStmt,
+		createFollowStmt:                    q.createFollowStmt,
+		createImageStmt:                     q.createImageStmt,
+		createLikeStmt:                      q.createLikeStmt,
+		createPostStmt:                      q.createPostStmt,
+		createRepoBackfillRecordStmt:        q.createRepoBackfillRecordStmt,
+		decrementLikeCountByNStmt:           q.decrementLikeCountByNStmt,
+		deleteBlockStmt:                     q.deleteBlockStmt,
+		deleteFollowStmt:                    q.deleteFollowStmt,
+		deleteImageStmt:                     q.deleteImageStmt,
+		deleteImagesForPostStmt:             q.deleteImagesForPostStmt,
+		deleteLikeStmt:                      q.deleteLikeStmt,
+		deleteLikeCountStmt:                 q.deleteLikeCountStmt,
+		deletePostStmt:                      q.deletePostStmt,
+		getBlockStmt:                        q.getBlockStmt,
+		getBlocksByActorStmt:                q.getBlocksByActorStmt,
+		getBlocksByActorAndTargetStmt:       q.getBlocksByActorAndTargetStmt,
+		getBlocksByTargetStmt:               q.getBlocksByTargetStmt,
+		getFollowStmt:                       q.getFollowStmt,
+		getFollowsByActorStmt:               q.getFollowsByActorStmt,
+		getFollowsByActorAndTargetStmt:      q.getFollowsByActorAndTargetStmt,
+		getFollowsByTargetStmt:              q.getFollowsByTargetStmt,
+		getHotPageStmt:                      q.getHotPageStmt,
+		getImageStmt:                        q.getImageStmt,
+		getImagesForPostStmt:                q.getImagesForPostStmt,
+		getLikeStmt:                         q.getLikeStmt,
+		getLikeCountStmt:                    q.getLikeCountStmt,
+		getLikesByActorStmt:                 q.getLikesByActorStmt,
+		getLikesBySubjectStmt:               q.getLikesBySubjectStmt,
+		getPostStmt:                         q.getPostStmt,
+		getPostsByActorStmt:                 q.getPostsByActorStmt,
+		getPostsByActorsFollowingTargetStmt: q.getPostsByActorsFollowingTargetStmt,
+		getPostsFromNonMootsStmt:            q.getPostsFromNonMootsStmt,
+		getRepoBackfillRecordStmt:           q.getRepoBackfillRecordStmt,
+		getRepoBackfillRecordsStmt:          q.getRepoBackfillRecordsStmt,
+		incrementLikeCountByNStmt:           q.incrementLikeCountByNStmt,
+		updateRepoBackfillRecordStmt:        q.updateRepoBackfillRecordStmt,
 	}
 }

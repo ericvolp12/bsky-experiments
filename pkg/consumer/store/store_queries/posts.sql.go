@@ -8,6 +8,7 @@ package store_queries
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 const createPost = `-- name: CreatePost :exec
@@ -128,6 +129,162 @@ type GetPostsByActorParams struct {
 
 func (q *Queries) GetPostsByActor(ctx context.Context, arg GetPostsByActorParams) ([]Post, error) {
 	rows, err := q.query(ctx, q.getPostsByActorStmt, getPostsByActor, arg.ActorDid, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Post
+	for rows.Next() {
+		var i Post
+		if err := rows.Scan(
+			&i.ActorDid,
+			&i.Rkey,
+			&i.Content,
+			&i.ParentPostActorDid,
+			&i.ParentPostRkey,
+			&i.ParentRelationship,
+			&i.RootPostActorDid,
+			&i.RootPostRkey,
+			&i.HasEmbeddedMedia,
+			&i.CreatedAt,
+			&i.InsertedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPostsByActorsFollowingTarget = `-- name: GetPostsByActorsFollowingTarget :many
+WITH followers AS (
+    SELECT actor_did
+    FROM follows
+    WHERE target_did = $1
+)
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.parent_post_rkey, p.parent_relationship, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
+FROM posts p
+    JOIN followers f ON f.actor_did = p.actor_did
+WHERE (p.created_at, p.actor_did, p.rkey) < (
+        $3::TIMESTAMPTZ,
+        $4::TEXT,
+        $5::TEXT
+    )
+    AND (p.root_post_rkey IS NULL)
+    AND (
+        (p.parent_relationship IS NULL)
+        OR (p.parent_relationship <> 'r'::text)
+    )
+ORDER BY p.created_at DESC,
+    p.actor_did DESC,
+    p.rkey DESC
+LIMIT $2
+`
+
+type GetPostsByActorsFollowingTargetParams struct {
+	TargetDid       string    `json:"target_did"`
+	Limit           int32     `json:"limit"`
+	CursorCreatedAt time.Time `json:"cursor_created_at"`
+	CursorActorDid  string    `json:"cursor_actor_did"`
+	CursorRkey      string    `json:"cursor_rkey"`
+}
+
+func (q *Queries) GetPostsByActorsFollowingTarget(ctx context.Context, arg GetPostsByActorsFollowingTargetParams) ([]Post, error) {
+	rows, err := q.query(ctx, q.getPostsByActorsFollowingTargetStmt, getPostsByActorsFollowingTarget,
+		arg.TargetDid,
+		arg.Limit,
+		arg.CursorCreatedAt,
+		arg.CursorActorDid,
+		arg.CursorRkey,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Post
+	for rows.Next() {
+		var i Post
+		if err := rows.Scan(
+			&i.ActorDid,
+			&i.Rkey,
+			&i.Content,
+			&i.ParentPostActorDid,
+			&i.ParentPostRkey,
+			&i.ParentRelationship,
+			&i.RootPostActorDid,
+			&i.RootPostRkey,
+			&i.HasEmbeddedMedia,
+			&i.CreatedAt,
+			&i.InsertedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPostsFromNonMoots = `-- name: GetPostsFromNonMoots :many
+WITH my_follows AS (
+    SELECT target_did
+    FROM follows
+    WHERE follows.actor_did = $1
+),
+non_moot_followers AS (
+    SELECT actor_did
+    FROM follows f
+        LEFT OUTER JOIN my_follows ON f.target_did = my_follows.target_did
+    WHERE f.target_did = $1
+        AND my_follows.target_did IS NULL
+)
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.parent_post_rkey, p.parent_relationship, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
+FROM posts p
+    JOIN non_moot_followers f ON f.actor_did = p.actor_did
+WHERE (p.created_at, p.actor_did, p.rkey) < (
+        $3::TIMESTAMPTZ,
+        $4::TEXT,
+        $5::TEXT
+    )
+    AND (p.root_post_rkey IS NULL)
+    AND (
+        (p.parent_relationship IS NULL)
+        OR (p.parent_relationship <> 'r'::text)
+    )
+    AND p.created_at > NOW() - make_interval(hours := 24)
+ORDER BY p.created_at DESC,
+    p.actor_did DESC,
+    p.rkey DESC
+LIMIT $2
+`
+
+type GetPostsFromNonMootsParams struct {
+	ActorDid        string    `json:"actor_did"`
+	Limit           int32     `json:"limit"`
+	CursorCreatedAt time.Time `json:"cursor_created_at"`
+	CursorActorDid  string    `json:"cursor_actor_did"`
+	CursorRkey      string    `json:"cursor_rkey"`
+}
+
+func (q *Queries) GetPostsFromNonMoots(ctx context.Context, arg GetPostsFromNonMootsParams) ([]Post, error) {
+	rows, err := q.query(ctx, q.getPostsFromNonMootsStmt, getPostsFromNonMoots,
+		arg.ActorDid,
+		arg.Limit,
+		arg.CursorCreatedAt,
+		arg.CursorActorDid,
+		arg.CursorRkey,
+	)
 	if err != nil {
 		return nil, err
 	}
