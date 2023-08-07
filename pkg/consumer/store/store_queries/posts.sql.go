@@ -242,16 +242,16 @@ WITH my_follows AS (
     FROM follows
     WHERE follows.actor_did = $1
 ),
-non_moot_followers AS (
+non_moots AS (
     SELECT actor_did
     FROM follows f
-        LEFT OUTER JOIN my_follows ON f.target_did = my_follows.target_did
+        LEFT JOIN my_follows ON f.actor_did = my_follows.target_did
     WHERE f.target_did = $1
         AND my_follows.target_did IS NULL
 )
 SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.parent_post_rkey, p.parent_relationship, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
 FROM posts p
-    JOIN non_moot_followers f ON f.actor_did = p.actor_did
+    JOIN non_moots f ON f.actor_did = p.actor_did
 WHERE (p.created_at, p.actor_did, p.rkey) < (
         $3::TIMESTAMPTZ,
         $4::TEXT,
