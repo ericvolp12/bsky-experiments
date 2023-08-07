@@ -90,6 +90,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getBlocksByTargetStmt, err = db.PrepareContext(ctx, getBlocksByTarget); err != nil {
 		return nil, fmt.Errorf("error preparing query GetBlocksByTarget: %w", err)
 	}
+	if q.getDailySummariesStmt, err = db.PrepareContext(ctx, getDailySummaries); err != nil {
+		return nil, fmt.Errorf("error preparing query GetDailySummaries: %w", err)
+	}
 	if q.getFollowStmt, err = db.PrepareContext(ctx, getFollow); err != nil {
 		return nil, fmt.Errorf("error preparing query GetFollow: %w", err)
 	}
@@ -262,6 +265,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getBlocksByTargetStmt: %w", cerr)
 		}
 	}
+	if q.getDailySummariesStmt != nil {
+		if cerr := q.getDailySummariesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getDailySummariesStmt: %w", cerr)
+		}
+	}
 	if q.getFollowStmt != nil {
 		if cerr := q.getFollowStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getFollowStmt: %w", cerr)
@@ -418,6 +426,7 @@ type Queries struct {
 	getBlocksByActorStmt                *sql.Stmt
 	getBlocksByActorAndTargetStmt       *sql.Stmt
 	getBlocksByTargetStmt               *sql.Stmt
+	getDailySummariesStmt               *sql.Stmt
 	getFollowStmt                       *sql.Stmt
 	getFollowsByActorStmt               *sql.Stmt
 	getFollowsByActorAndTargetStmt      *sql.Stmt
@@ -465,6 +474,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getBlocksByActorStmt:                q.getBlocksByActorStmt,
 		getBlocksByActorAndTargetStmt:       q.getBlocksByActorAndTargetStmt,
 		getBlocksByTargetStmt:               q.getBlocksByTargetStmt,
+		getDailySummariesStmt:               q.getDailySummariesStmt,
 		getFollowStmt:                       q.getFollowStmt,
 		getFollowsByActorStmt:               q.getFollowsByActorStmt,
 		getFollowsByActorAndTargetStmt:      q.getFollowsByActorAndTargetStmt,

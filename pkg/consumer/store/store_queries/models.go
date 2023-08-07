@@ -23,19 +23,19 @@ type Collection struct {
 }
 
 type DailySummary struct {
-	Date                    int64 `json:"date"`
-	LikesPerDay             int64 `json:"Likes per Day"`
-	DailyActiveLikers       int64 `json:"Daily Active Likers"`
-	DailyActivePosters      int64 `json:"Daily Active Posters"`
-	PostsPerDay             int64 `json:"Posts per Day"`
-	PostsWithImagesPerDay   int64 `json:"Posts with Images per Day"`
-	ImagesPerDay            int64 `json:"Images per Day"`
-	ImagesWithAltTextPerDay int64 `json:"Images with Alt Text per Day"`
-	FirstTimePosters        int64 `json:"First Time Posters"`
-	FollowsPerDay           int64 `json:"Follows per Day"`
-	DailyActiveFollowers    int64 `json:"Daily Active Followers"`
-	BlocksPerDay            int64 `json:"Blocks per Day"`
-	DailyActiveBlockers     int64 `json:"Daily Active Blockers"`
+	Date                    time.Time `json:"date"`
+	LikesPerDay             int64     `json:"Likes per Day"`
+	DailyActiveLikers       int64     `json:"Daily Active Likers"`
+	DailyActivePosters      int64     `json:"Daily Active Posters"`
+	PostsPerDay             int64     `json:"Posts per Day"`
+	PostsWithImagesPerDay   int64     `json:"Posts with Images per Day"`
+	ImagesPerDay            int64     `json:"Images per Day"`
+	ImagesWithAltTextPerDay int64     `json:"Images with Alt Text per Day"`
+	FirstTimePosters        int64     `json:"First Time Posters"`
+	FollowsPerDay           int64     `json:"Follows per Day"`
+	DailyActiveFollowers    int64     `json:"Daily Active Followers"`
+	BlocksPerDay            int64     `json:"Blocks per Day"`
+	DailyActiveBlockers     int64     `json:"Daily Active Blockers"`
 }
 
 type Follow struct {

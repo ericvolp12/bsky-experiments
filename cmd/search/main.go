@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/endpoints"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
@@ -50,6 +51,11 @@ func main() {
 	dbConnectionString := os.Getenv("REGISTRY_DB_CONNECTION_STRING")
 	if dbConnectionString == "" {
 		log.Fatal("REGISTRY_DB_CONNECTION_STRING environment variable is required")
+	}
+
+	firehoseConnectionString := os.Getenv("FIREHOSE_DB_CONNECTION_STRING")
+	if firehoseConnectionString == "" {
+		log.Fatal("FIREHOSE_DB_CONNECTION_STRING environment variable is required")
 	}
 
 	layoutServiceHost := os.Getenv("LAYOUT_SERVICE_HOST")
@@ -109,6 +115,12 @@ func main() {
 	}
 	defer postRegistry.Close()
 
+	store, err := store.NewStore(firehoseConnectionString)
+	if err != nil {
+		log.Fatalf("Failed to create Store: %v", err)
+	}
+	defer store.Close()
+
 	client, err := intXRPC.GetXRPCClient(ctx)
 	if err != nil {
 		log.Fatalf("Failed to create XRPC client: %v", err)
@@ -118,6 +130,7 @@ func main() {
 
 	api, err := endpoints.NewAPI(
 		postRegistry,
+		store,
 		userCount,
 		graphJSONUrl,
 		layoutServiceHost,

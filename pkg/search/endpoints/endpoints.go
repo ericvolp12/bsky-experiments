@@ -12,6 +12,7 @@ import (
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/xrpc"
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/layout"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/clusters"
@@ -40,6 +41,22 @@ type StatsCacheEntry struct {
 	Expiration time.Time
 }
 
+type DailyDatapoint struct {
+	Date                    string `json:"date"`
+	LikesPerDay             int64  `json:"num_likes"`
+	DailyActiveLikers       int64  `json:"num_likers"`
+	DailyActivePosters      int64  `json:"num_posters"`
+	PostsPerDay             int64  `json:"num_posts"`
+	PostsWithImagesPerDay   int64  `json:"num_posts_with_images"`
+	ImagesPerDay            int64  `json:"num_images"`
+	ImagesWithAltTextPerDay int64  `json:"num_images_with_alt_text"`
+	FirstTimePosters        int64  `json:"num_first_time_posters"`
+	FollowsPerDay           int64  `json:"num_follows"`
+	DailyActiveFollowers    int64  `json:"num_followers"`
+	BlocksPerDay            int64  `json:"num_blocks"`
+	DailyActiveBlockers     int64  `json:"num_blockers"`
+}
+
 type AuthorStatsResponse struct {
 	TotalUsers    int                               `json:"total_users"`
 	TotalAuthors  int64                             `json:"total_authors"`
@@ -49,11 +66,14 @@ type AuthorStatsResponse struct {
 	Brackets      []search.Bracket                  `json:"brackets"`
 	UpdatedAt     time.Time                         `json:"updated_at"`
 	TopPosters    []search_queries.GetTopPostersRow `json:"top_posters"`
+	DailyData     []DailyDatapoint                  `json:"daily_data"`
 }
 
 type API struct {
 	PostRegistry *search.PostRegistry
 	UserCount    *usercount.UserCount
+
+	Store *store.Store
 
 	ClusterManager *clusters.ClusterManager
 
@@ -70,6 +90,7 @@ type API struct {
 
 func NewAPI(
 	postRegistry *search.PostRegistry,
+	store *store.Store,
 	userCount *usercount.UserCount,
 	graphJSONUrl string,
 	layoutServiceHost string,
@@ -96,6 +117,7 @@ func NewAPI(
 	return &API{
 		PostRegistry:       postRegistry,
 		UserCount:          userCount,
+		Store:              store,
 		ClusterManager:     clusterManager,
 		LayoutServiceHost:  layoutServiceHost,
 		ThreadViewCacheTTL: threadViewCacheTTL,
@@ -227,6 +249,36 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 		return fmt.Errorf("error getting user count: %w", err)
 	}
 
+	dailyDatapointsRaw, err := api.Store.Queries.GetDailySummaries(ctx)
+	if err != nil {
+		log.Printf("Error getting daily datapoints: %v", err)
+		return fmt.Errorf("error getting daily datapoints: %w", err)
+	}
+
+	dailyDatapoints := []DailyDatapoint{}
+
+	for _, datapoint := range dailyDatapointsRaw {
+		// Filter out datapoints before 2023-03-01 and after tomorrow
+		if datapoint.Date.Before(time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC)) || datapoint.Date.After(time.Now().AddDate(0, 0, 1)) {
+			continue
+		}
+		dailyDatapoints = append(dailyDatapoints, DailyDatapoint{
+			Date:                    datapoint.Date.UTC().Format("2006-01-02"),
+			LikesPerDay:             datapoint.LikesPerDay,
+			DailyActiveLikers:       datapoint.DailyActiveLikers,
+			DailyActivePosters:      datapoint.DailyActivePosters,
+			PostsPerDay:             datapoint.PostsPerDay,
+			PostsWithImagesPerDay:   datapoint.PostsWithImagesPerDay,
+			ImagesPerDay:            datapoint.ImagesPerDay,
+			ImagesWithAltTextPerDay: datapoint.ImagesWithAltTextPerDay,
+			FirstTimePosters:        datapoint.FirstTimePosters,
+			FollowsPerDay:           datapoint.FollowsPerDay,
+			DailyActiveFollowers:    datapoint.DailyActiveFollowers,
+			BlocksPerDay:            datapoint.BlocksPerDay,
+			DailyActiveBlockers:     datapoint.DailyActiveBlockers,
+		})
+	}
+
 	// Update the metrics
 	totalUsers.Set(float64(userCount))
 	totalAuthors.Set(float64(authorStats.TotalAuthors))
@@ -248,6 +300,7 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 			Brackets:      authorStats.Brackets,
 			UpdatedAt:     authorStats.UpdatedAt,
 			TopPosters:    topPosters,
+			DailyData:     dailyDatapoints,
 		},
 		Expiration: time.Now().Add(api.StatsCacheTTL),
 	}

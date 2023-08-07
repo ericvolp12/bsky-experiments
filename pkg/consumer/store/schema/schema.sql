@@ -170,19 +170,28 @@ SELECT COALESCE(
         daily_active_followers.date,
         blocks_per_day.date,
         daily_active_blockers.date
-    ) AS date,
-    likes_per_day."Likes per Day",
-    daily_active_likers."Daily Active Likers",
-    daily_active_posters."Daily Active Posters",
-    posts_per_day."Posts per Day",
-    posts_with_images_per_day."Posts with Images per Day",
-    images_per_day."Images per Day",
-    images_with_alt_text_per_day."Images with Alt Text per Day",
-    first_time_posters."First Time Posters",
-    follows_per_day."Follows per Day",
-    daily_active_followers."Daily Active Followers",
-    blocks_per_day."Blocks per Day",
-    daily_active_blockers."Daily Active Blockers"
+    )::TIMESTAMPTZ AS date,
+    COALESCE(likes_per_day."Likes per Day", 0) AS "Likes per Day",
+    COALESCE(daily_active_likers."Daily Active Likers", 0) AS "Daily Active Likers",
+    COALESCE(daily_active_posters."Daily Active Posters", 0) AS "Daily Active Posters",
+    COALESCE(posts_per_day."Posts per Day", 0) AS "Posts per Day",
+    COALESCE(
+        posts_with_images_per_day."Posts with Images per Day",
+        0
+    ) AS "Posts with Images per Day",
+    COALESCE(images_per_day."Images per Day", 0) AS "Images per Day",
+    COALESCE(
+        images_with_alt_text_per_day."Images with Alt Text per Day",
+        0
+    ) AS "Images with Alt Text per Day",
+    COALESCE(first_time_posters."First Time Posters", 0) AS "First Time Posters",
+    COALESCE(follows_per_day."Follows per Day", 0) AS "Follows per Day",
+    COALESCE(
+        daily_active_followers."Daily Active Followers",
+        0
+    ) AS "Daily Active Followers",
+    COALESCE(blocks_per_day."Blocks per Day", 0) AS "Blocks per Day",
+    COALESCE(daily_active_blockers."Daily Active Blockers", 0) AS "Daily Active Blockers"
 FROM (
         SELECT date_trunc('day', created_at) AS date,
             COUNT(*) AS "Likes per Day"
