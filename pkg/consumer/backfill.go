@@ -3,6 +3,7 @@ package consumer
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	"github.com/ipfs/go-cid"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -78,6 +80,32 @@ func (c *Consumer) BackfillProcessor(ctx context.Context) {
 			<-sem // Release a slot in the semaphore when the goroutine finishes
 		}(backfill)
 	}
+}
+
+type instrumentedReader struct {
+	source  io.ReadCloser
+	counter prometheus.Counter
+}
+
+func (r instrumentedReader) Read(b []byte) (int, error) {
+	n, err := r.source.Read(b)
+	r.counter.Add(float64(n))
+	return n, err
+}
+
+func (r instrumentedReader) Close() error {
+	var buf [32]byte
+	var n int
+	var err error
+	for err == nil {
+		n, err = r.source.Read(buf[:])
+		r.counter.Add(float64(n))
+	}
+	closeerr := r.source.Close()
+	if err != nil && err != io.EOF {
+		return err
+	}
+	return closeerr
 }
 
 func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
@@ -156,7 +184,14 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 		return
 	}
 
-	r, err := repo.ReadRepoFromCar(ctx, resp.Body)
+	instrumentedReader := instrumentedReader{
+		source:  resp.Body,
+		counter: backfillBytesProcessed.WithLabelValues(c.SocketURL),
+	}
+
+	defer instrumentedReader.Close()
+
+	r, err := repo.ReadRepoFromCar(ctx, instrumentedReader)
 	if err != nil {
 		log.Errorf("Error reading repo: %v", err)
 		// Mark the backfill as "failed"

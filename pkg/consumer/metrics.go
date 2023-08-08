@@ -92,3 +92,8 @@ var backfillEventsBuffered = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: "consumer_backfill_events_buffered",
 	Help: "The number of backfill events buffered",
 }, []string{"socket_url"})
+
+var backfillBytesProcessed = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "consumer_backfill_bytes_processed_total",
+	Help: "The total number of backfill bytes processed",
+}, []string{"socket_url"})
