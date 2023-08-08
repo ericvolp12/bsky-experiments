@@ -10,7 +10,10 @@ WHERE a.did NOT IN (
     'did:plc:4hqjfn7m6n5hno3doamuhgef',  -- Yui              - yui.syui.ai
     'did:plc:kwmcvt4maab47n7dgvepg4tr',  -- Timestamp Bot    - tick.bsky.social
     'did:plc:6smdztjrq7bjjlojkrnpcnxm',  -- Now Playinb Got  - worbler.bsky.social
-    'did:plc:3tyx5envm7fms2jxgvq4pz6e'   -- Deleted Acc      - mavs.bsky.social
+    'did:plc:3tyx5envm7fms2jxgvq4pz6e',  -- Deleted Acc      - mavs.bsky.social
+    'did:plc:zznz5dqjamwecp4yogdjugx2',  -- Deleted Acc      - shahbazi.bsky.social
+    'did:plc:czcwobs37px7otals6umpd5j',  -- News Bot         - almir.bsky.social
+    'did:plc:zqnx5g75q5ygxxxmoqfdcpsc'   -- Deleted Acc
 )
 GROUP BY a.did, a.handle
 ORDER BY post_count DESC
