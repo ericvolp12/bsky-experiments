@@ -415,6 +415,22 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				if err != nil {
 					log.Errorf("failed to delete follow: %+v", err)
 				}
+				err = c.Store.Queries.DecrementFollowerCountByN(ctx, store_queries.DecrementFollowerCountByNParams{
+					ActorDid:     evt.Repo,
+					NumFollowers: 1,
+					UpdatedAt:    time.Now(),
+				})
+				if err != nil {
+					log.Errorf("failed to decrement follower count: %+v", err)
+				}
+				err = c.Store.Queries.DecrementFollowingCountByN(ctx, store_queries.DecrementFollowingCountByNParams{
+					ActorDid:     evt.Repo,
+					NumFollowing: 1,
+					UpdatedAt:    time.Now(),
+				})
+				if err != nil {
+					log.Errorf("failed to decrement following count: %+v", err)
+				}
 			case "app.bsky.graph.block":
 				span.SetAttributes(attribute.String("record_type", "graph_block"))
 				err = c.Store.Queries.DeleteBlock(ctx, store_queries.DeleteBlockParams{
@@ -653,6 +669,22 @@ func (c *Consumer) HandleCreateRecord(
 		})
 		if err != nil {
 			log.Errorf("failed to create follow: %+v", err)
+		}
+		err = c.Store.Queries.IncrementFollowerCountByN(ctx, store_queries.IncrementFollowerCountByNParams{
+			ActorDid:     rec.Subject,
+			NumFollowers: 1,
+			UpdatedAt:    time.Now(),
+		})
+		if err != nil {
+			log.Errorf("failed to increment follower count: %+v", err)
+		}
+		err = c.Store.Queries.IncrementFollowingCountByN(ctx, store_queries.IncrementFollowingCountByNParams{
+			ActorDid:     repo,
+			NumFollowing: 1,
+			UpdatedAt:    time.Now(),
+		})
+		if err != nil {
+			log.Errorf("failed to increment following count: %+v", err)
 		}
 	case *bsky.ActorProfile:
 		span.SetAttributes(attribute.String("record_type", "actor_profile"))

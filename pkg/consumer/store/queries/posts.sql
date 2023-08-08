@@ -73,10 +73,16 @@ non_moots AS (
         LEFT JOIN my_follows ON f.actor_did = my_follows.target_did
     WHERE f.target_did = $1
         AND my_follows.target_did IS NULL
+),
+non_moots_and_non_spam AS (
+    SELECT nm.actor_did
+    FROM non_moots nm
+        LEFT JOIN following_counts fc ON nm.actor_did = fc.actor_did
+    WHERE fc.num_following < 4000
 )
 SELECT p.*
 FROM posts p
-    JOIN non_moots f ON f.actor_did = p.actor_did
+    JOIN non_moots_and_non_spam f ON f.actor_did = p.actor_did
 WHERE (p.created_at, p.actor_did, p.rkey) < (
         sqlc.arg('cursor_created_at')::TIMESTAMPTZ,
         sqlc.arg('cursor_actor_did')::TEXT,

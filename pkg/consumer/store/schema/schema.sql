@@ -75,6 +75,21 @@ CREATE TABLE follows (
 create index follows_created_at_index on follows (created_at desc);
 CREATE INDEX follows_target ON follows (target_did);
 CREATE INDEX follows_actor ON follows (actor_did);
+-- Follow Counts
+CREATE TABLE follower_counts (
+    actor_did TEXT NOT NULL,
+    num_followers BIGINT NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    PRIMARY KEY (actor_did)
+);
+CREATE TABLE following_counts (
+    actor_did TEXT NOT NULL,
+    num_following BIGINT NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    PRIMARY KEY (actor_did)
+);
+CREATE INDEX following_counts_num_following_lt_4000 ON following_counts (actor_did)
+WHERE num_following < 4000;
 -- Images
 CREATE TABLE images (
     cid TEXT NOT NULL,

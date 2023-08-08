@@ -46,6 +46,18 @@ type Follow struct {
 	InsertedAt time.Time    `json:"inserted_at"`
 }
 
+type FollowerCount struct {
+	ActorDid     string    `json:"actor_did"`
+	NumFollowers int64     `json:"num_followers"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type FollowingCount struct {
+	ActorDid     string    `json:"actor_did"`
+	NumFollowing int64     `json:"num_following"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 type Image struct {
 	Cid          string         `json:"cid"`
 	PostActorDid string         `json:"post_actor_did"`
