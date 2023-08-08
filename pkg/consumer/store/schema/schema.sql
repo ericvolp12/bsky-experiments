@@ -4,8 +4,9 @@ CREATE TABLE posts (
     rkey TEXT NOT NULL,
     content TEXT,
     parent_post_actor_did TEXT,
+    quote_post_actor_did TEXT,
+    quote_post_rkey TEXT,
     parent_post_rkey TEXT,
-    parent_relationship TEXT,
     root_post_actor_did TEXT,
     root_post_rkey TEXT,
     has_embedded_media BOOLEAN DEFAULT FALSE NOT NULL,
@@ -16,12 +17,9 @@ CREATE TABLE posts (
 CREATE INDEX posts_inserted_at ON posts (inserted_at DESC);
 CREATE INDEX posts_created_at_index ON posts (created_at DESC);
 CREATE INDEX posts_roots_or_quotes_only_created_at ON posts (created_at DESC)
-WHERE (root_post_rkey IS NULL)
-    AND (
-        (parent_relationship IS NULL)
-        OR (parent_relationship <> 'r'::text)
-    );
--- Likes
+WHERE root_post_rkey IS NULL
+    AND parent_post_rkey IS NULL;
+-- Subjects
 CREATE TABLE collections (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
@@ -34,6 +32,27 @@ CREATE TABLE subjects (
     col INTEGER NOT NULL,
     UNIQUE (actor_did, col, rkey)
 );
+-- Reposts
+CREATE TABLE reposts (
+    actor_did TEXT NOT NULL,
+    rkey TEXT NOT NULL,
+    subj BIGINT NOT NULL,
+    created_at TIMESTAMPTZ,
+    inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    PRIMARY KEY (actor_did, rkey)
+);
+create index reposts_created_at on reposts (created_at desc);
+CREATE INDEX reposts_subject ON reposts (subj);
+-- Repost Counts
+CREATE TABLE repost_counts (
+    subject_id BIGINT NOT NULL,
+    num_reposts BIGINT NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    PRIMARY KEY (subject_id)
+);
+CREATE INDEX idx_repost_counts_num_reposts_gt_10 ON repost_counts (subject_id)
+WHERE num_reposts > 10;
+-- Likes
 CREATE TABLE likes (
     actor_did TEXT NOT NULL,
     rkey TEXT NOT NULL,
@@ -125,10 +144,7 @@ CREATE MATERIALIZED VIEW recent_posts_with_score AS WITH RecentPosts AS (
     FROM posts p
     WHERE p.created_at > (NOW() - INTERVAL '24 hours')
         AND p.created_at < (NOW() - INTERVAL '5 minutes')
-        AND (
-            p.parent_relationship IS NULL
-            OR p.parent_relationship != 'r'
-        )
+        AND p.parent_post_rkey IS NULL
         AND p.root_post_rkey IS NULL
 ),
 FilteredSubjects AS (

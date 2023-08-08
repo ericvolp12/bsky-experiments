@@ -86,8 +86,9 @@ type Post struct {
 	Rkey               string         `json:"rkey"`
 	Content            sql.NullString `json:"content"`
 	ParentPostActorDid sql.NullString `json:"parent_post_actor_did"`
+	QuotePostActorDid  sql.NullString `json:"quote_post_actor_did"`
+	QuotePostRkey      sql.NullString `json:"quote_post_rkey"`
 	ParentPostRkey     sql.NullString `json:"parent_post_rkey"`
-	ParentRelationship sql.NullString `json:"parent_relationship"`
 	RootPostActorDid   sql.NullString `json:"root_post_actor_did"`
 	RootPostRkey       sql.NullString `json:"root_post_rkey"`
 	HasEmbeddedMedia   bool           `json:"has_embedded_media"`
@@ -109,6 +110,20 @@ type RepoBackfillStatus struct {
 	LastBackfill time.Time `json:"last_backfill"`
 	SeqStarted   int64     `json:"seq_started"`
 	State        string    `json:"state"`
+}
+
+type Repost struct {
+	ActorDid   string       `json:"actor_did"`
+	Rkey       string       `json:"rkey"`
+	Subj       int64        `json:"subj"`
+	CreatedAt  sql.NullTime `json:"created_at"`
+	InsertedAt time.Time    `json:"inserted_at"`
+}
+
+type RepostCount struct {
+	SubjectID  int64     `json:"subject_id"`
+	NumReposts int64     `json:"num_reposts"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type Subject struct {

@@ -5,7 +5,8 @@ INSERT INTO posts (
         content,
         parent_post_actor_did,
         parent_post_rkey,
-        parent_relationship,
+        quote_post_actor_did,
+        quote_post_rkey,
         root_post_actor_did,
         root_post_rkey,
         has_embedded_media,
@@ -21,7 +22,8 @@ VALUES (
         $7,
         $8,
         $9,
-        $10
+        $10,
+        $11
     );
 -- name: DeletePost :exec
 DELETE FROM posts
@@ -88,11 +90,8 @@ WHERE (p.created_at, p.actor_did, p.rkey) < (
         sqlc.arg('cursor_actor_did')::TEXT,
         sqlc.arg('cursor_rkey')::TEXT
     )
-    AND (p.root_post_rkey IS NULL)
-    AND (
-        (p.parent_relationship IS NULL)
-        OR (p.parent_relationship <> 'r'::text)
-    )
+    AND p.root_post_rkey IS NULL
+    AND p.parent_post_rkey IS NULL
     AND p.created_at > NOW() - make_interval(hours := 24)
 ORDER BY p.created_at DESC,
     p.actor_did DESC,

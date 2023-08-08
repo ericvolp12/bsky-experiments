@@ -406,6 +406,42 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				if err != nil {
 					log.Warnf("failed to decrement like count: %+v", err)
 				}
+			case "app.bsky.feed.repost":
+				span.SetAttributes(attribute.String("record_type", "feed_repost"))
+				// Get the repost from the database to get the subject
+				repost, err := c.Store.Queries.GetRepost(ctx, store_queries.GetRepostParams{
+					ActorDid: evt.Repo,
+					Rkey:     rkey,
+				})
+				if err != nil {
+					if err == sql.ErrNoRows {
+						log.Warnf("repost not found, so we can't delete it: %+v", err)
+						continue
+					}
+					log.Errorf("can't delete repost: %+v", err)
+					continue
+				}
+
+				// Delete the repost from the database
+				err = c.Store.Queries.DeleteRepost(ctx, store_queries.DeleteRepostParams{
+					ActorDid: evt.Repo,
+					Rkey:     rkey,
+				})
+				if err != nil {
+					log.Errorf("failed to delete repost: %+v", err)
+					continue
+				}
+
+				// Decrement the repost count
+				err = c.Store.Queries.DecrementRepostCountByN(ctx, store_queries.DecrementRepostCountByNParams{
+					ActorDid:   repost.SubjectActorDid,
+					Collection: repost.SubjectNamespace,
+					Rkey:       repost.SubjectRkey,
+					NumReposts: 1,
+				})
+				if err != nil {
+					log.Warnf("failed to decrement repost count: %+v", err)
+				}
 			case "app.bsky.graph.follow":
 				span.SetAttributes(attribute.String("record_type", "graph_follow"))
 				err = c.Store.Queries.DeleteFollow(ctx, store_queries.DeleteFollowParams{
@@ -471,9 +507,6 @@ func (c *Consumer) HandleCreateRecord(
 	case *bsky.FeedPost:
 		span.SetAttributes(attribute.String("record_type", "feed_post"))
 		recordsProcessedCounter.WithLabelValues("feed_post", c.SocketURL).Inc()
-		parentRelationship := ""
-		parentActorDid := ""
-		parentActorRkey := ""
 
 		// Check if we've already processed this record
 		_, err = c.Store.Queries.GetPost(ctx, store_queries.GetPostParams{
@@ -489,16 +522,21 @@ func (c *Consumer) HandleCreateRecord(
 			return nil, nil
 		}
 
+		quoteActorDid := ""
+		quoteActorRkey := ""
 		if rec.Embed != nil && rec.Embed.EmbedRecord != nil && rec.Embed.EmbedRecord.Record != nil {
 			quoteRepostsProcessedCounter.WithLabelValues(c.SocketURL).Inc()
 			u, err := getURI(rec.Embed.EmbedRecord.Record.Uri)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get Quoted Record uri: %w", err)
 			}
-			parentActorDid = u.Did
-			parentActorRkey = u.RKey
-			parentRelationship = "q"
+			quoteActorDid = u.Did
+			quoteActorRkey = u.RKey
+
 		}
+
+		parentActorDid := ""
+		parentActorRkey := ""
 		if rec.Reply != nil && rec.Reply.Parent != nil {
 			u, err := getURI(rec.Reply.Parent.Uri)
 			if err != nil {
@@ -506,7 +544,6 @@ func (c *Consumer) HandleCreateRecord(
 			}
 			parentActorDid = u.Did
 			parentActorRkey = u.RKey
-			parentRelationship = "r"
 		}
 
 		rootActorDid := ""
@@ -528,7 +565,8 @@ func (c *Consumer) HandleCreateRecord(
 			Content:            sql.NullString{String: rec.Text, Valid: true},
 			ParentPostActorDid: sql.NullString{String: parentActorDid, Valid: parentActorDid != ""},
 			ParentPostRkey:     sql.NullString{String: parentActorRkey, Valid: parentActorRkey != ""},
-			ParentRelationship: sql.NullString{String: parentRelationship, Valid: parentRelationship != ""},
+			QuotePostActorDid:  sql.NullString{String: quoteActorDid, Valid: quoteActorDid != ""},
+			QuotePostRkey:      sql.NullString{String: quoteActorRkey, Valid: quoteActorRkey != ""},
 			RootPostActorDid:   sql.NullString{String: rootActorDid, Valid: rootActorDid != ""},
 			RootPostRkey:       sql.NullString{String: rootActorRkey, Valid: rootActorRkey != ""},
 			HasEmbeddedMedia:   rec.Embed != nil && rec.Embed.EmbedImages != nil,
@@ -614,6 +652,55 @@ func (c *Consumer) HandleCreateRecord(
 		span.SetAttributes(attribute.String("record_type", "feed_repost"))
 		recordsProcessedCounter.WithLabelValues("feed_repost", c.SocketURL).Inc()
 		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+		var subjectURI *URI
+		if rec.Subject != nil {
+			subjectURI, err = getURI(rec.Subject.Uri)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get Subject uri: %w", err)
+			}
+		}
+
+		if subjectURI == nil {
+			return nil, fmt.Errorf("invalid repost subject: %+v", rec.Subject)
+		}
+
+		// Check if we've already processed this record
+		_, err = c.Store.Queries.GetRepost(ctx, store_queries.GetRepostParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			if err != sql.ErrNoRows {
+				return nil, fmt.Errorf("failed to get repost: %w", err)
+			}
+		} else {
+			// We've already processed this record, so skip it
+			return nil, nil
+		}
+
+		err = c.Store.Queries.CreateRepost(ctx, store_queries.CreateRepostParams{
+			ActorDid:        repo,
+			Rkey:            rkey,
+			SubjectActorDid: subjectURI.Did,
+			Collection:      subjectURI.Collection,
+			SubjectRkey:     subjectURI.RKey,
+			CreatedAt:       sql.NullTime{Time: recCreatedAt, Valid: true},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create repost: %w", err)
+		}
+
+		// Increment the repost count
+		err = c.Store.Queries.IncrementRepostCountByN(ctx, store_queries.IncrementRepostCountByNParams{
+			ActorDid:   subjectURI.Did,
+			Collection: subjectURI.Collection,
+			Rkey:       subjectURI.RKey,
+			NumReposts: 1,
+		})
+		if err != nil {
+			log.Errorf("failed to increment repost count: %+v", err)
+		}
+
 	case *bsky.GraphBlock:
 		span.SetAttributes(attribute.String("record_type", "graph_block"))
 		recordsProcessedCounter.WithLabelValues("graph_block", c.SocketURL).Inc()

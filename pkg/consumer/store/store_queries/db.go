@@ -54,6 +54,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createRepoBackfillRecordStmt, err = db.PrepareContext(ctx, createRepoBackfillRecord); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateRepoBackfillRecord: %w", err)
 	}
+	if q.createRepostStmt, err = db.PrepareContext(ctx, createRepost); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateRepost: %w", err)
+	}
 	if q.decrementFollowerCountByNStmt, err = db.PrepareContext(ctx, decrementFollowerCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query DecrementFollowerCountByN: %w", err)
 	}
@@ -62,6 +65,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.decrementLikeCountByNStmt, err = db.PrepareContext(ctx, decrementLikeCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query DecrementLikeCountByN: %w", err)
+	}
+	if q.decrementRepostCountByNStmt, err = db.PrepareContext(ctx, decrementRepostCountByN); err != nil {
+		return nil, fmt.Errorf("error preparing query DecrementRepostCountByN: %w", err)
 	}
 	if q.deleteBlockStmt, err = db.PrepareContext(ctx, deleteBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteBlock: %w", err)
@@ -89,6 +95,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deletePostStmt, err = db.PrepareContext(ctx, deletePost); err != nil {
 		return nil, fmt.Errorf("error preparing query DeletePost: %w", err)
+	}
+	if q.deleteRepostStmt, err = db.PrepareContext(ctx, deleteRepost); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteRepost: %w", err)
+	}
+	if q.deleteRepostCountStmt, err = db.PrepareContext(ctx, deleteRepostCount); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteRepostCount: %w", err)
 	}
 	if q.getBlockStmt, err = db.PrepareContext(ctx, getBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query GetBlock: %w", err)
@@ -162,6 +174,18 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getRepoBackfillRecordsStmt, err = db.PrepareContext(ctx, getRepoBackfillRecords); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRepoBackfillRecords: %w", err)
 	}
+	if q.getRepostStmt, err = db.PrepareContext(ctx, getRepost); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRepost: %w", err)
+	}
+	if q.getRepostCountStmt, err = db.PrepareContext(ctx, getRepostCount); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRepostCount: %w", err)
+	}
+	if q.getRepostsByActorStmt, err = db.PrepareContext(ctx, getRepostsByActor); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRepostsByActor: %w", err)
+	}
+	if q.getRepostsBySubjectStmt, err = db.PrepareContext(ctx, getRepostsBySubject); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRepostsBySubject: %w", err)
+	}
 	if q.incrementFollowerCountByNStmt, err = db.PrepareContext(ctx, incrementFollowerCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query IncrementFollowerCountByN: %w", err)
 	}
@@ -170,6 +194,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.incrementLikeCountByNStmt, err = db.PrepareContext(ctx, incrementLikeCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query IncrementLikeCountByN: %w", err)
+	}
+	if q.incrementRepostCountByNStmt, err = db.PrepareContext(ctx, incrementRepostCountByN); err != nil {
+		return nil, fmt.Errorf("error preparing query IncrementRepostCountByN: %w", err)
 	}
 	if q.updateRepoBackfillRecordStmt, err = db.PrepareContext(ctx, updateRepoBackfillRecord); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateRepoBackfillRecord: %w", err)
@@ -229,6 +256,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createRepoBackfillRecordStmt: %w", cerr)
 		}
 	}
+	if q.createRepostStmt != nil {
+		if cerr := q.createRepostStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createRepostStmt: %w", cerr)
+		}
+	}
 	if q.decrementFollowerCountByNStmt != nil {
 		if cerr := q.decrementFollowerCountByNStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing decrementFollowerCountByNStmt: %w", cerr)
@@ -242,6 +274,11 @@ func (q *Queries) Close() error {
 	if q.decrementLikeCountByNStmt != nil {
 		if cerr := q.decrementLikeCountByNStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing decrementLikeCountByNStmt: %w", cerr)
+		}
+	}
+	if q.decrementRepostCountByNStmt != nil {
+		if cerr := q.decrementRepostCountByNStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing decrementRepostCountByNStmt: %w", cerr)
 		}
 	}
 	if q.deleteBlockStmt != nil {
@@ -287,6 +324,16 @@ func (q *Queries) Close() error {
 	if q.deletePostStmt != nil {
 		if cerr := q.deletePostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deletePostStmt: %w", cerr)
+		}
+	}
+	if q.deleteRepostStmt != nil {
+		if cerr := q.deleteRepostStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteRepostStmt: %w", cerr)
+		}
+	}
+	if q.deleteRepostCountStmt != nil {
+		if cerr := q.deleteRepostCountStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteRepostCountStmt: %w", cerr)
 		}
 	}
 	if q.getBlockStmt != nil {
@@ -409,6 +456,26 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getRepoBackfillRecordsStmt: %w", cerr)
 		}
 	}
+	if q.getRepostStmt != nil {
+		if cerr := q.getRepostStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRepostStmt: %w", cerr)
+		}
+	}
+	if q.getRepostCountStmt != nil {
+		if cerr := q.getRepostCountStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRepostCountStmt: %w", cerr)
+		}
+	}
+	if q.getRepostsByActorStmt != nil {
+		if cerr := q.getRepostsByActorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRepostsByActorStmt: %w", cerr)
+		}
+	}
+	if q.getRepostsBySubjectStmt != nil {
+		if cerr := q.getRepostsBySubjectStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRepostsBySubjectStmt: %w", cerr)
+		}
+	}
 	if q.incrementFollowerCountByNStmt != nil {
 		if cerr := q.incrementFollowerCountByNStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing incrementFollowerCountByNStmt: %w", cerr)
@@ -422,6 +489,11 @@ func (q *Queries) Close() error {
 	if q.incrementLikeCountByNStmt != nil {
 		if cerr := q.incrementLikeCountByNStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing incrementLikeCountByNStmt: %w", cerr)
+		}
+	}
+	if q.incrementRepostCountByNStmt != nil {
+		if cerr := q.incrementRepostCountByNStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing incrementRepostCountByNStmt: %w", cerr)
 		}
 	}
 	if q.updateRepoBackfillRecordStmt != nil {
@@ -478,9 +550,11 @@ type Queries struct {
 	createLikeStmt                      *sql.Stmt
 	createPostStmt                      *sql.Stmt
 	createRepoBackfillRecordStmt        *sql.Stmt
+	createRepostStmt                    *sql.Stmt
 	decrementFollowerCountByNStmt       *sql.Stmt
 	decrementFollowingCountByNStmt      *sql.Stmt
 	decrementLikeCountByNStmt           *sql.Stmt
+	decrementRepostCountByNStmt         *sql.Stmt
 	deleteBlockStmt                     *sql.Stmt
 	deleteFollowStmt                    *sql.Stmt
 	deleteFollowerCountStmt             *sql.Stmt
@@ -490,6 +564,8 @@ type Queries struct {
 	deleteLikeStmt                      *sql.Stmt
 	deleteLikeCountStmt                 *sql.Stmt
 	deletePostStmt                      *sql.Stmt
+	deleteRepostStmt                    *sql.Stmt
+	deleteRepostCountStmt               *sql.Stmt
 	getBlockStmt                        *sql.Stmt
 	getBlocksByActorStmt                *sql.Stmt
 	getBlocksByActorAndTargetStmt       *sql.Stmt
@@ -514,9 +590,14 @@ type Queries struct {
 	getPostsFromNonMootsStmt            *sql.Stmt
 	getRepoBackfillRecordStmt           *sql.Stmt
 	getRepoBackfillRecordsStmt          *sql.Stmt
+	getRepostStmt                       *sql.Stmt
+	getRepostCountStmt                  *sql.Stmt
+	getRepostsByActorStmt               *sql.Stmt
+	getRepostsBySubjectStmt             *sql.Stmt
 	incrementFollowerCountByNStmt       *sql.Stmt
 	incrementFollowingCountByNStmt      *sql.Stmt
 	incrementLikeCountByNStmt           *sql.Stmt
+	incrementRepostCountByNStmt         *sql.Stmt
 	updateRepoBackfillRecordStmt        *sql.Stmt
 }
 
@@ -534,9 +615,11 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createLikeStmt:                      q.createLikeStmt,
 		createPostStmt:                      q.createPostStmt,
 		createRepoBackfillRecordStmt:        q.createRepoBackfillRecordStmt,
+		createRepostStmt:                    q.createRepostStmt,
 		decrementFollowerCountByNStmt:       q.decrementFollowerCountByNStmt,
 		decrementFollowingCountByNStmt:      q.decrementFollowingCountByNStmt,
 		decrementLikeCountByNStmt:           q.decrementLikeCountByNStmt,
+		decrementRepostCountByNStmt:         q.decrementRepostCountByNStmt,
 		deleteBlockStmt:                     q.deleteBlockStmt,
 		deleteFollowStmt:                    q.deleteFollowStmt,
 		deleteFollowerCountStmt:             q.deleteFollowerCountStmt,
@@ -546,6 +629,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteLikeStmt:                      q.deleteLikeStmt,
 		deleteLikeCountStmt:                 q.deleteLikeCountStmt,
 		deletePostStmt:                      q.deletePostStmt,
+		deleteRepostStmt:                    q.deleteRepostStmt,
+		deleteRepostCountStmt:               q.deleteRepostCountStmt,
 		getBlockStmt:                        q.getBlockStmt,
 		getBlocksByActorStmt:                q.getBlocksByActorStmt,
 		getBlocksByActorAndTargetStmt:       q.getBlocksByActorAndTargetStmt,
@@ -570,9 +655,14 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getPostsFromNonMootsStmt:            q.getPostsFromNonMootsStmt,
 		getRepoBackfillRecordStmt:           q.getRepoBackfillRecordStmt,
 		getRepoBackfillRecordsStmt:          q.getRepoBackfillRecordsStmt,
+		getRepostStmt:                       q.getRepostStmt,
+		getRepostCountStmt:                  q.getRepostCountStmt,
+		getRepostsByActorStmt:               q.getRepostsByActorStmt,
+		getRepostsBySubjectStmt:             q.getRepostsBySubjectStmt,
 		incrementFollowerCountByNStmt:       q.incrementFollowerCountByNStmt,
 		incrementFollowingCountByNStmt:      q.incrementFollowingCountByNStmt,
 		incrementLikeCountByNStmt:           q.incrementLikeCountByNStmt,
+		incrementRepostCountByNStmt:         q.incrementRepostCountByNStmt,
 		updateRepoBackfillRecordStmt:        q.updateRepoBackfillRecordStmt,
 	}
 }

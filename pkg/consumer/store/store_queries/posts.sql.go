@@ -18,7 +18,8 @@ INSERT INTO posts (
         content,
         parent_post_actor_did,
         parent_post_rkey,
-        parent_relationship,
+        quote_post_actor_did,
+        quote_post_rkey,
         root_post_actor_did,
         root_post_rkey,
         has_embedded_media,
@@ -34,7 +35,8 @@ VALUES (
         $7,
         $8,
         $9,
-        $10
+        $10,
+        $11
     )
 `
 
@@ -44,7 +46,8 @@ type CreatePostParams struct {
 	Content            sql.NullString `json:"content"`
 	ParentPostActorDid sql.NullString `json:"parent_post_actor_did"`
 	ParentPostRkey     sql.NullString `json:"parent_post_rkey"`
-	ParentRelationship sql.NullString `json:"parent_relationship"`
+	QuotePostActorDid  sql.NullString `json:"quote_post_actor_did"`
+	QuotePostRkey      sql.NullString `json:"quote_post_rkey"`
 	RootPostActorDid   sql.NullString `json:"root_post_actor_did"`
 	RootPostRkey       sql.NullString `json:"root_post_rkey"`
 	HasEmbeddedMedia   bool           `json:"has_embedded_media"`
@@ -58,7 +61,8 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) error {
 		arg.Content,
 		arg.ParentPostActorDid,
 		arg.ParentPostRkey,
-		arg.ParentRelationship,
+		arg.QuotePostActorDid,
+		arg.QuotePostRkey,
 		arg.RootPostActorDid,
 		arg.RootPostRkey,
 		arg.HasEmbeddedMedia,
@@ -84,7 +88,7 @@ func (q *Queries) DeletePost(ctx context.Context, arg DeletePostParams) error {
 }
 
 const getPost = `-- name: GetPost :one
-SELECT actor_did, rkey, content, parent_post_actor_did, parent_post_rkey, parent_relationship, root_post_actor_did, root_post_rkey, has_embedded_media, created_at, inserted_at
+SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, has_embedded_media, created_at, inserted_at
 FROM posts
 WHERE actor_did = $1
     AND rkey = $2
@@ -103,8 +107,9 @@ func (q *Queries) GetPost(ctx context.Context, arg GetPostParams) (Post, error) 
 		&i.Rkey,
 		&i.Content,
 		&i.ParentPostActorDid,
+		&i.QuotePostActorDid,
+		&i.QuotePostRkey,
 		&i.ParentPostRkey,
-		&i.ParentRelationship,
 		&i.RootPostActorDid,
 		&i.RootPostRkey,
 		&i.HasEmbeddedMedia,
@@ -115,7 +120,7 @@ func (q *Queries) GetPost(ctx context.Context, arg GetPostParams) (Post, error) 
 }
 
 const getPostsByActor = `-- name: GetPostsByActor :many
-SELECT actor_did, rkey, content, parent_post_actor_did, parent_post_rkey, parent_relationship, root_post_actor_did, root_post_rkey, has_embedded_media, created_at, inserted_at
+SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, has_embedded_media, created_at, inserted_at
 FROM posts
 WHERE actor_did = $1
 ORDER BY created_at DESC
@@ -141,8 +146,9 @@ func (q *Queries) GetPostsByActor(ctx context.Context, arg GetPostsByActorParams
 			&i.Rkey,
 			&i.Content,
 			&i.ParentPostActorDid,
+			&i.QuotePostActorDid,
+			&i.QuotePostRkey,
 			&i.ParentPostRkey,
-			&i.ParentRelationship,
 			&i.RootPostActorDid,
 			&i.RootPostRkey,
 			&i.HasEmbeddedMedia,
@@ -168,7 +174,7 @@ WITH followers AS (
     FROM follows
     WHERE target_did = $1
 )
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.parent_post_rkey, p.parent_relationship, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
 FROM posts p
     JOIN followers f ON f.actor_did = p.actor_did
 WHERE (p.created_at, p.actor_did, p.rkey) < (
@@ -215,8 +221,9 @@ func (q *Queries) GetPostsByActorsFollowingTarget(ctx context.Context, arg GetPo
 			&i.Rkey,
 			&i.Content,
 			&i.ParentPostActorDid,
+			&i.QuotePostActorDid,
+			&i.QuotePostRkey,
 			&i.ParentPostRkey,
-			&i.ParentRelationship,
 			&i.RootPostActorDid,
 			&i.RootPostRkey,
 			&i.HasEmbeddedMedia,
@@ -255,7 +262,7 @@ non_moots_and_non_spam AS (
         LEFT JOIN following_counts fc ON nm.actor_did = fc.actor_did
     WHERE fc.num_following < 4000
 )
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.parent_post_rkey, p.parent_relationship, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
 FROM posts p
     JOIN non_moots_and_non_spam f ON f.actor_did = p.actor_did
 WHERE (p.created_at, p.actor_did, p.rkey) < (
@@ -263,11 +270,8 @@ WHERE (p.created_at, p.actor_did, p.rkey) < (
         $4::TEXT,
         $5::TEXT
     )
-    AND (p.root_post_rkey IS NULL)
-    AND (
-        (p.parent_relationship IS NULL)
-        OR (p.parent_relationship <> 'r'::text)
-    )
+    AND p.root_post_rkey IS NULL
+    AND p.parent_post_rkey IS NULL
     AND p.created_at > NOW() - make_interval(hours := 24)
 ORDER BY p.created_at DESC,
     p.actor_did DESC,
@@ -303,8 +307,9 @@ func (q *Queries) GetPostsFromNonMoots(ctx context.Context, arg GetPostsFromNonM
 			&i.Rkey,
 			&i.Content,
 			&i.ParentPostActorDid,
+			&i.QuotePostActorDid,
+			&i.QuotePostRkey,
 			&i.ParentPostRkey,
-			&i.ParentRelationship,
 			&i.RootPostActorDid,
 			&i.RootPostRkey,
 			&i.HasEmbeddedMedia,
