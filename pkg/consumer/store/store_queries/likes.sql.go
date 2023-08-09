@@ -101,7 +101,10 @@ FROM likes l
     LEFT JOIN blocks b2 ON l.actor_did = b2.actor_did
     AND b2.target_did = $1
 WHERE l.actor_did != $1
-    AND l.actor_did NOT IN ('did:plc:xxno7p4xtpkxtn4ok6prtlcb')
+    AND l.actor_did NOT IN (
+        'did:plc:xxno7p4xtpkxtn4ok6prtlcb',
+        'did:plc:3tm2l7kcljcgacctmmqru3hj'
+    )
     AND l.created_at > CURRENT_TIMESTAMP - INTERVAL '7 days'
     AND f.target_did IS NULL
     AND b1.target_did IS NULL

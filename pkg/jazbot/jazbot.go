@@ -94,21 +94,6 @@ func (j *Jazbot) HandleRequest(
 
 	commandsReceivedCounter.WithLabelValues().Inc()
 
-	// Check if the user is following the bot
-	following, err := j.Store.Queries.CountFollowsByActorAndTarget(ctx, store_queries.CountFollowsByActorAndTargetParams{
-		ActorDid:  actorDid,
-		TargetDid: j.BotDid,
-	})
-	if err != nil {
-		failedCommandsReceivedCounter.WithLabelValues("follow_check_failed").Inc()
-		return fmt.Errorf("failed to check if user (%s) is following bot (%s): %+v", actorDid, j.BotDid, err)
-	}
-
-	if following == 0 {
-		failedCommandsReceivedCounter.WithLabelValues("not_following").Inc()
-		return fmt.Errorf("user (%s) is not following bot (%s)", actorDid, j.BotDid)
-	}
-
 	p := message.NewPrinter(language.English)
 
 	resp := ""
