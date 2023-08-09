@@ -30,10 +30,10 @@ type Jazbot struct {
 	limiter   *rate.Limiter
 }
 
-var SupportedCommands = []string{
-	"help",
-	"getlikecount",
-	"getlikesgiven",
+var SupportedCommands = map[string]string{
+	"help":          "Get help (this dialog)",
+	"getlikecount":  "Get the number of likes you have received",
+	"getlikesgiven": "Get the number of likes you have given",
 }
 
 func NewJazbot(ctx context.Context, store *store.Store, botDid string) (*Jazbot, error) {
@@ -126,7 +126,10 @@ func (j *Jazbot) HandleRequest(
 		switch command {
 		case "help":
 			validCommandsReceivedCounter.WithLabelValues(command).Inc()
-			resp = p.Sprintf("I currently support the following commands:\n%s", strings.Join(SupportedCommands, "\n"))
+			resp = "I currently support the following commands:\n"
+			for k, v := range SupportedCommands {
+				resp += fmt.Sprintf("%s: %s\n", k, v)
+			}
 		case "getlikecount":
 			validCommandsReceivedCounter.WithLabelValues(command).Inc()
 			likeCount, err := j.Store.Queries.GetTotalLikesReceivedByActor(ctx, actorDid)
