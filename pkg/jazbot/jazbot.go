@@ -128,6 +128,16 @@ func (j *Jazbot) HandleRequest(
 			}
 
 			resp = p.Sprintf("You have received a total of %d likes", likeCount)
+		case "getlikesgiven":
+			validCommandsReceivedCounter.WithLabelValues(command).Inc()
+			likeCount, err := j.Store.Queries.GetTotalLikesGivenByActor(ctx, actorDid)
+			if err != nil {
+				j.Logger.Errorf("failed to get like count for user (%s): %+v", actorDid, err)
+				resp = fmt.Sprintf("I had trouble getting your like count, please try again later")
+				break
+			}
+
+			resp = p.Sprintf("You have given a total of %d likes", likeCount)
 		default:
 			failedCommandsReceivedCounter.WithLabelValues("invalid_command").Inc()
 			resp = fmt.Sprintf("I'm not familiar with the command: %s", command)
@@ -175,7 +185,7 @@ func (j *Jazbot) HandleRequest(
 
 		j.Logger.Infow("post published",
 			"at_uri", out.Uri,
-			"link", fmt.Sprintf("https://bsky.social/profile/%s/post/%s", uri.Did, uri.RKey),
+			"link", fmt.Sprintf("https://bsky.app/profile/%s/post/%s", uri.Did, uri.RKey),
 		)
 	}
 

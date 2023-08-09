@@ -63,6 +63,7 @@ CREATE TABLE likes (
 );
 create index likes_created_at on likes (created_at desc);
 CREATE INDEX likes_subject ON likes (subj);
+create index likes_actor_did_index on likes (actor_did);
 -- Like Counts
 CREATE TABLE like_counts (
     subject_id BIGINT NOT NULL,
