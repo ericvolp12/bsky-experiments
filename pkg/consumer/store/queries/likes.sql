@@ -79,3 +79,23 @@ WHERE subjects.actor_did = $1;
 SELECT COUNT(*)
 FROM likes
 WHERE actor_did = $1;
+-- name: FindPotentialFriends :many
+WITH user_likes AS (
+    SELECT subj
+    FROM likes
+    WHERE actor_did = $1
+        AND created_at > CURRENT_TIMESTAMP - INTERVAL '7 days'
+)
+SELECT l.actor_did,
+    COUNT(l.subj) AS overlap_count
+FROM likes l
+    JOIN user_likes ul ON l.subj = ul.subj
+    LEFT JOIN follows f ON l.actor_did = f.target_did
+    AND f.actor_did = $1
+WHERE l.actor_did != $1
+    AND l.created_at > CURRENT_TIMESTAMP - INTERVAL '7 days'
+    AND f.target_did IS NULL
+GROUP BY l.actor_did
+ORDER BY overlap_count DESC,
+    l.actor_did
+LIMIT $2;

@@ -75,6 +75,11 @@ func main() {
 			Usage:   "did of the bot",
 			EnvVars: []string{"BOT_DID"},
 		},
+		&cli.StringFlag{
+			Name:    "plc-mirror",
+			Usage:   "URL of the PLC Directory Mirror",
+			EnvVars: []string{"PLC_MIRROR"},
+		},
 	}
 
 	app.Action = Jazbot
@@ -163,7 +168,7 @@ func Jazbot(cctx *cli.Context) error {
 		log.Fatalf("failed to create store: %+v\n", err)
 	}
 
-	j, err := jazbot.NewJazbot(ctx, store, cctx.String("bot-did"))
+	j, err := jazbot.NewJazbot(ctx, store, cctx.String("bot-did"), cctx.String("plc-mirror"))
 	if err != nil {
 		log.Fatalf("failed to create jazbot: %+v\n", err)
 	}

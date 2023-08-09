@@ -83,6 +83,61 @@ func (q *Queries) DeleteLike(ctx context.Context, arg DeleteLikeParams) error {
 	return err
 }
 
+const findPotentialFriends = `-- name: FindPotentialFriends :many
+WITH user_likes AS (
+    SELECT subj
+    FROM likes
+    WHERE actor_did = $1
+        AND created_at > CURRENT_TIMESTAMP - INTERVAL '7 days'
+)
+SELECT l.actor_did,
+    COUNT(l.subj) AS overlap_count
+FROM likes l
+    JOIN user_likes ul ON l.subj = ul.subj
+    LEFT JOIN follows f ON l.actor_did = f.target_did
+    AND f.actor_did = $1
+WHERE l.actor_did != $1
+    AND l.created_at > CURRENT_TIMESTAMP - INTERVAL '7 days'
+    AND f.target_did IS NULL
+GROUP BY l.actor_did
+ORDER BY overlap_count DESC,
+    l.actor_did
+LIMIT $2
+`
+
+type FindPotentialFriendsParams struct {
+	ActorDid string `json:"actor_did"`
+	Limit    int32  `json:"limit"`
+}
+
+type FindPotentialFriendsRow struct {
+	ActorDid     string `json:"actor_did"`
+	OverlapCount int64  `json:"overlap_count"`
+}
+
+func (q *Queries) FindPotentialFriends(ctx context.Context, arg FindPotentialFriendsParams) ([]FindPotentialFriendsRow, error) {
+	rows, err := q.query(ctx, q.findPotentialFriendsStmt, findPotentialFriends, arg.ActorDid, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FindPotentialFriendsRow
+	for rows.Next() {
+		var i FindPotentialFriendsRow
+		if err := rows.Scan(&i.ActorDid, &i.OverlapCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getLike = `-- name: GetLike :one
 SELECT l.actor_did, l.rkey, l.subj, l.created_at, l.inserted_at,
     s.actor_did AS subject_actor_did,

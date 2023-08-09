@@ -28,15 +28,17 @@ type Jazbot struct {
 	clientMux *sync.RWMutex
 	BotDid    string
 	limiter   *rate.Limiter
+	PLCMirror string
 }
 
 var SupportedCommands = map[string]string{
 	"help":          "Get help (this dialog)",
 	"getlikecount":  "Get the number of likes you have received",
 	"getlikesgiven": "Get the number of likes you have given",
+	"findmeafriend": "Find users you don't follow that may share interests with you",
 }
 
-func NewJazbot(ctx context.Context, store *store.Store, botDid string) (*Jazbot, error) {
+func NewJazbot(ctx context.Context, store *store.Store, botDid, plcMirror string) (*Jazbot, error) {
 	client, err := intxrpc.GetXRPCClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get xrpc client: %+v", err)
@@ -56,6 +58,7 @@ func NewJazbot(ctx context.Context, store *store.Store, botDid string) (*Jazbot,
 		clientMux: &sync.RWMutex{},
 		BotDid:    botDid,
 		limiter:   rate.NewLimiter(rate.Limit(0.5), 1), // One request every 2 seconds
+		PLCMirror: plcMirror,
 	}
 
 	// Start a goroutine to refresh the xrpc client
@@ -109,6 +112,7 @@ func (j *Jazbot) HandleRequest(
 	p := message.NewPrinter(language.English)
 
 	resp := ""
+	facets := []*appbsky.RichtextFacet{}
 	for {
 		// Get the command
 		parts := strings.FieldsFunc(text, func(r rune) bool {
@@ -135,7 +139,7 @@ func (j *Jazbot) HandleRequest(
 			likeCount, err := j.Store.Queries.GetTotalLikesReceivedByActor(ctx, actorDid)
 			if err != nil {
 				j.Logger.Errorf("failed to get like count for user (%s): %+v", actorDid, err)
-				resp = fmt.Sprintf("I had trouble getting your like count, please try again later")
+				resp = fmt.Sprintf("I had trouble getting your received like count 😢\nPlease try again later!")
 				break
 			}
 
@@ -145,11 +149,60 @@ func (j *Jazbot) HandleRequest(
 			likeCount, err := j.Store.Queries.GetTotalLikesGivenByActor(ctx, actorDid)
 			if err != nil {
 				j.Logger.Errorf("failed to get like count for user (%s): %+v", actorDid, err)
-				resp = fmt.Sprintf("I had trouble getting your like count, please try again later")
+				resp = fmt.Sprintf("I had trouble getting your given like count 😢\nPlease try again later!")
 				break
 			}
 
 			resp = p.Sprintf("You have given a total of %d likes", likeCount)
+		case "findmeafriend":
+			validCommandsReceivedCounter.WithLabelValues(command).Inc()
+			candidateList, err := j.Store.Queries.FindPotentialFriends(ctx, store_queries.FindPotentialFriendsParams{
+				ActorDid: actorDid,
+				Limit:    5,
+			})
+			if err != nil {
+				j.Logger.Errorf("failed to get potential friends for user (%s): %+v", actorDid, err)
+				resp = fmt.Sprintf("I had trouble finding a friend for you 😢\nPlease try again later!")
+				break
+			}
+			// Lookup the handles for the candidates
+			candidates := make(map[string]string)
+			for _, candidate := range candidateList {
+				handle, err := GetHandleFromPLCMirror(ctx, j.PLCMirror, candidate.ActorDid)
+				if err != nil {
+					j.Logger.Errorf("failed to get handle for user (%s): %+v", candidate, err)
+					continue
+				}
+				candidates[candidate.ActorDid] = handle
+			}
+
+			if len(candidates) == 0 {
+				resp = "I'm sorry but I couldn't find any potential friends for you 😢"
+				break
+			}
+
+			resp = "The following users have recent likes in common with you:"
+
+			for did, handle := range candidates {
+				resp += "\n"
+				truncatedHandle := handle
+				if len(truncatedHandle) > 40 {
+					truncatedHandle = truncatedHandle[:40] + "..."
+				}
+				facets = append(facets, &appbsky.RichtextFacet{
+					Features: []*appbsky.RichtextFacet_Features_Elem{{
+						RichtextFacet_Mention: &appbsky.RichtextFacet_Mention{
+							Did: did,
+						},
+					}},
+					Index: &appbsky.RichtextFacet_ByteSlice{
+						ByteStart: int64(len(resp) - 1),
+						ByteEnd:   int64(len(resp) + len(truncatedHandle) + 1),
+					},
+				})
+				resp += fmt.Sprintf("@%s", truncatedHandle)
+			}
+
 		default:
 			failedCommandsReceivedCounter.WithLabelValues("invalid_command").Inc()
 			resp = fmt.Sprintf("I'm not familiar with the command: %s", command)
@@ -170,6 +223,7 @@ func (j *Jazbot) HandleRequest(
 				Parent: &parent,
 				Root:   &parent,
 			},
+			Facets: facets,
 		}
 
 		j.limiter.Wait(ctx)

@@ -111,6 +111,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteRepostCountStmt, err = db.PrepareContext(ctx, deleteRepostCount); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteRepostCount: %w", err)
 	}
+	if q.findPotentialFriendsStmt, err = db.PrepareContext(ctx, findPotentialFriends); err != nil {
+		return nil, fmt.Errorf("error preparing query FindPotentialFriends: %w", err)
+	}
 	if q.getBlockStmt, err = db.PrepareContext(ctx, getBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query GetBlock: %w", err)
 	}
@@ -366,6 +369,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteRepostCountStmt: %w", cerr)
 		}
 	}
+	if q.findPotentialFriendsStmt != nil {
+		if cerr := q.findPotentialFriendsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing findPotentialFriendsStmt: %w", cerr)
+		}
+	}
 	if q.getBlockStmt != nil {
 		if cerr := q.getBlockStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getBlockStmt: %w", cerr)
@@ -609,6 +617,7 @@ type Queries struct {
 	deletePostStmt                      *sql.Stmt
 	deleteRepostStmt                    *sql.Stmt
 	deleteRepostCountStmt               *sql.Stmt
+	findPotentialFriendsStmt            *sql.Stmt
 	getBlockStmt                        *sql.Stmt
 	getBlocksByActorStmt                *sql.Stmt
 	getBlocksByActorAndTargetStmt       *sql.Stmt
@@ -679,6 +688,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deletePostStmt:                      q.deletePostStmt,
 		deleteRepostStmt:                    q.deleteRepostStmt,
 		deleteRepostCountStmt:               q.deleteRepostCountStmt,
+		findPotentialFriendsStmt:            q.findPotentialFriendsStmt,
 		getBlockStmt:                        q.getBlockStmt,
 		getBlocksByActorStmt:                q.getBlocksByActorStmt,
 		getBlocksByActorAndTargetStmt:       q.getBlocksByActorAndTargetStmt,
