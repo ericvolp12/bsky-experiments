@@ -42,3 +42,28 @@ var lastRecordCreatedEvtProcessedGapGauge = promauto.NewGaugeVec(prometheus.Gaug
 	Name: "jazbot_last_record_created_evt_processed_gap",
 	Help: "The gap between the last record's record timestamp and when it was processed by jazbot",
 }, []string{"socket_url"})
+
+var commandsReceivedCounter = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "jazbot_commands_received_total",
+	Help: "The total number of commands received by Jazbot",
+}, []string{})
+
+var validCommandsReceivedCounter = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "jazbot_valid_commands_received_total",
+	Help: "The total number of valid commands received by Jazbot",
+}, []string{"command"})
+
+var postsSentCounter = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "jazbot_posts_sent_total",
+	Help: "The total number of posts sent by Jazbot",
+}, []string{})
+
+var postsFailedCounter = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "jazbot_posts_failed_total",
+	Help: "The total number of posts failed to send by Jazbot",
+}, []string{"failure_type"})
+
+var failedCommandsReceivedCounter = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "jazbot_failed_commands_received_total",
+	Help: "The total number of failed commands received by Jazbot",
+}, []string{"failure_type"})

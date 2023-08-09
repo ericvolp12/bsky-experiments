@@ -83,16 +83,20 @@ func (j *Jazbot) HandleRequest(
 	ctx, span := tracer.Start(ctx, "HandleRequest")
 	defer span.End()
 
+	commandsReceivedCounter.WithLabelValues().Inc()
+
 	// Check if the user is following the bot
 	following, err := j.Store.Queries.CountFollowsByActorAndTarget(ctx, store_queries.CountFollowsByActorAndTargetParams{
 		ActorDid:  actorDid,
 		TargetDid: j.BotDid,
 	})
 	if err != nil {
+		failedCommandsReceivedCounter.WithLabelValues("follow_check_failed").Inc()
 		return fmt.Errorf("failed to check if user (%s) is following bot (%s): %+v", actorDid, j.BotDid, err)
 	}
 
 	if following == 0 {
+		failedCommandsReceivedCounter.WithLabelValues("not_following").Inc()
 		return fmt.Errorf("user (%s) is not following bot (%s)", actorDid, j.BotDid)
 	}
 
@@ -106,6 +110,7 @@ func (j *Jazbot) HandleRequest(
 		})
 		if len(parts) < 2 {
 			resp = fmt.Sprintf("I couldn't parse a command from your message")
+			failedCommandsReceivedCounter.WithLabelValues("parse_failed").Inc()
 			break
 		}
 
@@ -114,6 +119,7 @@ func (j *Jazbot) HandleRequest(
 		// Handle the command
 		switch command {
 		case "getlikecount":
+			validCommandsReceivedCounter.WithLabelValues(command).Inc()
 			likeCount, err := j.Store.Queries.GetTotalLikesReceivedByActor(ctx, actorDid)
 			if err != nil {
 				j.Logger.Errorf("failed to get like count for user (%s): %+v", actorDid, err)
@@ -123,6 +129,7 @@ func (j *Jazbot) HandleRequest(
 
 			resp = p.Sprintf("You have received a total of %d likes", likeCount)
 		default:
+			failedCommandsReceivedCounter.WithLabelValues("invalid_command").Inc()
 			resp = fmt.Sprintf("I'm not familiar with the command: %s", command)
 		}
 		break
@@ -154,13 +161,17 @@ func (j *Jazbot) HandleRequest(
 		j.clientMux.RUnlock()
 
 		if err != nil {
+			postsFailedCounter.WithLabelValues("create_failed").Inc()
 			return fmt.Errorf("failed to create record: %+v", err)
 		}
 
 		uri, err := consumer.GetURI(out.Uri)
 		if err != nil {
+			postsFailedCounter.WithLabelValues("get_uri_failed").Inc()
 			return fmt.Errorf("failed to get uri from post: %+v", err)
 		}
+
+		postsSentCounter.WithLabelValues().Inc()
 
 		j.Logger.Infow("post published",
 			"at_uri", out.Uri,
