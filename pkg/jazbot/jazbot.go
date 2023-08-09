@@ -191,8 +191,8 @@ func (j *Jazbot) HandleRequest(
 				}
 				facets = append(facets, &appbsky.RichtextFacet{
 					Features: []*appbsky.RichtextFacet_Features_Elem{{
-						RichtextFacet_Mention: &appbsky.RichtextFacet_Mention{
-							Did: did,
+						RichtextFacet_Link: &appbsky.RichtextFacet_Link{
+							Uri: fmt.Sprintf("https://bsky.app/profile/%s", did),
 						},
 					}},
 					Index: &appbsky.RichtextFacet_ByteSlice{

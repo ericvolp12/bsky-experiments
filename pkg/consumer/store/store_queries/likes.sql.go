@@ -96,9 +96,16 @@ FROM likes l
     JOIN user_likes ul ON l.subj = ul.subj
     LEFT JOIN follows f ON l.actor_did = f.target_did
     AND f.actor_did = $1
+    LEFT JOIN blocks b1 ON l.actor_did = b1.target_did
+    AND b1.actor_did = $1
+    LEFT JOIN blocks b2 ON l.actor_did = b2.actor_did
+    AND b2.target_did = $1
 WHERE l.actor_did != $1
+    AND l.actor_did NOT IN ('did:plc:xxno7p4xtpkxtn4ok6prtlcb')
     AND l.created_at > CURRENT_TIMESTAMP - INTERVAL '7 days'
     AND f.target_did IS NULL
+    AND b1.target_did IS NULL
+    AND b2.target_did IS NULL
 GROUP BY l.actor_did
 ORDER BY overlap_count DESC,
     l.actor_did
