@@ -136,7 +136,7 @@ func NewConsumer(
 	}
 
 	if magicHeaderKey != "" && magicHeaderVal != "" {
-		c.SyncLimiter = rate.NewLimiter(20, 1)
+		c.SyncLimiter = rate.NewLimiter(4, 1)
 	}
 
 	// Check to see if the cursor exists in redis
@@ -546,7 +546,7 @@ func (c *Consumer) HandleCreateRecord(
 		quoteActorRkey := ""
 		if rec.Embed != nil && rec.Embed.EmbedRecord != nil && rec.Embed.EmbedRecord.Record != nil {
 			quoteRepostsProcessedCounter.WithLabelValues(c.SocketURL).Inc()
-			u, err := getURI(rec.Embed.EmbedRecord.Record.Uri)
+			u, err := GetURI(rec.Embed.EmbedRecord.Record.Uri)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get Quoted Record uri: %w", err)
 			}
@@ -558,7 +558,7 @@ func (c *Consumer) HandleCreateRecord(
 		parentActorDid := ""
 		parentActorRkey := ""
 		if rec.Reply != nil && rec.Reply.Parent != nil {
-			u, err := getURI(rec.Reply.Parent.Uri)
+			u, err := GetURI(rec.Reply.Parent.Uri)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get Reply uri: %w", err)
 			}
@@ -569,7 +569,7 @@ func (c *Consumer) HandleCreateRecord(
 		rootActorDid := ""
 		rootActorRkey := ""
 		if rec.Reply != nil && rec.Reply.Root != nil {
-			u, err := getURI(rec.Reply.Root.Uri)
+			u, err := GetURI(rec.Reply.Root.Uri)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get Root uri: %w", err)
 			}
@@ -622,7 +622,7 @@ func (c *Consumer) HandleCreateRecord(
 
 		var subjectURI *URI
 		if rec.Subject != nil {
-			subjectURI, err = getURI(rec.Subject.Uri)
+			subjectURI, err = GetURI(rec.Subject.Uri)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get Subject uri: %w", err)
 			}
@@ -674,7 +674,7 @@ func (c *Consumer) HandleCreateRecord(
 		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 		var subjectURI *URI
 		if rec.Subject != nil {
-			subjectURI, err = getURI(rec.Subject.Uri)
+			subjectURI, err = GetURI(rec.Subject.Uri)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get Subject uri: %w", err)
 			}

@@ -36,6 +36,25 @@ func (q *Queries) CountFollowsByActor(ctx context.Context, actorDid string) (int
 	return count, err
 }
 
+const countFollowsByActorAndTarget = `-- name: CountFollowsByActorAndTarget :one
+SELECT COUNT(*)
+FROM follows
+WHERE actor_did = $1
+    AND target_did = $2
+`
+
+type CountFollowsByActorAndTargetParams struct {
+	ActorDid  string `json:"actor_did"`
+	TargetDid string `json:"target_did"`
+}
+
+func (q *Queries) CountFollowsByActorAndTarget(ctx context.Context, arg CountFollowsByActorAndTargetParams) (int64, error) {
+	row := q.queryRow(ctx, q.countFollowsByActorAndTargetStmt, countFollowsByActorAndTarget, arg.ActorDid, arg.TargetDid)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createFollow = `-- name: CreateFollow :exec
 INSERT INTO follows(
         actor_did,
@@ -76,6 +95,26 @@ type DeleteFollowParams struct {
 
 func (q *Queries) DeleteFollow(ctx context.Context, arg DeleteFollowParams) error {
 	_, err := q.exec(ctx, q.deleteFollowStmt, deleteFollow, arg.ActorDid, arg.Rkey)
+	return err
+}
+
+const deleteFollowsByActor = `-- name: DeleteFollowsByActor :exec
+DELETE FROM follows
+WHERE actor_did = $1
+`
+
+func (q *Queries) DeleteFollowsByActor(ctx context.Context, actorDid string) error {
+	_, err := q.exec(ctx, q.deleteFollowsByActorStmt, deleteFollowsByActor, actorDid)
+	return err
+}
+
+const deleteFollowsByTarget = `-- name: DeleteFollowsByTarget :exec
+DELETE FROM follows
+WHERE target_did = $1
+`
+
+func (q *Queries) DeleteFollowsByTarget(ctx context.Context, targetDid string) error {
+	_, err := q.exec(ctx, q.deleteFollowsByTargetStmt, deleteFollowsByTarget, targetDid)
 	return err
 }
 

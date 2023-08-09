@@ -12,7 +12,7 @@ type URI struct {
 }
 
 // URI: at://{did}/{namespace}/{rkey}
-func getURI(uri string) (*URI, error) {
+func GetURI(uri string) (*URI, error) {
 	trimmed := strings.TrimPrefix(uri, "at://")
 	parts := strings.Split(trimmed, "/")
 	if len(parts) != 3 {

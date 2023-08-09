@@ -42,9 +42,14 @@ WHERE actor_did = $1;
 SELECT COUNT(*)
 FROM follows
 WHERE target_did = $1;
--- DeleteFollowsByActor :exec
+-- name: DeleteFollowsByActor :exec
 DELETE FROM follows
 WHERE actor_did = $1;
--- DeleteFollowsByTarget :exec
+-- name: DeleteFollowsByTarget :exec
 DELETE FROM follows
 WHERE target_did = $1;
+-- name: CountFollowsByActorAndTarget :one
+SELECT COUNT(*)
+FROM follows
+WHERE actor_did = $1
+    AND target_did = $2;

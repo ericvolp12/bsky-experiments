@@ -261,3 +261,30 @@ func (q *Queries) GetLikesBySubject(ctx context.Context, arg GetLikesBySubjectPa
 	}
 	return items, nil
 }
+
+const getTotalLikesGivenByActor = `-- name: GetTotalLikesGivenByActor :one
+SELECT COUNT(*)
+FROM likes
+WHERE actor_did = $1
+`
+
+func (q *Queries) GetTotalLikesGivenByActor(ctx context.Context, actorDid string) (int64, error) {
+	row := q.queryRow(ctx, q.getTotalLikesGivenByActorStmt, getTotalLikesGivenByActor, actorDid)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const getTotalLikesReceivedByActor = `-- name: GetTotalLikesReceivedByActor :one
+SELECT SUM(num_likes)
+FROM like_counts
+    JOIN subjects ON like_counts.subject_id = subjects.id
+WHERE subjects.actor_did = $1
+`
+
+func (q *Queries) GetTotalLikesReceivedByActor(ctx context.Context, actorDid string) (int64, error) {
+	row := q.queryRow(ctx, q.getTotalLikesReceivedByActorStmt, getTotalLikesReceivedByActor, actorDid)
+	var sum int64
+	err := row.Scan(&sum)
+	return sum, err
+}

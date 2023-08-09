@@ -70,3 +70,12 @@ WHERE s.actor_did = $1
     AND s.rkey = $3
 ORDER BY l.created_at DESC
 LIMIT $4 OFFSET $5;
+-- name: GetTotalLikesReceivedByActor :one
+SELECT SUM(num_likes)
+FROM like_counts
+    JOIN subjects ON like_counts.subject_id = subjects.id
+WHERE subjects.actor_did = $1;
+-- name: GetTotalLikesGivenByActor :one
+SELECT COUNT(*)
+FROM likes
+WHERE actor_did = $1;

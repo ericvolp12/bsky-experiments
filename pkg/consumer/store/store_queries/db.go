@@ -36,6 +36,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.countFollowsByActorStmt, err = db.PrepareContext(ctx, countFollowsByActor); err != nil {
 		return nil, fmt.Errorf("error preparing query CountFollowsByActor: %w", err)
 	}
+	if q.countFollowsByActorAndTargetStmt, err = db.PrepareContext(ctx, countFollowsByActorAndTarget); err != nil {
+		return nil, fmt.Errorf("error preparing query CountFollowsByActorAndTarget: %w", err)
+	}
 	if q.createBlockStmt, err = db.PrepareContext(ctx, createBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateBlock: %w", err)
 	}
@@ -80,6 +83,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteFollowingCountStmt, err = db.PrepareContext(ctx, deleteFollowingCount); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteFollowingCount: %w", err)
+	}
+	if q.deleteFollowsByActorStmt, err = db.PrepareContext(ctx, deleteFollowsByActor); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteFollowsByActor: %w", err)
+	}
+	if q.deleteFollowsByTargetStmt, err = db.PrepareContext(ctx, deleteFollowsByTarget); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteFollowsByTarget: %w", err)
 	}
 	if q.deleteImageStmt, err = db.PrepareContext(ctx, deleteImage); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteImage: %w", err)
@@ -186,6 +195,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getRepostsBySubjectStmt, err = db.PrepareContext(ctx, getRepostsBySubject); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRepostsBySubject: %w", err)
 	}
+	if q.getTotalLikesGivenByActorStmt, err = db.PrepareContext(ctx, getTotalLikesGivenByActor); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTotalLikesGivenByActor: %w", err)
+	}
+	if q.getTotalLikesReceivedByActorStmt, err = db.PrepareContext(ctx, getTotalLikesReceivedByActor); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTotalLikesReceivedByActor: %w", err)
+	}
 	if q.incrementFollowerCountByNStmt, err = db.PrepareContext(ctx, incrementFollowerCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query IncrementFollowerCountByN: %w", err)
 	}
@@ -224,6 +239,11 @@ func (q *Queries) Close() error {
 	if q.countFollowsByActorStmt != nil {
 		if cerr := q.countFollowsByActorStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countFollowsByActorStmt: %w", cerr)
+		}
+	}
+	if q.countFollowsByActorAndTargetStmt != nil {
+		if cerr := q.countFollowsByActorAndTargetStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing countFollowsByActorAndTargetStmt: %w", cerr)
 		}
 	}
 	if q.createBlockStmt != nil {
@@ -299,6 +319,16 @@ func (q *Queries) Close() error {
 	if q.deleteFollowingCountStmt != nil {
 		if cerr := q.deleteFollowingCountStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteFollowingCountStmt: %w", cerr)
+		}
+	}
+	if q.deleteFollowsByActorStmt != nil {
+		if cerr := q.deleteFollowsByActorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteFollowsByActorStmt: %w", cerr)
+		}
+	}
+	if q.deleteFollowsByTargetStmt != nil {
+		if cerr := q.deleteFollowsByTargetStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteFollowsByTargetStmt: %w", cerr)
 		}
 	}
 	if q.deleteImageStmt != nil {
@@ -476,6 +506,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getRepostsBySubjectStmt: %w", cerr)
 		}
 	}
+	if q.getTotalLikesGivenByActorStmt != nil {
+		if cerr := q.getTotalLikesGivenByActorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTotalLikesGivenByActorStmt: %w", cerr)
+		}
+	}
+	if q.getTotalLikesReceivedByActorStmt != nil {
+		if cerr := q.getTotalLikesReceivedByActorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTotalLikesReceivedByActorStmt: %w", cerr)
+		}
+	}
 	if q.incrementFollowerCountByNStmt != nil {
 		if cerr := q.incrementFollowerCountByNStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing incrementFollowerCountByNStmt: %w", cerr)
@@ -544,6 +584,7 @@ type Queries struct {
 	countBlocksByActorStmt              *sql.Stmt
 	countFollowersByTargetStmt          *sql.Stmt
 	countFollowsByActorStmt             *sql.Stmt
+	countFollowsByActorAndTargetStmt    *sql.Stmt
 	createBlockStmt                     *sql.Stmt
 	createFollowStmt                    *sql.Stmt
 	createImageStmt                     *sql.Stmt
@@ -559,6 +600,8 @@ type Queries struct {
 	deleteFollowStmt                    *sql.Stmt
 	deleteFollowerCountStmt             *sql.Stmt
 	deleteFollowingCountStmt            *sql.Stmt
+	deleteFollowsByActorStmt            *sql.Stmt
+	deleteFollowsByTargetStmt           *sql.Stmt
 	deleteImageStmt                     *sql.Stmt
 	deleteImagesForPostStmt             *sql.Stmt
 	deleteLikeStmt                      *sql.Stmt
@@ -594,6 +637,8 @@ type Queries struct {
 	getRepostCountStmt                  *sql.Stmt
 	getRepostsByActorStmt               *sql.Stmt
 	getRepostsBySubjectStmt             *sql.Stmt
+	getTotalLikesGivenByActorStmt       *sql.Stmt
+	getTotalLikesReceivedByActorStmt    *sql.Stmt
 	incrementFollowerCountByNStmt       *sql.Stmt
 	incrementFollowingCountByNStmt      *sql.Stmt
 	incrementLikeCountByNStmt           *sql.Stmt
@@ -609,6 +654,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		countBlocksByActorStmt:              q.countBlocksByActorStmt,
 		countFollowersByTargetStmt:          q.countFollowersByTargetStmt,
 		countFollowsByActorStmt:             q.countFollowsByActorStmt,
+		countFollowsByActorAndTargetStmt:    q.countFollowsByActorAndTargetStmt,
 		createBlockStmt:                     q.createBlockStmt,
 		createFollowStmt:                    q.createFollowStmt,
 		createImageStmt:                     q.createImageStmt,
@@ -624,6 +670,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteFollowStmt:                    q.deleteFollowStmt,
 		deleteFollowerCountStmt:             q.deleteFollowerCountStmt,
 		deleteFollowingCountStmt:            q.deleteFollowingCountStmt,
+		deleteFollowsByActorStmt:            q.deleteFollowsByActorStmt,
+		deleteFollowsByTargetStmt:           q.deleteFollowsByTargetStmt,
 		deleteImageStmt:                     q.deleteImageStmt,
 		deleteImagesForPostStmt:             q.deleteImagesForPostStmt,
 		deleteLikeStmt:                      q.deleteLikeStmt,
@@ -659,6 +707,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getRepostCountStmt:                  q.getRepostCountStmt,
 		getRepostsByActorStmt:               q.getRepostsByActorStmt,
 		getRepostsBySubjectStmt:             q.getRepostsBySubjectStmt,
+		getTotalLikesGivenByActorStmt:       q.getTotalLikesGivenByActorStmt,
+		getTotalLikesReceivedByActorStmt:    q.getTotalLikesReceivedByActorStmt,
 		incrementFollowerCountByNStmt:       q.incrementFollowerCountByNStmt,
 		incrementFollowingCountByNStmt:      q.incrementFollowingCountByNStmt,
 		incrementLikeCountByNStmt:           q.incrementLikeCountByNStmt,
