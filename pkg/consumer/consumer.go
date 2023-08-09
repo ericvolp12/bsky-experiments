@@ -55,6 +55,11 @@ type Progress struct {
 	LastSeqProcessedAt time.Time `json:"last_seq_processed_at"`
 }
 
+type Delete struct {
+	repo string
+	path string
+}
+
 var tracer = otel.Tracer("consumer")
 
 // WriteCursor writes the cursor to redis
@@ -154,10 +159,10 @@ func NewConsumer(
 
 	for _, backfillRecord := range backfillRecords {
 		c.BackfillStatus[backfillRecord.Repo] = &BackfillRepoStatus{
-			RepoDid:     backfillRecord.Repo,
-			Seq:         backfillRecord.SeqStarted,
-			State:       backfillRecord.State,
-			EventBuffer: []*comatproto.SyncSubscribeRepos_Commit{},
+			RepoDid:      backfillRecord.Repo,
+			Seq:          backfillRecord.SeqStarted,
+			State:        backfillRecord.State,
+			DeleteBuffer: []*Delete{},
 		}
 		if backfillRecord.State == "enqueued" {
 			backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
@@ -244,17 +249,23 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 	log := c.Logger.With("repo", evt.Repo, "seq", evt.Seq, "commit", evt.Commit)
 
 	c.statusLock.RLock()
-	if _, ok := c.BackfillStatus[evt.Repo]; !ok {
-		c.statusLock.RUnlock()
-		c.statusLock.Lock()
+	backfill, ok := c.BackfillStatus[evt.Repo]
+	c.statusLock.RUnlock()
+
+	if !ok {
 		log.Infof("backfill not in progress, adding repo %s to queue", evt.Repo)
-		c.BackfillStatus[evt.Repo] = &BackfillRepoStatus{
-			RepoDid:     evt.Repo,
-			Seq:         evt.Seq,
-			State:       "enqueued",
-			EventBuffer: []*comatproto.SyncSubscribeRepos_Commit{evt},
+
+		backfill = &BackfillRepoStatus{
+			RepoDid:      evt.Repo,
+			Seq:          evt.Seq,
+			State:        "enqueued",
+			DeleteBuffer: []*Delete{},
 		}
+
+		c.statusLock.Lock()
+		c.BackfillStatus[evt.Repo] = backfill
 		c.statusLock.Unlock()
+
 		err := c.Store.Queries.CreateRepoBackfillRecord(ctx, store_queries.CreateRepoBackfillRecordParams{
 			Repo:         evt.Repo,
 			LastBackfill: time.Now(),
@@ -264,26 +275,9 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 		if err != nil {
 			log.Errorf("failed to create repo backfill record: %+v", err)
 		}
-		backfillEventsBuffered.WithLabelValues(c.SocketURL).Inc()
-		backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
-		return nil
-	}
-	backfill := c.BackfillStatus[evt.Repo]
-	c.statusLock.RUnlock()
 
-	backfill.lk.Lock()
-	if backfill.State == "in_progress" || backfill.State == "enqueued" {
-		paths := []string{}
-		for _, op := range evt.Ops {
-			paths = append(paths, op.Path)
-		}
-		log.Debugf("backfill scheduled for %s, buffering event (%+v)", evt.Repo, paths)
-		backfill.EventBuffer = append(backfill.EventBuffer, evt)
-		backfill.lk.Unlock()
-		backfillEventsBuffered.WithLabelValues(c.SocketURL).Inc()
-		return nil
+		backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
 	}
-	backfill.lk.Unlock()
 
 	rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
 	if err != nil {
@@ -349,133 +343,25 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				lastRecordCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(processedAt.Sub(*recCreatedAt).Seconds()))
 			}
 		case repomgr.EvtKindUpdateRecord:
-			// For now we don't do anything with updates
+			// Don't do anything for updates for now
 		case repomgr.EvtKindDeleteRecord:
-			recordType := strings.Split(op.Path, "/")[0]
-			switch recordType {
-			case "app.bsky.feed.post":
-				span.SetAttributes(attribute.String("record_type", "feed_post"))
-				err = c.Store.Queries.DeletePost(ctx, store_queries.DeletePostParams{
-					ActorDid: evt.Repo,
-					Rkey:     rkey,
+			// Buffer the delete if a backfill is in progress
+			backfill.lk.Lock()
+			if backfill.State == "in_progress" || backfill.State == "enqueued" {
+				log.Debugf("backfill scheduled for %s, buffering delete (%+v)", evt.Repo, op.Path)
+				backfill.DeleteBuffer = append(backfill.DeleteBuffer, &Delete{
+					repo: evt.Repo,
+					path: op.Path,
 				})
-				if err != nil {
-					log.Errorf("failed to delete post: %+v", err)
-				}
-				// Delete images for the post
-				err = c.Store.Queries.DeleteImagesForPost(ctx, store_queries.DeleteImagesForPostParams{
-					PostActorDid: evt.Repo,
-					PostRkey:     rkey,
-				})
-				if err != nil {
-					log.Errorf("failed to delete images for post: %+v", err)
-				}
-			case "app.bsky.feed.like":
-				span.SetAttributes(attribute.String("record_type", "feed_like"))
-				// Get the like from the database to get the subject
-				like, err := c.Store.Queries.GetLike(ctx, store_queries.GetLikeParams{
-					ActorDid: evt.Repo,
-					Rkey:     rkey,
-				})
-				if err != nil {
-					if err == sql.ErrNoRows {
-						log.Warnf("like not found, so we can't delete it: %+v", err)
-						continue
-					}
-					log.Errorf("can't delete like: %+v", err)
-					continue
-				}
+				backfill.lk.Unlock()
+				backfillDeletesBuffered.WithLabelValues(c.SocketURL).Inc()
+				return nil
+			}
+			backfill.lk.Unlock()
 
-				// Delete the like from the database
-				err = c.Store.Queries.DeleteLike(ctx, store_queries.DeleteLikeParams{
-					ActorDid: evt.Repo,
-					Rkey:     rkey,
-				})
-				if err != nil {
-					log.Errorf("failed to delete like: %+v", err)
-					continue
-				}
-
-				// Decrement the like count
-				err = c.Store.Queries.DecrementLikeCountByN(ctx, store_queries.DecrementLikeCountByNParams{
-					ActorDid:   like.SubjectActorDid,
-					Collection: like.SubjectNamespace,
-					Rkey:       like.SubjectRkey,
-					NumLikes:   1,
-				})
-				if err != nil {
-					log.Warnf("failed to decrement like count: %+v", err)
-				}
-			case "app.bsky.feed.repost":
-				span.SetAttributes(attribute.String("record_type", "feed_repost"))
-				// Get the repost from the database to get the subject
-				repost, err := c.Store.Queries.GetRepost(ctx, store_queries.GetRepostParams{
-					ActorDid: evt.Repo,
-					Rkey:     rkey,
-				})
-				if err != nil {
-					if err == sql.ErrNoRows {
-						log.Warnf("repost not found, so we can't delete it: %+v", err)
-						continue
-					}
-					log.Errorf("can't delete repost: %+v", err)
-					continue
-				}
-
-				// Delete the repost from the database
-				err = c.Store.Queries.DeleteRepost(ctx, store_queries.DeleteRepostParams{
-					ActorDid: evt.Repo,
-					Rkey:     rkey,
-				})
-				if err != nil {
-					log.Errorf("failed to delete repost: %+v", err)
-					continue
-				}
-
-				// Decrement the repost count
-				err = c.Store.Queries.DecrementRepostCountByN(ctx, store_queries.DecrementRepostCountByNParams{
-					ActorDid:   repost.SubjectActorDid,
-					Collection: repost.SubjectNamespace,
-					Rkey:       repost.SubjectRkey,
-					NumReposts: 1,
-				})
-				if err != nil {
-					log.Warnf("failed to decrement repost count: %+v", err)
-				}
-			case "app.bsky.graph.follow":
-				span.SetAttributes(attribute.String("record_type", "graph_follow"))
-				err = c.Store.Queries.DeleteFollow(ctx, store_queries.DeleteFollowParams{
-					ActorDid: evt.Repo,
-					Rkey:     rkey,
-				})
-				if err != nil {
-					log.Errorf("failed to delete follow: %+v", err)
-				}
-				err = c.Store.Queries.DecrementFollowerCountByN(ctx, store_queries.DecrementFollowerCountByNParams{
-					ActorDid:     evt.Repo,
-					NumFollowers: 1,
-					UpdatedAt:    time.Now(),
-				})
-				if err != nil {
-					log.Errorf("failed to decrement follower count: %+v", err)
-				}
-				err = c.Store.Queries.DecrementFollowingCountByN(ctx, store_queries.DecrementFollowingCountByNParams{
-					ActorDid:     evt.Repo,
-					NumFollowing: 1,
-					UpdatedAt:    time.Now(),
-				})
-				if err != nil {
-					log.Errorf("failed to decrement following count: %+v", err)
-				}
-			case "app.bsky.graph.block":
-				span.SetAttributes(attribute.String("record_type", "graph_block"))
-				err = c.Store.Queries.DeleteBlock(ctx, store_queries.DeleteBlockParams{
-					ActorDid: evt.Repo,
-					Rkey:     rkey,
-				})
-				if err != nil {
-					log.Errorf("failed to delete block: %+v", err)
-				}
+			err := c.HandleDeleteRecord(ctx, evt.Repo, op.Path)
+			if err != nil {
+				log.Errorf("failed to handle delete record: %+v", err)
 			}
 		default:
 			log.Warnf("unknown event kind from op action: %+v", op.Action)
@@ -483,6 +369,140 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 	}
 
 	eventProcessingDurationHistogram.WithLabelValues(c.SocketURL).Observe(time.Since(processedAt).Seconds())
+	return nil
+}
+
+// HandleDeleteRecord handles a delete record event from the firehose
+func (c *Consumer) HandleDeleteRecord(
+	ctx context.Context,
+	repo string,
+	path string,
+) error {
+	ctx, span := tracer.Start(ctx, "HandleDeleteRecord")
+	collection := strings.Split(path, "/")[0]
+	rkey := strings.Split(path, "/")[1]
+	switch collection {
+	case "app.bsky.feed.post":
+		span.SetAttributes(attribute.String("record_type", "feed_post"))
+		err := c.Store.Queries.DeletePost(ctx, store_queries.DeletePostParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			log.Errorf("failed to delete post: %+v", err)
+			// Don't return an error here, because we still want to try to delete the images
+		}
+		// Delete images for the post
+		err = c.Store.Queries.DeleteImagesForPost(ctx, store_queries.DeleteImagesForPostParams{
+			PostActorDid: repo,
+			PostRkey:     rkey,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to delete images for post: %+v", err)
+		}
+	case "app.bsky.feed.like":
+		span.SetAttributes(attribute.String("record_type", "feed_like"))
+		// Get the like from the database to get the subject
+		like, err := c.Store.Queries.GetLike(ctx, store_queries.GetLikeParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("like not found, so we can't delete it: %+v", err)
+			}
+			return fmt.Errorf("can't delete like: %+v", err)
+		}
+
+		// Delete the like from the database
+		err = c.Store.Queries.DeleteLike(ctx, store_queries.DeleteLikeParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to delete like: %+v", err)
+		}
+
+		// Decrement the like count
+		err = c.Store.Queries.DecrementLikeCountByN(ctx, store_queries.DecrementLikeCountByNParams{
+			ActorDid:   like.SubjectActorDid,
+			Collection: like.SubjectNamespace,
+			Rkey:       like.SubjectRkey,
+			NumLikes:   1,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to decrement like count: %+v", err)
+		}
+	case "app.bsky.feed.repost":
+		span.SetAttributes(attribute.String("record_type", "feed_repost"))
+		// Get the repost from the database to get the subject
+		repost, err := c.Store.Queries.GetRepost(ctx, store_queries.GetRepostParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("repost not found, so we can't delete it: %+v", err)
+			}
+			return fmt.Errorf("can't delete repost: %+v", err)
+		}
+
+		// Delete the repost from the database
+		err = c.Store.Queries.DeleteRepost(ctx, store_queries.DeleteRepostParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to delete repost: %+v", err)
+		}
+
+		// Decrement the repost count
+		err = c.Store.Queries.DecrementRepostCountByN(ctx, store_queries.DecrementRepostCountByNParams{
+			ActorDid:   repost.SubjectActorDid,
+			Collection: repost.SubjectNamespace,
+			Rkey:       repost.SubjectRkey,
+			NumReposts: 1,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to decrement repost count: %+v", err)
+		}
+	case "app.bsky.graph.follow":
+		span.SetAttributes(attribute.String("record_type", "graph_follow"))
+		err := c.Store.Queries.DeleteFollow(ctx, store_queries.DeleteFollowParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to delete follow: %+v", err)
+		}
+		err = c.Store.Queries.DecrementFollowerCountByN(ctx, store_queries.DecrementFollowerCountByNParams{
+			ActorDid:     repo,
+			NumFollowers: 1,
+			UpdatedAt:    time.Now(),
+		})
+		if err != nil {
+			log.Errorf("failed to decrement follower count: %+v", err)
+			// Don't return an error here, because we still want to try to decrement the following count
+		}
+		err = c.Store.Queries.DecrementFollowingCountByN(ctx, store_queries.DecrementFollowingCountByNParams{
+			ActorDid:     repo,
+			NumFollowing: 1,
+			UpdatedAt:    time.Now(),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to decrement following count: %+v", err)
+		}
+	case "app.bsky.graph.block":
+		span.SetAttributes(attribute.String("record_type", "graph_block"))
+		err := c.Store.Queries.DeleteBlock(ctx, store_queries.DeleteBlockParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to delete block: %+v", err)
+		}
+	}
+
 	return nil
 }
 

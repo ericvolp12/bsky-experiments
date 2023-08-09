@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	"github.com/ipfs/go-cid"
@@ -17,11 +16,45 @@ import (
 )
 
 type BackfillRepoStatus struct {
-	RepoDid     string
-	Seq         int64
-	State       string
-	EventBuffer []*comatproto.SyncSubscribeRepos_Commit
-	lk          sync.Mutex
+	RepoDid      string
+	Seq          int64
+	State        string
+	DeleteBuffer []*Delete
+	lk           sync.Mutex
+}
+
+func (b *BackfillRepoStatus) SetState(state string) {
+	b.lk.Lock()
+	b.State = state
+	b.lk.Unlock()
+}
+
+func (b *BackfillRepoStatus) AddDelete(repo, path string) {
+	b.lk.Lock()
+	b.DeleteBuffer = append(b.DeleteBuffer, &Delete{repo: repo, path: path})
+	b.lk.Unlock()
+}
+
+func (c *Consumer) FlushBackfillBuffer(ctx context.Context, bf *BackfillRepoStatus) int {
+	ctx, span := tracer.Start(ctx, "FlushBackfillBuffer")
+	defer span.End()
+	log := c.Logger.With("source", "backfill_buffer_flush", "repo", bf.RepoDid)
+
+	processed := 0
+
+	bf.lk.Lock()
+	for _, del := range bf.DeleteBuffer {
+		err := c.HandleDeleteRecord(ctx, del.repo, del.path)
+		if err != nil {
+			log.Errorf("failed to handle delete record: %+v", err)
+		}
+		backfillDeletesBuffered.WithLabelValues(c.SocketURL).Dec()
+		processed++
+	}
+	bf.DeleteBuffer = []*Delete{}
+	bf.lk.Unlock()
+
+	return processed
 }
 
 type RecordJob struct {
@@ -144,6 +177,10 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 		return
 	}
 
+	c.statusLock.RLock()
+	bf := c.BackfillStatus[repoDID]
+	c.statusLock.RUnlock()
+
 	if resp.StatusCode != http.StatusOK {
 		log.Errorf("Error response: %v", resp.StatusCode)
 		reason := "unknown error"
@@ -153,14 +190,7 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 		state := fmt.Sprintf("failed (%s)", reason)
 
 		// Mark the backfill as "failed"
-		c.statusLock.RLock()
-		bf := c.BackfillStatus[repoDID]
-		c.statusLock.RUnlock()
-
-		bf.lk.Lock()
-		bf.State = state
-		bf.lk.Unlock()
-
+		bf.SetState(state)
 		err = c.Store.Queries.UpdateRepoBackfillRecord(ctx, store_queries.UpdateRepoBackfillRecordParams{
 			Repo:         repoDID,
 			LastBackfill: time.Now(),
@@ -170,16 +200,9 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 		if err != nil {
 			log.Errorf("failed to update repo backfill record: %+v", err)
 		}
-		// Process buffered events
-		for _, evt := range bf.EventBuffer {
-			err = c.HandleRepoCommit(ctx, evt)
-			if err != nil {
-				log.Errorf("failed to handle repo commit: %+v", err)
-			}
-			backfillEventsBuffered.WithLabelValues(c.SocketURL).Dec()
-		}
 
-		bf.EventBuffer = []*comatproto.SyncSubscribeRepos_Commit{}
+		// Process buffered deletes
+		c.FlushBackfillBuffer(ctx, bf)
 
 		return
 	}
@@ -201,29 +224,20 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 
 		state := "failed (couldn't read repo CAR from response body)"
 
-		bf.lk.Lock()
-		bf.State = state
-		bf.lk.Unlock()
-		updateErr := c.Store.Queries.UpdateRepoBackfillRecord(ctx, store_queries.UpdateRepoBackfillRecordParams{
+		// Mark the backfill as "failed"
+		bf.SetState(state)
+		err = c.Store.Queries.UpdateRepoBackfillRecord(ctx, store_queries.UpdateRepoBackfillRecordParams{
 			Repo:         repoDID,
 			LastBackfill: time.Now(),
 			SeqStarted:   bf.Seq,
 			State:        state,
 		})
-		if updateErr != nil {
-			log.Errorf("failed to update repo backfill record: %+v", updateErr)
+		if err != nil {
+			log.Errorf("failed to update repo backfill record: %+v", err)
 		}
 
-		// Process buffered events
-		for _, evt := range bf.EventBuffer {
-			err = c.HandleRepoCommit(ctx, evt)
-			if err != nil {
-				log.Errorf("failed to handle repo commit: %+v", err)
-			}
-			backfillEventsBuffered.WithLabelValues(c.SocketURL).Dec()
-		}
-
-		bf.EventBuffer = []*comatproto.SyncSubscribeRepos_Commit{}
+		// Process buffered deletes
+		c.FlushBackfillBuffer(ctx, bf)
 
 		return
 	}
@@ -292,39 +306,23 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 	close(recordResults)
 	resultWG.Wait()
 
-	c.statusLock.RLock()
-	bf := c.BackfillStatus[repoDID]
-	c.statusLock.RUnlock()
+	state := "complete"
 
-	// Update the backfill status
-	bf.lk.Lock()
-	bf.State = "complete"
-	bf.lk.Unlock()
+	// Mark the backfill as "complete"
+	bf.SetState(state)
 
-	bufferedEventsProcessed := 0
-	// Playback the buffered events
-	for _, evt := range bf.EventBuffer {
-		err = c.HandleRepoCommit(ctx, evt)
-		if err != nil {
-			log.Errorf("failed to handle repo commit: %+v", err)
-		}
-		backfillEventsBuffered.WithLabelValues(c.SocketURL).Dec()
-		bufferedEventsProcessed++
-	}
+	// Process buffered deletes
+	numProcessed := c.FlushBackfillBuffer(ctx, bf)
 
-	// Clear the buffer
-	bf.EventBuffer = []*comatproto.SyncSubscribeRepos_Commit{}
-
-	// Update the backfill record in the DB
 	err = c.Store.Queries.UpdateRepoBackfillRecord(ctx, store_queries.UpdateRepoBackfillRecordParams{
 		Repo:         repoDID,
 		LastBackfill: time.Now(),
 		SeqStarted:   bf.Seq,
-		State:        "complete",
+		State:        state,
 	})
 	if err != nil {
 		log.Errorf("failed to update repo backfill record: %+v", err)
 	}
 
-	log.Infow("backfill complete", "buffered_events_processed", bufferedEventsProcessed, "records_backfilled", numRecords, "duration", time.Since(start))
+	log.Infow("backfill complete", "buffered_deletes_processed", numProcessed, "records_backfilled", numRecords, "duration", time.Since(start))
 }
