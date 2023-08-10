@@ -80,6 +80,12 @@ func NewJazbot(ctx context.Context, store *store.Store, botDid, plcMirror string
 	return &j, nil
 }
 
+type friendCandidate struct {
+	Did       string
+	Handle    string
+	LikeCount int64
+}
+
 func (j *Jazbot) HandleRequest(
 	ctx context.Context,
 	actorDid string,
@@ -151,14 +157,18 @@ func (j *Jazbot) HandleRequest(
 				break
 			}
 			// Lookup the handles for the candidates
-			candidates := make(map[string]string)
+			candidates := []friendCandidate{}
 			for _, candidate := range candidateList {
 				handle, err := GetHandleFromPLCMirror(ctx, j.PLCMirror, candidate.ActorDid)
 				if err != nil {
 					j.Logger.Errorf("failed to get handle for user (%s): %+v", candidate, err)
 					continue
 				}
-				candidates[candidate.ActorDid] = handle
+				candidates = append(candidates, friendCandidate{
+					Did:       candidate.ActorDid,
+					Handle:    handle,
+					LikeCount: candidate.OverlapCount,
+				})
 			}
 
 			if len(candidates) == 0 {
@@ -168,16 +178,16 @@ func (j *Jazbot) HandleRequest(
 
 			resp = "The following users have recent likes in common with you:"
 
-			for did, handle := range candidates {
+			for _, candidate := range candidates {
 				resp += "\n"
-				truncatedHandle := handle
+				truncatedHandle := candidate.Handle
 				if len(truncatedHandle) > 40 {
-					truncatedHandle = truncatedHandle[:40] + "..."
+					truncatedHandle = truncatedHandle[:37] + "..."
 				}
 				facets = append(facets, &appbsky.RichtextFacet{
 					Features: []*appbsky.RichtextFacet_Features_Elem{{
 						RichtextFacet_Link: &appbsky.RichtextFacet_Link{
-							Uri: fmt.Sprintf("https://bsky.app/profile/%s", did),
+							Uri: fmt.Sprintf("https://bsky.app/profile/%s", candidate.Did),
 						},
 					}},
 					Index: &appbsky.RichtextFacet_ByteSlice{
@@ -185,7 +195,7 @@ func (j *Jazbot) HandleRequest(
 						ByteEnd:   int64(len(resp) + len(truncatedHandle) + 1),
 					},
 				})
-				resp += fmt.Sprintf("@%s", truncatedHandle)
+				resp += fmt.Sprintf("@%s (%d)", truncatedHandle, candidate.LikeCount)
 			}
 
 		default:
