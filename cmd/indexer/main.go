@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -229,7 +228,16 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 	log.Info("submtting posts for Sentiment Analysis...")
 	// If sentiment is enabled, get the sentiment for the post
 	span.AddEvent("GetPostsSentiment")
-	sentimentResults, err := indexer.Sentiment.GetPostsSentiment(ctx, posts)
+	sentimentPosts := []*sentiment.SentimentPost{}
+	for i := range posts {
+		post := posts[i]
+		sentimentPosts = append(sentimentPosts, &sentiment.SentimentPost{
+			Rkey:     post.ID,
+			ActorDID: post.AuthorDID,
+			Text:     post.Text,
+		})
+	}
+	sentimentResults, err := indexer.Sentiment.GetPostsSentiment(ctx, sentimentPosts)
 	if err != nil {
 		span.SetAttributes(attribute.String("sentiment.error", err.Error()))
 		log.Errorf("error getting sentiment for posts: %+v\n", err)
@@ -248,19 +256,19 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 	postsAnalyzed := 0
 
 	for i := range sentimentResults {
-		post := sentimentResults[i]
-		if post != nil {
-			if post.Sentiment != nil && post.SentimentConfidence != nil {
+		res := sentimentResults[i]
+		if res != nil {
+			if res.Decision != nil {
 				postsAnalyzed++
 				postsAnalyzedCounter.Inc()
-				if strings.Contains(*post.Sentiment, "p") && *post.SentimentConfidence >= indexer.PositiveConfidenceThreshold {
-					postIDsToLabel = append(postIDsToLabel, post.ID)
-					authorDIDsToLabel = append(authorDIDsToLabel, post.AuthorDID)
+				if res.Decision.Sentiment == sentiment.POSITIVE && res.Decision.Confidence >= indexer.PositiveConfidenceThreshold {
+					postIDsToLabel = append(postIDsToLabel, res.Rkey)
+					authorDIDsToLabel = append(authorDIDsToLabel, res.ActorDID)
 					labels = append(labels, "sentiment:pos")
 					positiveSentimentCounter.Inc()
-				} else if strings.Contains(*post.Sentiment, "n") && *post.SentimentConfidence >= indexer.NegativeConfidenceThreshold {
-					postIDsToLabel = append(postIDsToLabel, post.ID)
-					authorDIDsToLabel = append(authorDIDsToLabel, post.AuthorDID)
+				} else if res.Decision.Sentiment == sentiment.NEGATIVE && res.Decision.Confidence >= indexer.NegativeConfidenceThreshold {
+					postIDsToLabel = append(postIDsToLabel, res.Rkey)
+					authorDIDsToLabel = append(authorDIDsToLabel, res.ActorDID)
 					labels = append(labels, "sentiment:neg")
 					negativeSentimentCounter.Inc()
 				}

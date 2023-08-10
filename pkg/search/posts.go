@@ -11,6 +11,7 @@ import (
 	_ "github.com/lib/pq" // postgres driver
 
 	"github.com/ericvolp12/bsky-experiments/pkg/search/search_queries"
+	"github.com/ericvolp12/bsky-experiments/pkg/sentiment"
 	"go.opentelemetry.io/otel"
 )
 
@@ -131,7 +132,7 @@ func (pr *PostRegistry) GetPost(ctx context.Context, postID string) (*Post, erro
 	return enrichedPost, err
 }
 
-func (pr *PostRegistry) SetSentimentResults(ctx context.Context, posts []*Post) []error {
+func (pr *PostRegistry) SetSentimentResults(ctx context.Context, posts []*sentiment.SentimentPost) []error {
 	tracer := otel.Tracer("PostRegistry")
 	ctx, span := tracer.Start(ctx, "SetSentimentResults")
 	defer span.End()
@@ -148,7 +149,7 @@ func (pr *PostRegistry) SetSentimentResults(ctx context.Context, posts []*Post) 
 	for i := range posts {
 		post := posts[i]
 
-		sentiment := sql.NullString{
+		sentimentVal := sql.NullString{
 			String: "",
 			Valid:  false,
 		}
@@ -158,19 +159,25 @@ func (pr *PostRegistry) SetSentimentResults(ctx context.Context, posts []*Post) 
 			Valid:   false,
 		}
 
-		if post.Sentiment != nil {
-			sentiment.String = *post.Sentiment
-			sentiment.Valid = true
-		}
+		if post.Decision != nil {
+			switch post.Decision.Sentiment {
+			case sentiment.POSITIVE:
+				sentimentVal.String = PositiveSentiment
+			case sentiment.NEGATIVE:
+				sentimentVal.String = NegativeSentiment
+			case sentiment.NEUTRAL:
+				sentimentVal.String = NeutralSentiment
+			}
+			sentimentConfidence.Float64 = post.Decision.Confidence
 
-		if post.SentimentConfidence != nil {
-			sentimentConfidence.Float64 = *post.SentimentConfidence
+			sentimentVal.Valid = true
 			sentimentConfidence.Valid = true
 		}
 
 		err := qtx.SetPostSentiment(ctx, search_queries.SetPostSentimentParams{
-			ID:                  post.ID,
-			Sentiment:           sentiment,
+			AuthorDid:           post.ActorDID,
+			ID:                  post.Rkey,
+			Sentiment:           sentimentVal,
 			SentimentConfidence: sentimentConfidence,
 		})
 

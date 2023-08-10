@@ -5,12 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
-	"strings"
-	"time"
 
-	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/pemistahl/lingua-go"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -29,7 +25,7 @@ type Sentiment struct {
 }
 
 type sentimentRequest struct {
-	Posts []*search.Post `json:"posts"`
+	Posts []*SentimentPost `json:"posts"`
 }
 
 type sentimentDecision struct {
@@ -37,21 +33,18 @@ type sentimentDecision struct {
 	Confidence float64 `json:"confidence_score"`
 }
 
-type sentimentPost struct {
-	ID                 string            `json:"id"`
-	Text               string            `json:"text"`
-	ParentPostID       *string           `json:"parent_post_id"`
-	RootPostID         *string           `json:"root_post_id"`
-	AuthorDID          string            `json:"author_did"`
-	CreatedAt          time.Time         `json:"created_at"`
-	HasEmbeddedMedia   bool              `json:"has_embedded_media"`
-	ParentRelationship *string           `json:"parent_relationship"` // null, "r", "q"
-	Decision           sentimentDecision `json:"decision"`
+type SentimentPost struct {
+	ActorDID string             `json:"actor_did"`
+	Rkey     string             `json:"rkey"`
+	Text     string             `json:"text"`
+	Decision *sentimentDecision `json:"decision"`
 }
 
 type sentimentResponse struct {
-	Posts []sentimentPost `json:"posts"`
+	Posts []SentimentPost `json:"posts"`
 }
+
+var tracer = otel.Tracer("sentiment")
 
 func NewSentiment(sentimentServiceHost string) *Sentiment {
 
@@ -78,12 +71,11 @@ func NewSentiment(sentimentServiceHost string) *Sentiment {
 	}
 }
 
-func (s *Sentiment) GetPostsSentiment(ctx context.Context, posts []*search.Post) ([]*search.Post, error) {
-	tracer := otel.Tracer("bsky-search")
-	ctx, span := tracer.Start(ctx, "Sentiment:GetPostsSentiment")
+func (s *Sentiment) GetPostsSentiment(ctx context.Context, posts []*SentimentPost) ([]*SentimentPost, error) {
+	ctx, span := tracer.Start(ctx, "GetPostsSentiment")
 	defer span.End()
 
-	englishPosts := make([]*search.Post, 0, len(posts))
+	englishPosts := make([]*SentimentPost, 0, len(posts))
 
 	// Return early if all of the posts are not in English
 	for i, post := range posts {
@@ -122,29 +114,11 @@ func (s *Sentiment) GetPostsSentiment(ctx context.Context, posts []*search.Post)
 		return nil, fmt.Errorf("failed to decode sentiment response body: %w", err)
 	}
 
-	for i, p := range respBody.Posts {
-		if p.Decision.Sentiment == POSITIVE {
-			sentiment := strings.Clone(search.PositiveSentiment)
-			englishPosts[i].Sentiment = &sentiment
-		} else if p.Decision.Sentiment == NEGATIVE {
-			sentiment := strings.Clone(search.NegativeSentiment)
-			englishPosts[i].Sentiment = &sentiment
-		} else if p.Decision.Sentiment == NEUTRAL {
-			sentiment := strings.Clone(search.NeutralSentiment)
-			englishPosts[i].Sentiment = &sentiment
-		} else {
-			log.Printf("unknown sentiment: %s\n", p.Decision.Sentiment)
-		}
-		var confidence float64
-		confidence = p.Decision.Confidence
-		englishPosts[i].SentimentConfidence = &confidence
-	}
-
 	// Merge the english posts back into the original posts slice
 	for i, post := range posts {
-		for _, englishPost := range englishPosts {
-			if post.ID == englishPost.ID {
-				posts[i] = englishPost
+		for j, englishPost := range respBody.Posts {
+			if post.Rkey == englishPost.Rkey && post.ActorDID == englishPost.ActorDID {
+				posts[i].Decision = respBody.Posts[j].Decision
 			}
 		}
 	}

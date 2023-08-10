@@ -63,16 +63,15 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 otel_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 if otel_endpoint:
     resource = Resource(attributes={SERVICE_NAME: "bsky-sentiment"})
-    trace.set_tracer_provider(
-        TracerProvider(resource=resource, sampler=ParentBasedTraceIdRatio(0.2))
-    )
-    trace.get_tracer_provider().add_span_processor(
+    tp = TracerProvider(resource=resource, sampler=ParentBasedTraceIdRatio(0.2))
+    tp.add_span_processor(
         BatchSpanProcessor(
             OTLPSpanExporter(
                 endpoint=otel_endpoint + "v1/traces",
             )
         )
     )
+    trace.set_tracer_provider(tp)
 
 app = FastAPI()
 
