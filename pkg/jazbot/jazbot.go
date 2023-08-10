@@ -376,7 +376,7 @@ func (j *Jazbot) Challenge(ctx context.Context, actorDid string, arg string) (st
 		Limit:        1,
 	})
 	if err != nil {
-		resp = fmt.Sprintf("I couldn't check if you already have an active challenge, please try again later!")
+		resp = fmt.Sprintf("I couldn't check if you already have an active battle, please try again later!")
 		return resp, nil, fmt.Errorf("failed to get active challenge for user (%s): %+v", actorDid, err)
 	}
 
@@ -389,27 +389,27 @@ func (j *Jazbot) Challenge(ctx context.Context, actorDid string, arg string) (st
 		// Lookup the handle for the target
 		targetHandle, err := GetHandleFromPLCMirror(ctx, j.PLCMirror, existingEvent.TargetDid)
 		if err != nil {
-			resp = fmt.Sprintf("I had trouble loading the status of your existing challenge, please try again later!")
+			resp = fmt.Sprintf("I had trouble loading the status of your existing battle, please try again later!")
 			return resp, facets, fmt.Errorf("failed to get handle for participant (%s): %+v", existingEvent.TargetDid, err)
 		}
 
 		resp = fmt.Sprintf(
-			"You already have an active challenge with {handle:0} \nIt ends at %s so please wait until it is concluded before starting a new one!",
+			"You already have an active battle with {handle:0} \nIt ends at %s so please wait until it is concluded before starting a new one!",
 			existingEvent.CompletedAt.Local().Format(timeFormat),
 		)
 
 		resp, facets, err = insertMentions(resp, []string{existingEvent.TargetDid}, []string{targetHandle}, facets)
 		if err != nil {
-			resp = fmt.Sprintf("I had trouble loading the status of your existing challenge, please try again later!")
+			resp = fmt.Sprintf("I had trouble loading the status of your existing battle, please try again later!")
 			return resp, facets, fmt.Errorf("failed to insert mention: %+v", err)
 		}
 
-		return resp, facets, fmt.Errorf("user (%s) already has an active challenge", actorDid)
+		return resp, facets, fmt.Errorf("user (%s) already has an active battle", actorDid)
 	}
 
 	initiatorHandle, err := GetHandleFromPLCMirror(ctx, j.PLCMirror, actorDid)
 	if err != nil {
-		resp = fmt.Sprintf("I had trouble creating your challenge, please try again later!")
+		resp = fmt.Sprintf("I had trouble creating your battle, please try again later!")
 		return resp, facets, fmt.Errorf("failed to get handle for initiator (%s): %+v", actorDid, err)
 	}
 
@@ -423,21 +423,21 @@ func (j *Jazbot) Challenge(ctx context.Context, actorDid string, arg string) (st
 		CompletedAt:  challengeEnd,
 	})
 	if err != nil {
-		resp = fmt.Sprintf("I couldn't create a new challenge, please try again later!")
+		resp = fmt.Sprintf("I couldn't create a new battle, please try again later!")
 		return resp, facets, fmt.Errorf("failed to create challenge for user (%s): %+v", actorDid, err)
 	}
 
-	resp = fmt.Sprintf("{handle:0} has challenged {handle:1} to a Like Challenge!\n")
+	resp = fmt.Sprintf("{handle:0} has challenged {handle:1} to a Like Battle!\n")
 	resp += fmt.Sprint("The user that gives out the most likes in the next 48 hours will be the winner!")
-	resp += fmt.Sprintf("\n\nYour challenge ends at %s\nGood luck!", challengeEnd.Local().Format(timeFormat))
+	resp += fmt.Sprintf("\n\nYour battle ends at %s\nGood luck!", challengeEnd.Local().Format(timeFormat))
 
 	resp, facets, err = insertMentions(resp, []string{actorDid, targetDid}, []string{initiatorHandle, targetHandle}, facets)
 	if err != nil {
-		resp = fmt.Sprintf("I had trouble creating your challenge, please try again later!")
+		resp = fmt.Sprintf("I had trouble creating your battle, please try again later!")
 		return resp, facets, fmt.Errorf("failed to insert mention: %+v", err)
 	}
 
-	j.Logger.Infow("Like Challenge created", "initiator", actorDid, "target", targetDid, "challenge_end", challengeEnd)
+	j.Logger.Infow("Like Battle created", "initiator", actorDid, "target", targetDid, "challenge_end", challengeEnd)
 
 	return resp, facets, nil
 }
@@ -526,28 +526,28 @@ func (j *Jazbot) ConcludeChallenge(ctx context.Context, event *store_queries.Eve
 
 	switch {
 	case initiatorLikes > targetLikes:
-		resp = fmt.Sprint("{handle:0} has won the Like Challenge against {handle:1}!\n")
+		resp = fmt.Sprint("{handle:0} has won the Like Battle against {handle:1}!\n")
 		resp += fmt.Sprintf("{handle:0} gave out %d likes to {handle:1}'s %d likes!", initiatorLikes, targetLikes)
-		resp += fmt.Sprint("\n\n{handle:0} has earned 3 points for winning the challenge!")
+		resp += fmt.Sprint("\n\n{handle:0} has earned 3 points for winning the battle!")
 		resp, facets, err = insertMentions(resp, []string{event.InitiatorDid, event.TargetDid}, []string{initiatorHandle, targetHandle}, facets)
 		if err != nil {
 			return fmt.Errorf("failed to insert mention: %+v", err)
 		}
 		winnerDid = event.InitiatorDid
 	case initiatorLikes < targetLikes:
-		resp = fmt.Sprint("{handle:0} has won the Like Challenge against {handle:1}!\n")
+		resp = fmt.Sprint("{handle:0} has won the Like Battle against {handle:1}!\n")
 		resp += fmt.Sprintf("{handle:0} gave out %d likes to {handle:1}'s %d likes!", targetLikes, initiatorLikes)
-		resp += fmt.Sprint("\n\n{handle:0} has earned 3 points for winning the challenge!")
+		resp += fmt.Sprint("\n\n{handle:0} has earned 3 points for winning the battle!")
 		resp, facets, err = insertMentions(resp, []string{event.TargetDid, event.InitiatorDid}, []string{targetHandle, initiatorHandle}, facets)
 		if err != nil {
 			return fmt.Errorf("failed to insert mention: %+v", err)
 		}
 		winnerDid = event.TargetDid
 	case initiatorLikes == targetLikes:
-		resp = fmt.Sprint("{handle:0} and {handle:1} have tied in the Like Challenge!\n")
+		resp = fmt.Sprint("{handle:0} and {handle:1} have tied in the Like Battle!\n")
 		resp += fmt.Sprintf("Both contestants gave out %d likes!", initiatorLikes)
 		if initiatorLikes >= 10 {
-			resp += fmt.Sprint("\n\nBoth contestants have earned 1 point for tying the challenge!")
+			resp += fmt.Sprint("\n\nBoth contestants have earned 1 point for tying the battle!")
 			// Add a point to each user
 			err = j.Store.Queries.CreatePointAssignment(ctx, store_queries.CreatePointAssignmentParams{
 				EventID:  event.ID,
@@ -567,7 +567,7 @@ func (j *Jazbot) ConcludeChallenge(ctx context.Context, event *store_queries.Eve
 				return fmt.Errorf("failed to create point assignment: %+v", err)
 			}
 		} else {
-			resp += fmt.Sprint("\n\nSince neither contestant issued more than 10 likes, no one earns a point for tying the challenge!")
+			resp += fmt.Sprint("\n\nSince neither contestant issued more than 10 likes, no one earns a point for tying the battle!")
 		}
 		resp, facets, err = insertMentions(resp, []string{event.InitiatorDid, event.TargetDid}, []string{initiatorHandle, targetHandle}, facets)
 		if err != nil {
@@ -612,7 +612,7 @@ func (j *Jazbot) ConcludeChallenge(ctx context.Context, event *store_queries.Eve
 		return fmt.Errorf("failed to conclude event: %+v", err)
 	}
 
-	j.Logger.Infow("Like Challenge concluded",
+	j.Logger.Infow("Like Battle concluded",
 		"event_id", event.ID,
 		"initiator_did", event.InitiatorDid,
 		"target_did", event.TargetDid,
