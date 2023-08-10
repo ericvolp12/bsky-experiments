@@ -26,16 +26,6 @@ type CreatePointAssignmentParams struct {
 	Points   int32  `json:"points"`
 }
 
-// CREATE TABLE point_assignments (
-//
-//	id BIGSERIAL PRIMARY KEY,
-//	event_id BIGINT NOT NULL,
-//	actor_did TEXT NOT NULL,
-//	points INTEGER NOT NULL,
-//	created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-//	updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-//
-// );
 func (q *Queries) CreatePointAssignment(ctx context.Context, arg CreatePointAssignmentParams) error {
 	_, err := q.exec(ctx, q.createPointAssignmentStmt, createPointAssignment, arg.EventID, arg.ActorDid, arg.Points)
 	return err
@@ -173,29 +163,29 @@ func (q *Queries) GetPointAssignmentsForEvent(ctx context.Context, arg GetPointA
 }
 
 const getTotalPointsForActor = `-- name: GetTotalPointsForActor :one
-SELECT SUM(points)
+SELECT COALESCE(SUM(points), 0)::bigint AS total_points
 FROM point_assignments
 WHERE actor_did = $1
 `
 
 func (q *Queries) GetTotalPointsForActor(ctx context.Context, actorDid string) (int64, error) {
 	row := q.queryRow(ctx, q.getTotalPointsForActorStmt, getTotalPointsForActor, actorDid)
-	var sum int64
-	err := row.Scan(&sum)
-	return sum, err
+	var total_points int64
+	err := row.Scan(&total_points)
+	return total_points, err
 }
 
 const getTotalPointsForEvent = `-- name: GetTotalPointsForEvent :one
-SELECT SUM(points)
+SELECT COALESCE(SUM(points), 0)::bigint AS total_points
 FROM point_assignments
 WHERE event_id = $1
 `
 
 func (q *Queries) GetTotalPointsForEvent(ctx context.Context, eventID int64) (int64, error) {
 	row := q.queryRow(ctx, q.getTotalPointsForEventStmt, getTotalPointsForEvent, eventID)
-	var sum int64
-	err := row.Scan(&sum)
-	return sum, err
+	var total_points int64
+	err := row.Scan(&total_points)
+	return total_points, err
 }
 
 const upatePointAssignment = `-- name: UpatePointAssignment :exec

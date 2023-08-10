@@ -3,10 +3,13 @@ CREATE TABLE events (
     initiator_did TEXT NOT NULL,
     target_did TEXT NOT NULL,
     event_type TEXT NOT NULL,
+    post_uri TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    completed_at TIMESTAMPTZ NOT NULL,
+    expired_at TIMESTAMPTZ,
     concluded_at TIMESTAMPTZ,
+    window_start TIMESTAMPTZ,
+    window_end TIMESTAMPTZ,
     results JSONB
 );
 CREATE TABLE point_assignments (

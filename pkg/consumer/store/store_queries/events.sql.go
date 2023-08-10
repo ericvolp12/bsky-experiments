@@ -8,10 +8,25 @@ package store_queries
 import (
 	"context"
 	"database/sql"
-	"time"
 
 	"github.com/sqlc-dev/pqtype"
 )
+
+const addEventPost = `-- name: AddEventPost :exec
+UPDATE events
+SET post_uri = $2
+WHERE id = $1
+`
+
+type AddEventPostParams struct {
+	ID      int64          `json:"id"`
+	PostUri sql.NullString `json:"post_uri"`
+}
+
+func (q *Queries) AddEventPost(ctx context.Context, arg AddEventPostParams) error {
+	_, err := q.exec(ctx, q.addEventPostStmt, addEventPost, arg.ID, arg.PostUri)
+	return err
+}
 
 const concludeEvent = `-- name: ConcludeEvent :exec
 UPDATE events
@@ -31,31 +46,53 @@ func (q *Queries) ConcludeEvent(ctx context.Context, arg ConcludeEventParams) er
 	return err
 }
 
-const createEvent = `-- name: CreateEvent :exec
+const confirmEvent = `-- name: ConfirmEvent :exec
+UPDATE events
+SET window_start = $2,
+    window_end = $3,
+    expired_at = NULL
+WHERE id = $1
+`
+
+type ConfirmEventParams struct {
+	ID          int64        `json:"id"`
+	WindowStart sql.NullTime `json:"window_start"`
+	WindowEnd   sql.NullTime `json:"window_end"`
+}
+
+func (q *Queries) ConfirmEvent(ctx context.Context, arg ConfirmEventParams) error {
+	_, err := q.exec(ctx, q.confirmEventStmt, confirmEvent, arg.ID, arg.WindowStart, arg.WindowEnd)
+	return err
+}
+
+const createEvent = `-- name: CreateEvent :one
 INSERT INTO events (
         initiator_did,
         target_did,
         event_type,
-        completed_at
+        expired_at
     )
 VALUES ($1, $2, $3, $4)
+RETURNING id
 `
 
 type CreateEventParams struct {
-	InitiatorDid string    `json:"initiator_did"`
-	TargetDid    string    `json:"target_did"`
-	EventType    string    `json:"event_type"`
-	CompletedAt  time.Time `json:"completed_at"`
+	InitiatorDid string       `json:"initiator_did"`
+	TargetDid    string       `json:"target_did"`
+	EventType    string       `json:"event_type"`
+	ExpiredAt    sql.NullTime `json:"expired_at"`
 }
 
-func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) error {
-	_, err := q.exec(ctx, q.createEventStmt, createEvent,
+func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (int64, error) {
+	row := q.queryRow(ctx, q.createEventStmt, createEvent,
 		arg.InitiatorDid,
 		arg.TargetDid,
 		arg.EventType,
-		arg.CompletedAt,
+		arg.ExpiredAt,
 	)
-	return err
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const deleteEvent = `-- name: DeleteEvent :exec
@@ -69,11 +106,14 @@ func (q *Queries) DeleteEvent(ctx context.Context, id int64) error {
 }
 
 const getActiveEventsForInitiator = `-- name: GetActiveEventsForInitiator :many
-SELECT id, initiator_did, target_did, event_type, created_at, updated_at, completed_at, concluded_at, results
+SELECT id, initiator_did, target_did, event_type, post_uri, created_at, updated_at, expired_at, concluded_at, window_start, window_end, results
 FROM events
 WHERE initiator_did = $1
     AND event_type = $2
-    AND completed_at > NOW()
+    AND (
+        window_end > NOW()
+        OR expired_at < NOW()
+    )
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $4
 `
@@ -104,10 +144,13 @@ func (q *Queries) GetActiveEventsForInitiator(ctx context.Context, arg GetActive
 			&i.InitiatorDid,
 			&i.TargetDid,
 			&i.EventType,
+			&i.PostUri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.CompletedAt,
+			&i.ExpiredAt,
 			&i.ConcludedAt,
+			&i.WindowStart,
+			&i.WindowEnd,
 			&i.Results,
 		); err != nil {
 			return nil, err
@@ -124,11 +167,14 @@ func (q *Queries) GetActiveEventsForInitiator(ctx context.Context, arg GetActive
 }
 
 const getActiveEventsForTarget = `-- name: GetActiveEventsForTarget :many
-SELECT id, initiator_did, target_did, event_type, created_at, updated_at, completed_at, concluded_at, results
+SELECT id, initiator_did, target_did, event_type, post_uri, created_at, updated_at, expired_at, concluded_at, window_start, window_end, results
 FROM events
 WHERE $1 = target_did
     AND event_type = $2
-    AND completed_at > NOW()
+    AND (
+        window_end > NOW()
+        OR expired_at < NOW()
+    )
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $4
 `
@@ -159,10 +205,13 @@ func (q *Queries) GetActiveEventsForTarget(ctx context.Context, arg GetActiveEve
 			&i.InitiatorDid,
 			&i.TargetDid,
 			&i.EventType,
+			&i.PostUri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.CompletedAt,
+			&i.ExpiredAt,
 			&i.ConcludedAt,
+			&i.WindowStart,
+			&i.WindowEnd,
 			&i.Results,
 		); err != nil {
 			return nil, err
@@ -179,7 +228,7 @@ func (q *Queries) GetActiveEventsForTarget(ctx context.Context, arg GetActiveEve
 }
 
 const getEvent = `-- name: GetEvent :one
-SELECT id, initiator_did, target_did, event_type, created_at, updated_at, completed_at, concluded_at, results
+SELECT id, initiator_did, target_did, event_type, post_uri, created_at, updated_at, expired_at, concluded_at, window_start, window_end, results
 FROM events
 WHERE id = $1
 `
@@ -192,17 +241,20 @@ func (q *Queries) GetEvent(ctx context.Context, id int64) (Event, error) {
 		&i.InitiatorDid,
 		&i.TargetDid,
 		&i.EventType,
+		&i.PostUri,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.CompletedAt,
+		&i.ExpiredAt,
 		&i.ConcludedAt,
+		&i.WindowStart,
+		&i.WindowEnd,
 		&i.Results,
 	)
 	return i, err
 }
 
 const getEventsForInitiator = `-- name: GetEventsForInitiator :many
-SELECT id, initiator_did, target_did, event_type, created_at, updated_at, completed_at, concluded_at, results
+SELECT id, initiator_did, target_did, event_type, post_uri, created_at, updated_at, expired_at, concluded_at, window_start, window_end, results
 FROM events
 WHERE initiator_did = $1
 ORDER BY created_at DESC
@@ -229,10 +281,13 @@ func (q *Queries) GetEventsForInitiator(ctx context.Context, arg GetEventsForIni
 			&i.InitiatorDid,
 			&i.TargetDid,
 			&i.EventType,
+			&i.PostUri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.CompletedAt,
+			&i.ExpiredAt,
 			&i.ConcludedAt,
+			&i.WindowStart,
+			&i.WindowEnd,
 			&i.Results,
 		); err != nil {
 			return nil, err
@@ -249,7 +304,7 @@ func (q *Queries) GetEventsForInitiator(ctx context.Context, arg GetEventsForIni
 }
 
 const getEventsForTarget = `-- name: GetEventsForTarget :many
-SELECT id, initiator_did, target_did, event_type, created_at, updated_at, completed_at, concluded_at, results
+SELECT id, initiator_did, target_did, event_type, post_uri, created_at, updated_at, expired_at, concluded_at, window_start, window_end, results
 FROM events
 WHERE $1 = target_did
 ORDER BY created_at DESC
@@ -276,10 +331,13 @@ func (q *Queries) GetEventsForTarget(ctx context.Context, arg GetEventsForTarget
 			&i.InitiatorDid,
 			&i.TargetDid,
 			&i.EventType,
+			&i.PostUri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.CompletedAt,
+			&i.ExpiredAt,
 			&i.ConcludedAt,
+			&i.WindowStart,
+			&i.WindowEnd,
 			&i.Results,
 		); err != nil {
 			return nil, err
@@ -296,12 +354,13 @@ func (q *Queries) GetEventsForTarget(ctx context.Context, arg GetEventsForTarget
 }
 
 const getEventsToConclude = `-- name: GetEventsToConclude :many
-SELECT id, initiator_did, target_did, event_type, created_at, updated_at, completed_at, concluded_at, results
+SELECT id, initiator_did, target_did, event_type, post_uri, created_at, updated_at, expired_at, concluded_at, window_start, window_end, results
 FROM events
-WHERE completed_at < NOW()
+WHERE window_end < NOW()
     AND results IS NULL
     AND event_type = $1
-ORDER BY completed_at ASC
+    AND expired_at IS NULL
+ORDER BY window_end ASC
 LIMIT $2 OFFSET $3
 `
 
@@ -325,10 +384,13 @@ func (q *Queries) GetEventsToConclude(ctx context.Context, arg GetEventsToConclu
 			&i.InitiatorDid,
 			&i.TargetDid,
 			&i.EventType,
+			&i.PostUri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.CompletedAt,
+			&i.ExpiredAt,
 			&i.ConcludedAt,
+			&i.WindowStart,
+			&i.WindowEnd,
 			&i.Results,
 		); err != nil {
 			return nil, err
@@ -342,4 +404,40 @@ func (q *Queries) GetEventsToConclude(ctx context.Context, arg GetEventsToConclu
 		return nil, err
 	}
 	return items, nil
+}
+
+const getUnconfirmedEvent = `-- name: GetUnconfirmedEvent :one
+SELECT id, initiator_did, target_did, event_type, post_uri, created_at, updated_at, expired_at, concluded_at, window_start, window_end, results
+FROM events
+WHERE post_uri = $1
+    AND target_did = $2
+    AND window_start IS NULL
+    AND window_end IS NULL
+    AND results IS NULL
+LIMIT 1
+`
+
+type GetUnconfirmedEventParams struct {
+	PostUri   sql.NullString `json:"post_uri"`
+	TargetDid string         `json:"target_did"`
+}
+
+func (q *Queries) GetUnconfirmedEvent(ctx context.Context, arg GetUnconfirmedEventParams) (Event, error) {
+	row := q.queryRow(ctx, q.getUnconfirmedEventStmt, getUnconfirmedEvent, arg.PostUri, arg.TargetDid)
+	var i Event
+	err := row.Scan(
+		&i.ID,
+		&i.InitiatorDid,
+		&i.TargetDid,
+		&i.EventType,
+		&i.PostUri,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ExpiredAt,
+		&i.ConcludedAt,
+		&i.WindowStart,
+		&i.WindowEnd,
+		&i.Results,
+	)
+	return i, err
 }

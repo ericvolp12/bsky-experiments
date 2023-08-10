@@ -24,8 +24,14 @@ func New(db DBTX) *Queries {
 func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	q := Queries{db: db}
 	var err error
+	if q.addEventPostStmt, err = db.PrepareContext(ctx, addEventPost); err != nil {
+		return nil, fmt.Errorf("error preparing query AddEventPost: %w", err)
+	}
 	if q.concludeEventStmt, err = db.PrepareContext(ctx, concludeEvent); err != nil {
 		return nil, fmt.Errorf("error preparing query ConcludeEvent: %w", err)
+	}
+	if q.confirmEventStmt, err = db.PrepareContext(ctx, confirmEvent); err != nil {
+		return nil, fmt.Errorf("error preparing query ConfirmEvent: %w", err)
 	}
 	if q.countBlockersByTargetStmt, err = db.PrepareContext(ctx, countBlockersByTarget); err != nil {
 		return nil, fmt.Errorf("error preparing query CountBlockersByTarget: %w", err)
@@ -255,6 +261,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getTotalPointsForEventStmt, err = db.PrepareContext(ctx, getTotalPointsForEvent); err != nil {
 		return nil, fmt.Errorf("error preparing query GetTotalPointsForEvent: %w", err)
 	}
+	if q.getUnconfirmedEventStmt, err = db.PrepareContext(ctx, getUnconfirmedEvent); err != nil {
+		return nil, fmt.Errorf("error preparing query GetUnconfirmedEvent: %w", err)
+	}
 	if q.incrementFollowerCountByNStmt, err = db.PrepareContext(ctx, incrementFollowerCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query IncrementFollowerCountByN: %w", err)
 	}
@@ -278,9 +287,19 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 
 func (q *Queries) Close() error {
 	var err error
+	if q.addEventPostStmt != nil {
+		if cerr := q.addEventPostStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing addEventPostStmt: %w", cerr)
+		}
+	}
 	if q.concludeEventStmt != nil {
 		if cerr := q.concludeEventStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing concludeEventStmt: %w", cerr)
+		}
+	}
+	if q.confirmEventStmt != nil {
+		if cerr := q.confirmEventStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing confirmEventStmt: %w", cerr)
 		}
 	}
 	if q.countBlockersByTargetStmt != nil {
@@ -663,6 +682,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getTotalPointsForEventStmt: %w", cerr)
 		}
 	}
+	if q.getUnconfirmedEventStmt != nil {
+		if cerr := q.getUnconfirmedEventStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getUnconfirmedEventStmt: %w", cerr)
+		}
+	}
 	if q.incrementFollowerCountByNStmt != nil {
 		if cerr := q.incrementFollowerCountByNStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing incrementFollowerCountByNStmt: %w", cerr)
@@ -732,7 +756,9 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 type Queries struct {
 	db                                  DBTX
 	tx                                  *sql.Tx
+	addEventPostStmt                    *sql.Stmt
 	concludeEventStmt                   *sql.Stmt
+	confirmEventStmt                    *sql.Stmt
 	countBlockersByTargetStmt           *sql.Stmt
 	countBlocksByActorStmt              *sql.Stmt
 	countFollowersByTargetStmt          *sql.Stmt
@@ -809,6 +835,7 @@ type Queries struct {
 	getTotalLikesReceivedByActorStmt    *sql.Stmt
 	getTotalPointsForActorStmt          *sql.Stmt
 	getTotalPointsForEventStmt          *sql.Stmt
+	getUnconfirmedEventStmt             *sql.Stmt
 	incrementFollowerCountByNStmt       *sql.Stmt
 	incrementFollowingCountByNStmt      *sql.Stmt
 	incrementLikeCountByNStmt           *sql.Stmt
@@ -821,7 +848,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
 		db:                                  tx,
 		tx:                                  tx,
+		addEventPostStmt:                    q.addEventPostStmt,
 		concludeEventStmt:                   q.concludeEventStmt,
+		confirmEventStmt:                    q.confirmEventStmt,
 		countBlockersByTargetStmt:           q.countBlockersByTargetStmt,
 		countBlocksByActorStmt:              q.countBlocksByActorStmt,
 		countFollowersByTargetStmt:          q.countFollowersByTargetStmt,
@@ -898,6 +927,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getTotalLikesReceivedByActorStmt:    q.getTotalLikesReceivedByActorStmt,
 		getTotalPointsForActorStmt:          q.getTotalPointsForActorStmt,
 		getTotalPointsForEventStmt:          q.getTotalPointsForEventStmt,
+		getUnconfirmedEventStmt:             q.getUnconfirmedEventStmt,
 		incrementFollowerCountByNStmt:       q.incrementFollowerCountByNStmt,
 		incrementFollowingCountByNStmt:      q.incrementFollowingCountByNStmt,
 		incrementLikeCountByNStmt:           q.incrementLikeCountByNStmt,

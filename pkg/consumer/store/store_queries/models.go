@@ -45,10 +45,13 @@ type Event struct {
 	InitiatorDid string                `json:"initiator_did"`
 	TargetDid    string                `json:"target_did"`
 	EventType    string                `json:"event_type"`
+	PostUri      sql.NullString        `json:"post_uri"`
 	CreatedAt    time.Time             `json:"created_at"`
 	UpdatedAt    time.Time             `json:"updated_at"`
-	CompletedAt  time.Time             `json:"completed_at"`
+	ExpiredAt    sql.NullTime          `json:"expired_at"`
 	ConcludedAt  sql.NullTime          `json:"concluded_at"`
+	WindowStart  sql.NullTime          `json:"window_start"`
+	WindowEnd    sql.NullTime          `json:"window_end"`
 	Results      pqtype.NullRawMessage `json:"results"`
 }
 

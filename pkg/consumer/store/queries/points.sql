@@ -1,11 +1,3 @@
--- CREATE TABLE point_assignments (
---     id BIGSERIAL PRIMARY KEY,
---     event_id BIGINT NOT NULL,
---     actor_did TEXT NOT NULL,
---     points INTEGER NOT NULL,
---     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
---     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
--- );
 -- name: CreatePointAssignment :exec
 INSERT INTO point_assignments (
         event_id,
@@ -34,11 +26,11 @@ WHERE actor_did = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
 -- name: GetTotalPointsForActor :one
-SELECT SUM(points)
+SELECT COALESCE(SUM(points), 0)::bigint AS total_points
 FROM point_assignments
 WHERE actor_did = $1;
 -- name: GetTotalPointsForEvent :one
-SELECT SUM(points)
+SELECT COALESCE(SUM(points), 0)::bigint AS total_points
 FROM point_assignments
 WHERE event_id = $1;
 -- name: DeletePointAssignment :exec
