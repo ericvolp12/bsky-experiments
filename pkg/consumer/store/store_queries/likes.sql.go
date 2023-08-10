@@ -327,6 +327,27 @@ func (q *Queries) GetLikesBySubject(ctx context.Context, arg GetLikesBySubjectPa
 	return items, nil
 }
 
+const getLikesGivenByActorFromTo = `-- name: GetLikesGivenByActorFromTo :one
+SELECT COUNT(*)
+FROM likes
+WHERE actor_did = $1
+    AND created_at > $2
+    AND created_at < $3
+`
+
+type GetLikesGivenByActorFromToParams struct {
+	ActorDid string       `json:"actor_did"`
+	From     sql.NullTime `json:"from"`
+	To       sql.NullTime `json:"to"`
+}
+
+func (q *Queries) GetLikesGivenByActorFromTo(ctx context.Context, arg GetLikesGivenByActorFromToParams) (int64, error) {
+	row := q.queryRow(ctx, q.getLikesGivenByActorFromToStmt, getLikesGivenByActorFromTo, arg.ActorDid, arg.From, arg.To)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getTotalLikesGivenByActor = `-- name: GetTotalLikesGivenByActor :one
 SELECT COUNT(*)
 FROM likes

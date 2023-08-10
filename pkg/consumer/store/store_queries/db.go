@@ -24,6 +24,9 @@ func New(db DBTX) *Queries {
 func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	q := Queries{db: db}
 	var err error
+	if q.concludeEventStmt, err = db.PrepareContext(ctx, concludeEvent); err != nil {
+		return nil, fmt.Errorf("error preparing query ConcludeEvent: %w", err)
+	}
 	if q.countBlockersByTargetStmt, err = db.PrepareContext(ctx, countBlockersByTarget); err != nil {
 		return nil, fmt.Errorf("error preparing query CountBlockersByTarget: %w", err)
 	}
@@ -42,6 +45,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createBlockStmt, err = db.PrepareContext(ctx, createBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateBlock: %w", err)
 	}
+	if q.createEventStmt, err = db.PrepareContext(ctx, createEvent); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateEvent: %w", err)
+	}
 	if q.createFollowStmt, err = db.PrepareContext(ctx, createFollow); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateFollow: %w", err)
 	}
@@ -50,6 +56,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.createLikeStmt, err = db.PrepareContext(ctx, createLike); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateLike: %w", err)
+	}
+	if q.createPointAssignmentStmt, err = db.PrepareContext(ctx, createPointAssignment); err != nil {
+		return nil, fmt.Errorf("error preparing query CreatePointAssignment: %w", err)
 	}
 	if q.createPostStmt, err = db.PrepareContext(ctx, createPost); err != nil {
 		return nil, fmt.Errorf("error preparing query CreatePost: %w", err)
@@ -74,6 +83,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteBlockStmt, err = db.PrepareContext(ctx, deleteBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteBlock: %w", err)
+	}
+	if q.deleteEventStmt, err = db.PrepareContext(ctx, deleteEvent); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteEvent: %w", err)
 	}
 	if q.deleteFollowStmt, err = db.PrepareContext(ctx, deleteFollow); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteFollow: %w", err)
@@ -102,6 +114,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteLikeCountStmt, err = db.PrepareContext(ctx, deleteLikeCount); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteLikeCount: %w", err)
 	}
+	if q.deletePointAssignmentStmt, err = db.PrepareContext(ctx, deletePointAssignment); err != nil {
+		return nil, fmt.Errorf("error preparing query DeletePointAssignment: %w", err)
+	}
 	if q.deletePostStmt, err = db.PrepareContext(ctx, deletePost); err != nil {
 		return nil, fmt.Errorf("error preparing query DeletePost: %w", err)
 	}
@@ -113,6 +128,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.findPotentialFriendsStmt, err = db.PrepareContext(ctx, findPotentialFriends); err != nil {
 		return nil, fmt.Errorf("error preparing query FindPotentialFriends: %w", err)
+	}
+	if q.getActiveEventsForInitiatorStmt, err = db.PrepareContext(ctx, getActiveEventsForInitiator); err != nil {
+		return nil, fmt.Errorf("error preparing query GetActiveEventsForInitiator: %w", err)
+	}
+	if q.getActiveEventsForTargetStmt, err = db.PrepareContext(ctx, getActiveEventsForTarget); err != nil {
+		return nil, fmt.Errorf("error preparing query GetActiveEventsForTarget: %w", err)
 	}
 	if q.getBlockStmt, err = db.PrepareContext(ctx, getBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query GetBlock: %w", err)
@@ -128,6 +149,18 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getDailySummariesStmt, err = db.PrepareContext(ctx, getDailySummaries); err != nil {
 		return nil, fmt.Errorf("error preparing query GetDailySummaries: %w", err)
+	}
+	if q.getEventStmt, err = db.PrepareContext(ctx, getEvent); err != nil {
+		return nil, fmt.Errorf("error preparing query GetEvent: %w", err)
+	}
+	if q.getEventsForInitiatorStmt, err = db.PrepareContext(ctx, getEventsForInitiator); err != nil {
+		return nil, fmt.Errorf("error preparing query GetEventsForInitiator: %w", err)
+	}
+	if q.getEventsForTargetStmt, err = db.PrepareContext(ctx, getEventsForTarget); err != nil {
+		return nil, fmt.Errorf("error preparing query GetEventsForTarget: %w", err)
+	}
+	if q.getEventsToConcludeStmt, err = db.PrepareContext(ctx, getEventsToConclude); err != nil {
+		return nil, fmt.Errorf("error preparing query GetEventsToConclude: %w", err)
 	}
 	if q.getFollowStmt, err = db.PrepareContext(ctx, getFollow); err != nil {
 		return nil, fmt.Errorf("error preparing query GetFollow: %w", err)
@@ -168,6 +201,18 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getLikesBySubjectStmt, err = db.PrepareContext(ctx, getLikesBySubject); err != nil {
 		return nil, fmt.Errorf("error preparing query GetLikesBySubject: %w", err)
 	}
+	if q.getLikesGivenByActorFromToStmt, err = db.PrepareContext(ctx, getLikesGivenByActorFromTo); err != nil {
+		return nil, fmt.Errorf("error preparing query GetLikesGivenByActorFromTo: %w", err)
+	}
+	if q.getPointAssignmentStmt, err = db.PrepareContext(ctx, getPointAssignment); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPointAssignment: %w", err)
+	}
+	if q.getPointAssignmentsForActorStmt, err = db.PrepareContext(ctx, getPointAssignmentsForActor); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPointAssignmentsForActor: %w", err)
+	}
+	if q.getPointAssignmentsForEventStmt, err = db.PrepareContext(ctx, getPointAssignmentsForEvent); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPointAssignmentsForEvent: %w", err)
+	}
 	if q.getPostStmt, err = db.PrepareContext(ctx, getPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPost: %w", err)
 	}
@@ -204,6 +249,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getTotalLikesReceivedByActorStmt, err = db.PrepareContext(ctx, getTotalLikesReceivedByActor); err != nil {
 		return nil, fmt.Errorf("error preparing query GetTotalLikesReceivedByActor: %w", err)
 	}
+	if q.getTotalPointsForActorStmt, err = db.PrepareContext(ctx, getTotalPointsForActor); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTotalPointsForActor: %w", err)
+	}
+	if q.getTotalPointsForEventStmt, err = db.PrepareContext(ctx, getTotalPointsForEvent); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTotalPointsForEvent: %w", err)
+	}
 	if q.incrementFollowerCountByNStmt, err = db.PrepareContext(ctx, incrementFollowerCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query IncrementFollowerCountByN: %w", err)
 	}
@@ -216,6 +267,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.incrementRepostCountByNStmt, err = db.PrepareContext(ctx, incrementRepostCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query IncrementRepostCountByN: %w", err)
 	}
+	if q.upatePointAssignmentStmt, err = db.PrepareContext(ctx, upatePointAssignment); err != nil {
+		return nil, fmt.Errorf("error preparing query UpatePointAssignment: %w", err)
+	}
 	if q.updateRepoBackfillRecordStmt, err = db.PrepareContext(ctx, updateRepoBackfillRecord); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateRepoBackfillRecord: %w", err)
 	}
@@ -224,6 +278,11 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 
 func (q *Queries) Close() error {
 	var err error
+	if q.concludeEventStmt != nil {
+		if cerr := q.concludeEventStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing concludeEventStmt: %w", cerr)
+		}
+	}
 	if q.countBlockersByTargetStmt != nil {
 		if cerr := q.countBlockersByTargetStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing countBlockersByTargetStmt: %w", cerr)
@@ -254,6 +313,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createBlockStmt: %w", cerr)
 		}
 	}
+	if q.createEventStmt != nil {
+		if cerr := q.createEventStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createEventStmt: %w", cerr)
+		}
+	}
 	if q.createFollowStmt != nil {
 		if cerr := q.createFollowStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createFollowStmt: %w", cerr)
@@ -267,6 +331,11 @@ func (q *Queries) Close() error {
 	if q.createLikeStmt != nil {
 		if cerr := q.createLikeStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createLikeStmt: %w", cerr)
+		}
+	}
+	if q.createPointAssignmentStmt != nil {
+		if cerr := q.createPointAssignmentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createPointAssignmentStmt: %w", cerr)
 		}
 	}
 	if q.createPostStmt != nil {
@@ -307,6 +376,11 @@ func (q *Queries) Close() error {
 	if q.deleteBlockStmt != nil {
 		if cerr := q.deleteBlockStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteBlockStmt: %w", cerr)
+		}
+	}
+	if q.deleteEventStmt != nil {
+		if cerr := q.deleteEventStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteEventStmt: %w", cerr)
 		}
 	}
 	if q.deleteFollowStmt != nil {
@@ -354,6 +428,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteLikeCountStmt: %w", cerr)
 		}
 	}
+	if q.deletePointAssignmentStmt != nil {
+		if cerr := q.deletePointAssignmentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deletePointAssignmentStmt: %w", cerr)
+		}
+	}
 	if q.deletePostStmt != nil {
 		if cerr := q.deletePostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deletePostStmt: %w", cerr)
@@ -372,6 +451,16 @@ func (q *Queries) Close() error {
 	if q.findPotentialFriendsStmt != nil {
 		if cerr := q.findPotentialFriendsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing findPotentialFriendsStmt: %w", cerr)
+		}
+	}
+	if q.getActiveEventsForInitiatorStmt != nil {
+		if cerr := q.getActiveEventsForInitiatorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getActiveEventsForInitiatorStmt: %w", cerr)
+		}
+	}
+	if q.getActiveEventsForTargetStmt != nil {
+		if cerr := q.getActiveEventsForTargetStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getActiveEventsForTargetStmt: %w", cerr)
 		}
 	}
 	if q.getBlockStmt != nil {
@@ -397,6 +486,26 @@ func (q *Queries) Close() error {
 	if q.getDailySummariesStmt != nil {
 		if cerr := q.getDailySummariesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getDailySummariesStmt: %w", cerr)
+		}
+	}
+	if q.getEventStmt != nil {
+		if cerr := q.getEventStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getEventStmt: %w", cerr)
+		}
+	}
+	if q.getEventsForInitiatorStmt != nil {
+		if cerr := q.getEventsForInitiatorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getEventsForInitiatorStmt: %w", cerr)
+		}
+	}
+	if q.getEventsForTargetStmt != nil {
+		if cerr := q.getEventsForTargetStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getEventsForTargetStmt: %w", cerr)
+		}
+	}
+	if q.getEventsToConcludeStmt != nil {
+		if cerr := q.getEventsToConcludeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getEventsToConcludeStmt: %w", cerr)
 		}
 	}
 	if q.getFollowStmt != nil {
@@ -464,6 +573,26 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getLikesBySubjectStmt: %w", cerr)
 		}
 	}
+	if q.getLikesGivenByActorFromToStmt != nil {
+		if cerr := q.getLikesGivenByActorFromToStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getLikesGivenByActorFromToStmt: %w", cerr)
+		}
+	}
+	if q.getPointAssignmentStmt != nil {
+		if cerr := q.getPointAssignmentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPointAssignmentStmt: %w", cerr)
+		}
+	}
+	if q.getPointAssignmentsForActorStmt != nil {
+		if cerr := q.getPointAssignmentsForActorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPointAssignmentsForActorStmt: %w", cerr)
+		}
+	}
+	if q.getPointAssignmentsForEventStmt != nil {
+		if cerr := q.getPointAssignmentsForEventStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPointAssignmentsForEventStmt: %w", cerr)
+		}
+	}
 	if q.getPostStmt != nil {
 		if cerr := q.getPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostStmt: %w", cerr)
@@ -524,6 +653,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getTotalLikesReceivedByActorStmt: %w", cerr)
 		}
 	}
+	if q.getTotalPointsForActorStmt != nil {
+		if cerr := q.getTotalPointsForActorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTotalPointsForActorStmt: %w", cerr)
+		}
+	}
+	if q.getTotalPointsForEventStmt != nil {
+		if cerr := q.getTotalPointsForEventStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTotalPointsForEventStmt: %w", cerr)
+		}
+	}
 	if q.incrementFollowerCountByNStmt != nil {
 		if cerr := q.incrementFollowerCountByNStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing incrementFollowerCountByNStmt: %w", cerr)
@@ -542,6 +681,11 @@ func (q *Queries) Close() error {
 	if q.incrementRepostCountByNStmt != nil {
 		if cerr := q.incrementRepostCountByNStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing incrementRepostCountByNStmt: %w", cerr)
+		}
+	}
+	if q.upatePointAssignmentStmt != nil {
+		if cerr := q.upatePointAssignmentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upatePointAssignmentStmt: %w", cerr)
 		}
 	}
 	if q.updateRepoBackfillRecordStmt != nil {
@@ -588,15 +732,18 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 type Queries struct {
 	db                                  DBTX
 	tx                                  *sql.Tx
+	concludeEventStmt                   *sql.Stmt
 	countBlockersByTargetStmt           *sql.Stmt
 	countBlocksByActorStmt              *sql.Stmt
 	countFollowersByTargetStmt          *sql.Stmt
 	countFollowsByActorStmt             *sql.Stmt
 	countFollowsByActorAndTargetStmt    *sql.Stmt
 	createBlockStmt                     *sql.Stmt
+	createEventStmt                     *sql.Stmt
 	createFollowStmt                    *sql.Stmt
 	createImageStmt                     *sql.Stmt
 	createLikeStmt                      *sql.Stmt
+	createPointAssignmentStmt           *sql.Stmt
 	createPostStmt                      *sql.Stmt
 	createRepoBackfillRecordStmt        *sql.Stmt
 	createRepostStmt                    *sql.Stmt
@@ -605,6 +752,7 @@ type Queries struct {
 	decrementLikeCountByNStmt           *sql.Stmt
 	decrementRepostCountByNStmt         *sql.Stmt
 	deleteBlockStmt                     *sql.Stmt
+	deleteEventStmt                     *sql.Stmt
 	deleteFollowStmt                    *sql.Stmt
 	deleteFollowerCountStmt             *sql.Stmt
 	deleteFollowingCountStmt            *sql.Stmt
@@ -614,15 +762,22 @@ type Queries struct {
 	deleteImagesForPostStmt             *sql.Stmt
 	deleteLikeStmt                      *sql.Stmt
 	deleteLikeCountStmt                 *sql.Stmt
+	deletePointAssignmentStmt           *sql.Stmt
 	deletePostStmt                      *sql.Stmt
 	deleteRepostStmt                    *sql.Stmt
 	deleteRepostCountStmt               *sql.Stmt
 	findPotentialFriendsStmt            *sql.Stmt
+	getActiveEventsForInitiatorStmt     *sql.Stmt
+	getActiveEventsForTargetStmt        *sql.Stmt
 	getBlockStmt                        *sql.Stmt
 	getBlocksByActorStmt                *sql.Stmt
 	getBlocksByActorAndTargetStmt       *sql.Stmt
 	getBlocksByTargetStmt               *sql.Stmt
 	getDailySummariesStmt               *sql.Stmt
+	getEventStmt                        *sql.Stmt
+	getEventsForInitiatorStmt           *sql.Stmt
+	getEventsForTargetStmt              *sql.Stmt
+	getEventsToConcludeStmt             *sql.Stmt
 	getFollowStmt                       *sql.Stmt
 	getFollowerCountStmt                *sql.Stmt
 	getFollowingCountStmt               *sql.Stmt
@@ -636,6 +791,10 @@ type Queries struct {
 	getLikeCountStmt                    *sql.Stmt
 	getLikesByActorStmt                 *sql.Stmt
 	getLikesBySubjectStmt               *sql.Stmt
+	getLikesGivenByActorFromToStmt      *sql.Stmt
+	getPointAssignmentStmt              *sql.Stmt
+	getPointAssignmentsForActorStmt     *sql.Stmt
+	getPointAssignmentsForEventStmt     *sql.Stmt
 	getPostStmt                         *sql.Stmt
 	getPostsByActorStmt                 *sql.Stmt
 	getPostsByActorsFollowingTargetStmt *sql.Stmt
@@ -648,10 +807,13 @@ type Queries struct {
 	getRepostsBySubjectStmt             *sql.Stmt
 	getTotalLikesGivenByActorStmt       *sql.Stmt
 	getTotalLikesReceivedByActorStmt    *sql.Stmt
+	getTotalPointsForActorStmt          *sql.Stmt
+	getTotalPointsForEventStmt          *sql.Stmt
 	incrementFollowerCountByNStmt       *sql.Stmt
 	incrementFollowingCountByNStmt      *sql.Stmt
 	incrementLikeCountByNStmt           *sql.Stmt
 	incrementRepostCountByNStmt         *sql.Stmt
+	upatePointAssignmentStmt            *sql.Stmt
 	updateRepoBackfillRecordStmt        *sql.Stmt
 }
 
@@ -659,15 +821,18 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
 		db:                                  tx,
 		tx:                                  tx,
+		concludeEventStmt:                   q.concludeEventStmt,
 		countBlockersByTargetStmt:           q.countBlockersByTargetStmt,
 		countBlocksByActorStmt:              q.countBlocksByActorStmt,
 		countFollowersByTargetStmt:          q.countFollowersByTargetStmt,
 		countFollowsByActorStmt:             q.countFollowsByActorStmt,
 		countFollowsByActorAndTargetStmt:    q.countFollowsByActorAndTargetStmt,
 		createBlockStmt:                     q.createBlockStmt,
+		createEventStmt:                     q.createEventStmt,
 		createFollowStmt:                    q.createFollowStmt,
 		createImageStmt:                     q.createImageStmt,
 		createLikeStmt:                      q.createLikeStmt,
+		createPointAssignmentStmt:           q.createPointAssignmentStmt,
 		createPostStmt:                      q.createPostStmt,
 		createRepoBackfillRecordStmt:        q.createRepoBackfillRecordStmt,
 		createRepostStmt:                    q.createRepostStmt,
@@ -676,6 +841,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		decrementLikeCountByNStmt:           q.decrementLikeCountByNStmt,
 		decrementRepostCountByNStmt:         q.decrementRepostCountByNStmt,
 		deleteBlockStmt:                     q.deleteBlockStmt,
+		deleteEventStmt:                     q.deleteEventStmt,
 		deleteFollowStmt:                    q.deleteFollowStmt,
 		deleteFollowerCountStmt:             q.deleteFollowerCountStmt,
 		deleteFollowingCountStmt:            q.deleteFollowingCountStmt,
@@ -685,15 +851,22 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteImagesForPostStmt:             q.deleteImagesForPostStmt,
 		deleteLikeStmt:                      q.deleteLikeStmt,
 		deleteLikeCountStmt:                 q.deleteLikeCountStmt,
+		deletePointAssignmentStmt:           q.deletePointAssignmentStmt,
 		deletePostStmt:                      q.deletePostStmt,
 		deleteRepostStmt:                    q.deleteRepostStmt,
 		deleteRepostCountStmt:               q.deleteRepostCountStmt,
 		findPotentialFriendsStmt:            q.findPotentialFriendsStmt,
+		getActiveEventsForInitiatorStmt:     q.getActiveEventsForInitiatorStmt,
+		getActiveEventsForTargetStmt:        q.getActiveEventsForTargetStmt,
 		getBlockStmt:                        q.getBlockStmt,
 		getBlocksByActorStmt:                q.getBlocksByActorStmt,
 		getBlocksByActorAndTargetStmt:       q.getBlocksByActorAndTargetStmt,
 		getBlocksByTargetStmt:               q.getBlocksByTargetStmt,
 		getDailySummariesStmt:               q.getDailySummariesStmt,
+		getEventStmt:                        q.getEventStmt,
+		getEventsForInitiatorStmt:           q.getEventsForInitiatorStmt,
+		getEventsForTargetStmt:              q.getEventsForTargetStmt,
+		getEventsToConcludeStmt:             q.getEventsToConcludeStmt,
 		getFollowStmt:                       q.getFollowStmt,
 		getFollowerCountStmt:                q.getFollowerCountStmt,
 		getFollowingCountStmt:               q.getFollowingCountStmt,
@@ -707,6 +880,10 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getLikeCountStmt:                    q.getLikeCountStmt,
 		getLikesByActorStmt:                 q.getLikesByActorStmt,
 		getLikesBySubjectStmt:               q.getLikesBySubjectStmt,
+		getLikesGivenByActorFromToStmt:      q.getLikesGivenByActorFromToStmt,
+		getPointAssignmentStmt:              q.getPointAssignmentStmt,
+		getPointAssignmentsForActorStmt:     q.getPointAssignmentsForActorStmt,
+		getPointAssignmentsForEventStmt:     q.getPointAssignmentsForEventStmt,
 		getPostStmt:                         q.getPostStmt,
 		getPostsByActorStmt:                 q.getPostsByActorStmt,
 		getPostsByActorsFollowingTargetStmt: q.getPostsByActorsFollowingTargetStmt,
@@ -719,10 +896,13 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getRepostsBySubjectStmt:             q.getRepostsBySubjectStmt,
 		getTotalLikesGivenByActorStmt:       q.getTotalLikesGivenByActorStmt,
 		getTotalLikesReceivedByActorStmt:    q.getTotalLikesReceivedByActorStmt,
+		getTotalPointsForActorStmt:          q.getTotalPointsForActorStmt,
+		getTotalPointsForEventStmt:          q.getTotalPointsForEventStmt,
 		incrementFollowerCountByNStmt:       q.incrementFollowerCountByNStmt,
 		incrementFollowingCountByNStmt:      q.incrementFollowingCountByNStmt,
 		incrementLikeCountByNStmt:           q.incrementLikeCountByNStmt,
 		incrementRepostCountByNStmt:         q.incrementRepostCountByNStmt,
+		upatePointAssignmentStmt:            q.upatePointAssignmentStmt,
 		updateRepoBackfillRecordStmt:        q.updateRepoBackfillRecordStmt,
 	}
 }

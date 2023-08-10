@@ -248,11 +248,14 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 
 	log := c.Logger.With("repo", evt.Repo, "seq", evt.Seq, "commit", evt.Commit)
 
+	span.AddEvent("Acquire Status RLock")
 	c.statusLock.RLock()
+	span.AddEvent("Acquired Status RLock")
 	backfill, ok := c.BackfillStatus[evt.Repo]
 	c.statusLock.RUnlock()
 
 	if !ok {
+		span.SetAttributes(attribute.Bool("new_backfill_enqueued", true))
 		log.Infof("backfill not in progress, adding repo %s to queue", evt.Repo)
 
 		backfill = &BackfillRepoStatus{
@@ -262,7 +265,9 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 			DeleteBuffer: []*Delete{},
 		}
 
+		span.AddEvent("Acquire Status Lock")
 		c.statusLock.Lock()
+		span.AddEvent("Acquired Status Lock")
 		c.BackfillStatus[evt.Repo] = backfill
 		c.statusLock.Unlock()
 
@@ -279,6 +284,7 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 		backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
 	}
 
+	span.AddEvent("Read Repo From Car")
 	rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
 	if err != nil {
 		log.Errorf("failed to read repo from car: %+v", err)

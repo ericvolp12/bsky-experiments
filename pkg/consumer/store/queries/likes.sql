@@ -79,6 +79,12 @@ WHERE subjects.actor_did = $1;
 SELECT COUNT(*)
 FROM likes
 WHERE actor_did = $1;
+-- name: GetLikesGivenByActorFromTo :one
+SELECT COUNT(*)
+FROM likes
+WHERE actor_did = $1
+    AND created_at > sqlc.arg('from')
+    AND created_at < sqlc.arg('to');
 -- name: FindPotentialFriends :many
 WITH user_likes AS (
     SELECT subj

@@ -50,3 +50,38 @@ func GetHandleFromPLCMirror(ctx context.Context, mirror, did string) (handle str
 
 	return handle, nil
 }
+
+func GetDIDFromPLCMirror(ctx context.Context, mirror, handle string) (did string, err error) {
+	ctx, span := tracer.Start(ctx, "GetHandleFromPLCMirror")
+	defer span.End()
+
+	// HTTP GET to http[s]://{mirror}/{handle}
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s", mirror, handle), nil)
+	if err != nil {
+		span.SetAttributes(attribute.String("request.create.error", err.Error()))
+		return did, fmt.Errorf("error creating request for %s: %w", handle, err)
+	}
+
+	resp, err := otelhttp.DefaultClient.Do(req.WithContext(ctx))
+	if err != nil {
+		span.SetAttributes(attribute.String("request.do.error", err.Error()))
+		return did, fmt.Errorf("error getting did for %s: %w", handle, err)
+	}
+	defer resp.Body.Close()
+
+	// Read the response body into a mirrorResponse
+	mirrorResponse := plcMirrorResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&mirrorResponse)
+	if err != nil {
+		span.SetAttributes(attribute.String("response.decode.error", err.Error()))
+		return did, fmt.Errorf("error decoding response body for %s: %w", handle, err)
+	}
+
+	// If the didLookup has a handle, return it
+	if mirrorResponse.Did != "" {
+		did = mirrorResponse.Did
+		span.SetAttributes(attribute.String("did", did))
+	}
+
+	return did, nil
+}

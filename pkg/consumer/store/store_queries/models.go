@@ -7,6 +7,8 @@ package store_queries
 import (
 	"database/sql"
 	"time"
+
+	"github.com/sqlc-dev/pqtype"
 )
 
 type Block struct {
@@ -36,6 +38,18 @@ type DailySummary struct {
 	DailyActiveFollowers    int64     `json:"Daily Active Followers"`
 	BlocksPerDay            int64     `json:"Blocks per Day"`
 	DailyActiveBlockers     int64     `json:"Daily Active Blockers"`
+}
+
+type Event struct {
+	ID           int64                 `json:"id"`
+	InitiatorDid string                `json:"initiator_did"`
+	TargetDid    string                `json:"target_did"`
+	EventType    string                `json:"event_type"`
+	CreatedAt    time.Time             `json:"created_at"`
+	UpdatedAt    time.Time             `json:"updated_at"`
+	CompletedAt  time.Time             `json:"completed_at"`
+	ConcludedAt  sql.NullTime          `json:"concluded_at"`
+	Results      pqtype.NullRawMessage `json:"results"`
 }
 
 type Follow struct {
@@ -78,6 +92,15 @@ type Like struct {
 type LikeCount struct {
 	SubjectID int64     `json:"subject_id"`
 	NumLikes  int64     `json:"num_likes"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type PointAssignment struct {
+	ID        int64     `json:"id"`
+	EventID   int64     `json:"event_id"`
+	ActorDid  string    `json:"actor_did"`
+	Points    int32     `json:"points"`
+	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
