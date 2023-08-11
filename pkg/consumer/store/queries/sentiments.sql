@@ -7,14 +7,19 @@ FROM post_sentiments
 WHERE actor_did = $1
     AND rkey = $2;
 -- name: GetUnprocessedSentimentJobs :many
-SELECT s.*,
-    p.content
-FROM post_sentiments s
-    JOIN posts p ON p.actor_did = s.actor_did
+WITH unprocessed_posts AS (
+    SELECT s.actor_did,
+        s.rkey
+    FROM post_sentiments s
+    WHERE s.processed_at IS NULL
+    ORDER BY s.created_at
+    LIMIT $1
+)
+SELECT p.*
+FROM posts p
+    JOIN unprocessed_posts s ON p.actor_did = s.actor_did
     AND p.rkey = s.rkey
-WHERE s.processed_at IS NULL
-ORDER BY s.created_at ASC
-LIMIT $1 OFFSET $2;
+ORDER BY p.created_at;
 -- name: SetSentimentForPost :exec
 INSERT INTO post_sentiments (
         actor_did,

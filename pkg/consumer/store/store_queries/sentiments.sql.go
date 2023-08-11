@@ -130,50 +130,43 @@ func (q *Queries) GetSentimentForPost(ctx context.Context, arg GetSentimentForPo
 }
 
 const getUnprocessedSentimentJobs = `-- name: GetUnprocessedSentimentJobs :many
-SELECT s.actor_did, s.rkey, s.inserted_at, s.created_at, s.processed_at, s.sentiment, s.confidence,
-    p.content
-FROM post_sentiments s
-    JOIN posts p ON p.actor_did = s.actor_did
+WITH unprocessed_posts AS (
+    SELECT s.actor_did,
+        s.rkey
+    FROM post_sentiments s
+    WHERE s.processed_at IS NULL
+    ORDER BY s.created_at
+    LIMIT $1
+)
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
+FROM posts p
+    JOIN unprocessed_posts s ON p.actor_did = s.actor_did
     AND p.rkey = s.rkey
-WHERE s.processed_at IS NULL
-ORDER BY s.created_at ASC
-LIMIT $1 OFFSET $2
+ORDER BY p.created_at
 `
 
-type GetUnprocessedSentimentJobsParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
-}
-
-type GetUnprocessedSentimentJobsRow struct {
-	ActorDid    string          `json:"actor_did"`
-	Rkey        string          `json:"rkey"`
-	InsertedAt  time.Time       `json:"inserted_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	ProcessedAt sql.NullTime    `json:"processed_at"`
-	Sentiment   sql.NullString  `json:"sentiment"`
-	Confidence  sql.NullFloat64 `json:"confidence"`
-	Content     sql.NullString  `json:"content"`
-}
-
-func (q *Queries) GetUnprocessedSentimentJobs(ctx context.Context, arg GetUnprocessedSentimentJobsParams) ([]GetUnprocessedSentimentJobsRow, error) {
-	rows, err := q.query(ctx, q.getUnprocessedSentimentJobsStmt, getUnprocessedSentimentJobs, arg.Limit, arg.Offset)
+func (q *Queries) GetUnprocessedSentimentJobs(ctx context.Context, limit int32) ([]Post, error) {
+	rows, err := q.query(ctx, q.getUnprocessedSentimentJobsStmt, getUnprocessedSentimentJobs, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetUnprocessedSentimentJobsRow
+	var items []Post
 	for rows.Next() {
-		var i GetUnprocessedSentimentJobsRow
+		var i Post
 		if err := rows.Scan(
 			&i.ActorDid,
 			&i.Rkey,
-			&i.InsertedAt,
-			&i.CreatedAt,
-			&i.ProcessedAt,
-			&i.Sentiment,
-			&i.Confidence,
 			&i.Content,
+			&i.ParentPostActorDid,
+			&i.QuotePostActorDid,
+			&i.QuotePostRkey,
+			&i.ParentPostRkey,
+			&i.RootPostActorDid,
+			&i.RootPostRkey,
+			&i.HasEmbeddedMedia,
+			&i.CreatedAt,
+			&i.InsertedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -328,9 +328,7 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 	start := time.Now()
 	log.Info("getting unindexed posts...")
 
-	jobs, err := index.Store.Queries.GetUnprocessedSentimentJobs(ctx, store_queries.GetUnprocessedSentimentJobsParams{
-		Limit: pageSize,
-	})
+	jobs, err := index.Store.Queries.GetUnprocessedSentimentJobs(ctx, pageSize)
 	if err != nil {
 		log.Error("failed to get unprocessed sentiment jobs: %+v", err)
 		return false
@@ -414,7 +412,7 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 		dbSentimentParams = append(dbSentimentParams, store_queries.SetSentimentForPostParams{
 			ActorDid:    job.ActorDid,
 			Rkey:        job.Rkey,
-			CreatedAt:   job.CreatedAt,
+			CreatedAt:   job.CreatedAt.Time,
 			ProcessedAt: sql.NullTime{Time: time.Now(), Valid: true},
 			Sentiment:   s,
 			Confidence:  confidence,
