@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,207 +14,476 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	objectdetection "github.com/ericvolp12/bsky-experiments/pkg/object-detection"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/sentiment"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
-	"github.com/meilisearch/meilisearch-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/urfave/cli/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
+	"golang.org/x/sync/semaphore"
 )
 
-type Indexer struct {
+type Index struct {
 	PostRegistry *search.PostRegistry
-	MeiliClient  *meilisearch.Client
 	Detection    *objectdetection.ObjectDetectionImpl
 	Sentiment    *sentiment.Sentiment
 	Logger       *zap.SugaredLogger
+	Store        *store.Store
 
 	PositiveConfidenceThreshold float64
 	NegativeConfidenceThreshold float64
 }
 
 func main() {
-	ctx := context.Background()
-	var logger *zap.Logger
-
-	if os.Getenv("DEBUG") == "true" {
-		logger, _ = zap.NewDevelopment()
-		logger.Info("Starting logger in DEBUG mode...")
-	} else {
-		logger, _ = zap.NewProduction()
-		logger.Info("Starting logger in PRODUCTION mode...")
+	app := cli.App{
+		Name:    "indexer",
+		Usage:   "atproto post indexer",
+		Version: "0.0.1",
 	}
 
-	defer func() {
-		err := logger.Sync()
-		if err != nil {
-			fmt.Printf("failed to sync logger on teardown: %+v", err.Error())
-		}
-	}()
-
-	log := logger.Sugar()
-
-	log.Info("Starting up BSky indexer...")
-
-	log.Info("Reading config from environment...")
-
-	dbConnectionString := os.Getenv("REGISTRY_DB_CONNECTION_STRING")
-	if dbConnectionString == "" {
-		log.Fatal("REGISTRY_DB_CONNECTION_STRING environment variable is required")
+	app.Flags = []cli.Flag{
+		&cli.IntFlag{
+			Name:    "post-page-size",
+			Usage:   "number of posts to index per page",
+			Value:   2000,
+			EnvVars: []string{"POST_PAGE_SIZE"},
+		},
+		&cli.IntFlag{
+			Name:    "image-page-size",
+			Usage:   "number of images to index per page",
+			Value:   50,
+			EnvVars: []string{"IMAGE_PAGE_SIZE"},
+		},
+		&cli.IntFlag{
+			Name:    "port",
+			Usage:   "port to serve metrics on",
+			Value:   8080,
+			EnvVars: []string{"PORT"},
+		},
+		&cli.StringFlag{
+			Name:    "registry-postgres-url",
+			Usage:   "postgres url for storing registry data",
+			Value:   "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable",
+			EnvVars: []string{"REGISTRY_POSTGRES_URL"},
+		},
+		&cli.StringFlag{
+			Name:    "store-postgres-url",
+			Usage:   "postgres url for storing events",
+			Value:   "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable",
+			EnvVars: []string{"STORE_POSTGRES_URL"},
+		},
+		&cli.StringFlag{
+			Name:    "object-detection-service-host",
+			Usage:   "host for object detection service",
+			Value:   "localhost:8081",
+			EnvVars: []string{"OBJECT_DETECTION_SERVICE_HOST"},
+		},
+		&cli.StringFlag{
+			Name:    "sentiment-service-host",
+			Usage:   "host for sentiment service",
+			Value:   "localhost:8082",
+			EnvVars: []string{"SENTIMENT_SERVICE_HOST"},
+		},
+		&cli.Float64Flag{
+			Name:    "positive-confidence-threshold",
+			Usage:   "confidence threshold for positive sentiment",
+			Value:   0.65,
+			EnvVars: []string{"POSITIVE_CONFIDENCE_THRESHOLD"},
+		},
+		&cli.Float64Flag{
+			Name:    "negative-confidence-threshold",
+			Usage:   "confidence threshold for negative sentiment",
+			Value:   0.65,
+			EnvVars: []string{"NEGATIVE_CONFIDENCE_THRESHOLD"},
+		},
 	}
 
-	// meiliAddress := os.Getenv("MEILI_ADDRESS")
-	// if meiliAddress == "" {
-	// 	log.Fatal("MEILI_ADDRESS environment variable is required")
-	// }
+	app.Action = Indexer
+
+	err := app.Run(os.Args)
+	if err != nil {
+		log.Fatalf("indexer exited with error: %w", err)
+	}
+}
+
+var tracer = otel.Tracer("Indexer")
+
+func Indexer(cctx *cli.Context) error {
+	ctx := cctx.Context
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Trap SIGINT to trigger a shutdown.
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+
+	rawLogger, err := zap.NewProduction()
+	if err != nil {
+		return fmt.Errorf("failed to initialize logger: %w", err)
+	}
+	logger := rawLogger.Sugar()
+
+	logger.Info("Starting up BSky indexer...")
 
 	// Registers a tracer Provider globally if the exporter endpoint is set
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
-		log.Info("initializing tracer...")
-		shutdown, err := tracing.InstallExportPipeline(ctx, "BSkyIndexer", 1)
+		logger.Info("initializing tracer...")
+		shutdown, err := tracing.InstallExportPipeline(cctx.Context, "Indexer", 1)
 		if err != nil {
-			log.Fatal(err)
+			return fmt.Errorf("failed to initialize tracing: %w", err)
 		}
 		defer func() {
-			if err := shutdown(ctx); err != nil {
-				log.Fatal(err)
+			if err := shutdown(cctx.Context); err != nil {
+				logger.Errorf("failed to shutdown tracing: %+v", err)
 			}
 		}()
 	}
 
-	postRegistry, err := search.NewPostRegistry(dbConnectionString)
+	postRegistry, err := search.NewPostRegistry(cctx.String("registry-postgres-url"))
 	if err != nil {
-		log.Fatalf("Failed to create PostRegistry: %v", err)
+		return fmt.Errorf("failed to initialize post registry: %w", err)
 	}
 	defer postRegistry.Close()
 
-	objectDetectionServiceHost := os.Getenv("OBJECT_DETECTION_SERVICE_HOST")
-	if objectDetectionServiceHost == "" {
-		log.Fatal("OBJECT_DETECTION_SERVICE_HOST environment variable is required")
+	store, err := store.NewStore(cctx.String("store-postgres-url"))
+	if err != nil {
+		return fmt.Errorf("failed to initialize store: %w", err)
+	}
+	defer store.Close()
+
+	if cctx.String("object-detection-service-host") == "" {
+		return fmt.Errorf("object detection service host is required")
 	}
 
-	detection := objectdetection.NewObjectDetection(objectDetectionServiceHost)
+	detection := objectdetection.NewObjectDetection(cctx.String("object-detection-service-host"))
 
-	// meiliClient := meilisearch.NewClient(meilisearch.ClientConfig{
-	// 	Host: meiliAddress,
-	// })
-
-	sentimentServiceHost := os.Getenv("SENTIMENT_SERVICE_HOST")
-	if sentimentServiceHost == "" {
-		log.Fatal("SENTIMENT_SERVICE_HOST environment variable is required")
+	if cctx.String("sentiment-service-host") == "" {
+		return fmt.Errorf("sentiment service host is required")
 	}
 
-	sentiment := sentiment.NewSentiment(sentimentServiceHost)
+	sentiment := sentiment.NewSentiment(cctx.String("sentiment-service-host"))
 
 	// Start up a Metrics and Profiling goroutine
-	go func() {
-		log = log.With("source", "pprof_server")
-		log.Info("starting pprof and prometheus server...")
-		http.Handle("/metrics", promhttp.Handler())
-		log.Info(http.ListenAndServe("0.0.0.0:8094", nil))
-	}()
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
 
-	indexer := &Indexer{
-		PostRegistry: postRegistry,
-		// MeiliClient:                 meiliClient,
-		Detection:                   detection,
-		Sentiment:                   sentiment,
-		Logger:                      log,
-		PositiveConfidenceThreshold: 0.65,
-		NegativeConfidenceThreshold: 0.65,
+	metricServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cctx.Int("port")),
+		Handler: mux,
 	}
 
-	// Create a cancellable context
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	shutdownMetrics := make(chan struct{})
+	metricsShutdown := make(chan struct{})
 
-	// Start a goroutine to listen for SIGINT and SIGTERM signals
+	// Startup metrics server
 	go func() {
-		log = log.With("source", "signal_handler")
-		log.Info("starting signal handler...")
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-		<-sigChan
-		log.Info("received shutdown signal, shutting down...")
+		logger := logger.With("source", "metrics_server")
+
+		logger.Info("metrics server listening on port %d", cctx.Int("port"))
+
+		go func() {
+			if err := metricServer.ListenAndServe(); err != http.ErrServerClosed {
+				logger.Error("failed to start metrics server: %+v\n", err)
+			}
+		}()
+		<-shutdownMetrics
+		if err := metricServer.Shutdown(ctx); err != nil {
+			logger.Error("failed to shutdown metrics server: %+v\n", err)
+		}
+		close(metricsShutdown)
+
+		logger.Info("metrics server shut down")
+	}()
+
+	index := &Index{
+		PostRegistry:                postRegistry,
+		Detection:                   detection,
+		Sentiment:                   sentiment,
+		PositiveConfidenceThreshold: cctx.Float64("positive-confidence-threshold"),
+		NegativeConfidenceThreshold: cctx.Float64("negative-confidence-threshold"),
+		Logger:                      logger,
+		Store:                       store,
+	}
+
+	// Start the Image Indexing loop
+	shutdownImages := make(chan struct{})
+	imagesShutdown := make(chan struct{})
+	go func() {
+		logger := logger.With("source", "image_indexer")
+		logger.Info("Starting image indexing loop...")
+		for {
+			ctx := context.Background()
+			index.IndexImages(ctx, int32(cctx.Int("image-page-size")))
+			select {
+			case <-shutdownImages:
+				logger.Info("Shutting down image indexing loop...")
+				close(imagesShutdown)
+				return
+			default:
+				time.Sleep(1 * time.Second)
+			}
+		}
+	}()
+
+	// Start the Sentiment Indexing loop
+	shutdownSentiments := make(chan struct{})
+	sentimentsShutdown := make(chan struct{})
+	go func() {
+		logger := logger.With("source", "sentiment_indexer")
+		logger.Info("Starting sentiment indexing loop...")
+		for {
+			ctx := context.Background()
+			index.IndexPostSentiments(ctx, int32(cctx.Int("post-page-size")))
+			select {
+			case <-shutdownSentiments:
+				logger.Info("Shutting down sentiment indexing loop...")
+				close(sentimentsShutdown)
+				return
+			default:
+				time.Sleep(1 * time.Second)
+			}
+		}
+	}()
+
+	// Start the new post indexing loop
+	shutdownNewSentiments := make(chan struct{})
+	newSentimentsShutdown := make(chan struct{})
+	go func() {
+		logger := logger.With("source", "new_sentiment_indexer")
+		logger.Info("Starting new sentiment indexing loop...")
+		for {
+			ctx := context.Background()
+			gofast := index.IndexNewPostSentiments(ctx, int32(cctx.Int("post-page-size")))
+			select {
+			case <-shutdownNewSentiments:
+				logger.Info("Shutting down new sentiment indexing loop...")
+				close(newSentimentsShutdown)
+				return
+			default:
+				if !gofast {
+					time.Sleep(1 * time.Second)
+				}
+			}
+		}
+	}()
+
+	select {
+	case <-signals:
 		cancel()
-	}()
+		logger.Info("shutting down on signal")
+	case <-ctx.Done():
+		logger.Info("shutting down on context done")
+	}
 
-	// Start the Image Processing loop
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			indexer.ProcessImages(ctx)
-			select {
-			case <-ctx.Done():
-				log.Info("Context cancelled, exiting...")
-				return
-			default:
-				time.Sleep(1 * time.Second)
-			}
-		}
-	}()
+	logger.Info("shutting down, waiting for workers to clean up...")
 
-	// Start the MeiliSearch index loop
-	wg.Add(1)
-	go func() {
-		log = log.With("source", "meilisearch_indexer")
-		defer wg.Done()
-		for {
-			indexer.IndexPosts(ctx)
-			select {
-			case <-ctx.Done():
-				log.Info("Context cancelled, exiting...")
-				return
-			default:
-				time.Sleep(1 * time.Second)
-			}
+	close(shutdownImages)
+	close(shutdownSentiments)
+	close(shutdownMetrics)
+	close(shutdownNewSentiments)
 
-		}
-	}()
+	<-imagesShutdown
+	<-sentimentsShutdown
+	<-metricsShutdown
+	<-newSentimentsShutdown
 
-	// Wait for the loops to finish
-	wg.Wait()
+	logger.Info("shutdown complete")
 
-	log.Info("Exiting...")
+	return nil
 }
 
-var postsAnalyzedCounter = promauto.NewCounter(prometheus.CounterOpts{
+var postsAnalyzedCounter = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: "indexer_analyzed_posts",
 	Help: "The total number of posts analyzed",
-})
+}, []string{"type"})
 
-var postsIndexedCounter = promauto.NewCounter(prometheus.CounterOpts{
+var postsIndexedCounter = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: "indexer_indexed_posts",
 	Help: "The total number of posts indexed",
-})
+}, []string{"type"})
 
-var positiveSentimentCounter = promauto.NewCounter(prometheus.CounterOpts{
+var positiveSentimentCounter = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: "indexer_positive_sentiment",
 	Help: "The total number of posts with positive sentiment",
-})
+}, []string{"type"})
 
-var negativeSentimentCounter = promauto.NewCounter(prometheus.CounterOpts{
+var negativeSentimentCounter = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: "indexer_negative_sentiment",
 	Help: "The total number of posts with negative sentiment",
-})
+}, []string{"type"})
 
-func (indexer *Indexer) IndexPosts(ctx context.Context) {
-	tracer := otel.Tracer("MeilisearchIndexer")
-	ctx, span := tracer.Start(ctx, "IndexPosts")
+func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) bool {
+	ctx, span := tracer.Start(ctx, "IndexNewPostSentiments")
 	defer span.End()
 
-	log := indexer.Logger.With("source", "meilisearch_indexer")
+	log := index.Logger.With("source", "new_post_indexer")
+	log.Info("new index loop waking up...")
+	start := time.Now()
+	log.Info("getting unindexed posts...")
+
+	jobs, err := index.Store.Queries.GetUnprocessedSentimentJobs(ctx, store_queries.GetUnprocessedSentimentJobsParams{
+		Limit: pageSize,
+	})
+	if err != nil {
+		log.Error("failed to get unprocessed sentiment jobs: %+v", err)
+		return false
+	}
+
+	postsIndexedCounter.WithLabelValues("store").Add(float64(len(jobs)))
+
+	if len(jobs) == 0 {
+		log.Info("no posts to index, sleeping...")
+		return false
+	}
+
+	fetchDone := time.Now()
+
+	log.Info("submtting posts for Sentiment Analysis...")
+
+	sentimentPosts := []*sentiment.SentimentPost{}
+	for i := range jobs {
+		job := jobs[i]
+		sentimentPosts = append(sentimentPosts, &sentiment.SentimentPost{
+			Rkey:     job.Rkey,
+			ActorDID: job.ActorDid,
+			Text:     job.Content.String,
+		})
+	}
+
+	span.AddEvent("GetPostsSentiment")
+
+	sentimentResults, err := index.Sentiment.GetPostsSentiment(ctx, sentimentPosts)
+	if err != nil {
+		span.SetAttributes(attribute.String("sentiment.error", err.Error()))
+		log.Error("failed to get posts sentiment: %+v", err)
+		return false
+	}
+
+	mlDone := time.Now()
+
+	dbSentimentParams := []store_queries.SetSentimentForPostParams{}
+
+	postsAnalyzed := 0
+
+	for i := range jobs {
+		job := jobs[i]
+		var result *sentiment.SentimentPost
+		for j := range sentimentResults {
+			if sentimentResults[j].Rkey == job.Rkey && sentimentResults[j].ActorDID == job.ActorDid {
+				result = sentimentResults[j]
+				break
+			}
+		}
+
+		var s sql.NullString
+		var confidence sql.NullFloat64
+		if result != nil && result.Decision != nil {
+			postsAnalyzed++
+			switch result.Decision.Sentiment {
+			case sentiment.POSITIVE:
+				s = sql.NullString{
+					String: store.POSITIVE,
+					Valid:  true,
+				}
+				positiveSentimentCounter.WithLabelValues("store").Inc()
+			case sentiment.NEGATIVE:
+				s = sql.NullString{
+					String: store.NEGATIVE,
+					Valid:  true,
+				}
+				negativeSentimentCounter.WithLabelValues("store").Inc()
+			case sentiment.NEUTRAL:
+				s = sql.NullString{
+					String: store.NEUTRAL,
+					Valid:  true,
+				}
+			}
+			confidence = sql.NullFloat64{
+				Float64: result.Decision.Confidence,
+				Valid:   true,
+			}
+		}
+
+		dbSentimentParams = append(dbSentimentParams, store_queries.SetSentimentForPostParams{
+			ActorDid:    job.ActorDid,
+			Rkey:        job.Rkey,
+			CreatedAt:   job.CreatedAt,
+			ProcessedAt: sql.NullTime{Time: time.Now(), Valid: true},
+			Sentiment:   s,
+			Confidence:  confidence,
+		})
+	}
+
+	span.AddEvent("SetSentimentForPost")
+
+	log.Info("setting sentiment results...")
+	sem := semaphore.NewWeighted(10)
+
+	wg := sync.WaitGroup{}
+
+	for i := range dbSentimentParams {
+		p := dbSentimentParams[i]
+		wg.Add(1)
+		go func(param store_queries.SetSentimentForPostParams) {
+			defer wg.Done()
+			ctx := context.Background()
+			sem.Acquire(ctx, 1)
+			defer sem.Release(1)
+			err := index.Store.Queries.SetSentimentForPost(ctx, param)
+			if err != nil {
+				log.Error("failed to set sentiment for post: %+v", err)
+				return
+			}
+		}(p)
+	}
+
+	wg.Wait()
+
+	updateDone := time.Now()
+
+	span.SetAttributes(
+		attribute.Int("posts_indexed", len(jobs)),
+		attribute.Int("posts_analyzed", postsAnalyzed),
+		attribute.Int("posts_labeled_with_sentiment", len(dbSentimentParams)),
+		attribute.String("indexing_time", time.Since(start).String()),
+		attribute.String("fetch_time", fetchDone.Sub(start).String()),
+		attribute.String("analyze_time", mlDone.Sub(fetchDone).String()),
+		attribute.String("update_time", updateDone.Sub(mlDone).String()),
+	)
+
+	log.Infow("finished indexing posts, sleeping...",
+		"posts_indexed", len(jobs),
+		"posts_analyzed", postsAnalyzed,
+		"posts_labeled_with_sentiment", len(dbSentimentParams),
+		"indexing_time", time.Since(start),
+		"fetch_time", fetchDone.Sub(start),
+		"analyze_time", mlDone.Sub(fetchDone),
+		"update_time", updateDone.Sub(mlDone),
+	)
+
+	if len(jobs) < int(pageSize) {
+		return false
+	}
+
+	return true
+}
+
+func (index *Index) IndexPostSentiments(ctx context.Context, pageSize int32) {
+	ctx, span := tracer.Start(ctx, "IndexPostSentiments")
+	defer span.End()
+
+	log := index.Logger.With("source", "post_indexer")
 	log.Info("index loop waking up...")
 	start := time.Now()
 	log.Info("getting unindexed posts...")
-	posts, err := indexer.PostRegistry.GetUnindexedPostPage(ctx, 2000, 0)
+	posts, err := index.PostRegistry.GetUnindexedPostPage(ctx, pageSize, 0)
 	if err != nil {
 		// Check if error is a not found error
 		if errors.Is(err, search.PostsNotFound) {
@@ -237,7 +508,7 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 			Text:     post.Text,
 		})
 	}
-	sentimentResults, err := indexer.Sentiment.GetPostsSentiment(ctx, sentimentPosts)
+	sentimentResults, err := index.Sentiment.GetPostsSentiment(ctx, sentimentPosts)
 	if err != nil {
 		span.SetAttributes(attribute.String("sentiment.error", err.Error()))
 		log.Errorf("error getting sentiment for posts: %+v\n", err)
@@ -245,7 +516,7 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 	sentimentDone := time.Now()
 
 	log.Info("setting sentiment results...")
-	errs := indexer.PostRegistry.SetSentimentResults(ctx, sentimentResults)
+	errs := index.PostRegistry.SetSentimentResults(ctx, sentimentResults)
 	if len(errs) > 0 {
 		log.Errorf("error(s) setting sentiment results: %+v\n", errs)
 	}
@@ -260,24 +531,24 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 		if res != nil {
 			if res.Decision != nil {
 				postsAnalyzed++
-				postsAnalyzedCounter.Inc()
-				if res.Decision.Sentiment == sentiment.POSITIVE && res.Decision.Confidence >= indexer.PositiveConfidenceThreshold {
+				postsAnalyzedCounter.WithLabelValues("registry").Inc()
+				if res.Decision.Sentiment == sentiment.POSITIVE && res.Decision.Confidence >= index.PositiveConfidenceThreshold {
 					postIDsToLabel = append(postIDsToLabel, res.Rkey)
 					authorDIDsToLabel = append(authorDIDsToLabel, res.ActorDID)
 					labels = append(labels, "sentiment:pos")
-					positiveSentimentCounter.Inc()
-				} else if res.Decision.Sentiment == sentiment.NEGATIVE && res.Decision.Confidence >= indexer.NegativeConfidenceThreshold {
+					positiveSentimentCounter.WithLabelValues("registry").Inc()
+				} else if res.Decision.Sentiment == sentiment.NEGATIVE && res.Decision.Confidence >= index.NegativeConfidenceThreshold {
 					postIDsToLabel = append(postIDsToLabel, res.Rkey)
 					authorDIDsToLabel = append(authorDIDsToLabel, res.ActorDID)
 					labels = append(labels, "sentiment:neg")
-					negativeSentimentCounter.Inc()
+					negativeSentimentCounter.WithLabelValues("registry").Inc()
 				}
 			}
 		}
 	}
 
 	log.Infof("setting %d sentiment labels...", len(labels))
-	err = indexer.PostRegistry.AddOneLabelPerPost(ctx, labels, postIDsToLabel, authorDIDsToLabel)
+	err = index.PostRegistry.AddOneLabelPerPost(ctx, labels, postIDsToLabel, authorDIDsToLabel)
 	if err != nil {
 		log.Errorf("error setting sentiment labels: %+v\n", err)
 	}
@@ -290,10 +561,10 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 		postIds[i] = post.ID
 	}
 
-	postsIndexedCounter.Add(float64(len(postIds)))
+	postsIndexedCounter.WithLabelValues("registry").Add(float64(len(postIds)))
 
 	log.Infof("setting indexed at timestamp on %d posts...", len(postIds))
-	err = indexer.PostRegistry.SetIndexedAtTimestamp(ctx, postIds, time.Now())
+	err = index.PostRegistry.SetIndexedAtTimestamp(ctx, postIds, time.Now())
 	if err != nil {
 		log.Errorf("error setting indexed at timestamp: %v", err)
 		return
@@ -326,15 +597,30 @@ func (indexer *Indexer) IndexPosts(ctx context.Context) {
 	)
 }
 
-func (indexer *Indexer) ProcessImages(ctx context.Context) {
-	tracer := otel.Tracer("ImageProcessor")
-	ctx, span := tracer.Start(ctx, "ProcessImages")
+var imagesIndexedCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "indexer_images_indexed_total",
+	Help: "The total number of images indexed",
+})
+
+var successfullyIndexedImagesCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "indexer_images_indexed_successfully_total",
+	Help: "The total number of images indexed successfully",
+})
+
+var failedToIndexImagesCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "indexer_images_indexed_failed_total",
+	Help: "The total number of images failed to index",
+})
+
+func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
+	ctx, span := tracer.Start(ctx, "IndexImages")
 	defer span.End()
 
-	log := indexer.Logger.With("source", "image_processor")
+	log := index.Logger.With("source", "image_processor")
 	log.Info("Processing images...")
 	start := time.Now()
-	unprocessedImages, err := indexer.PostRegistry.GetUnprocessedImages(ctx, 50)
+
+	unprocessedImages, err := index.PostRegistry.GetUnprocessedImages(ctx, pageSize)
 	if err != nil {
 		if errors.As(err, &search.NotFoundError{}) {
 			log.Info("No unprocessed images found, skipping process cycle...")
@@ -350,6 +636,8 @@ func (indexer *Indexer) ProcessImages(ctx context.Context) {
 		return
 	}
 
+	imagesIndexedCounter.Add(float64(len(unprocessedImages)))
+
 	imageMetas := make([]*objectdetection.ImageMeta, len(unprocessedImages))
 	for i, image := range unprocessedImages {
 		imageMetas[i] = &objectdetection.ImageMeta{
@@ -362,7 +650,7 @@ func (indexer *Indexer) ProcessImages(ctx context.Context) {
 		}
 	}
 
-	results, err := indexer.Detection.ProcessImages(ctx, imageMetas)
+	results, err := index.Detection.ProcessImages(ctx, imageMetas)
 	if err != nil {
 		log.Errorf("Failed to process images: %v", err)
 		return
@@ -383,7 +671,7 @@ func (indexer *Indexer) ProcessImages(ctx context.Context) {
 			continue
 		}
 
-		err = indexer.PostRegistry.AddCVDataToImage(
+		err = index.PostRegistry.AddCVDataToImage(
 			ctx,
 			result.Meta.CID,
 			result.Meta.PostID,
@@ -404,13 +692,16 @@ func (indexer *Indexer) ProcessImages(ctx context.Context) {
 
 		for _, label := range imageLabels {
 			postLabel := fmt.Sprintf("%s:%s", "cv", label)
-			err = indexer.PostRegistry.AddPostLabel(ctx, result.Meta.PostID, result.Meta.ActorDID, postLabel)
+			err = index.PostRegistry.AddPostLabel(ctx, result.Meta.PostID, result.Meta.ActorDID, postLabel)
 			if err != nil {
 				log.Errorf("Failed to add label to post: %v", err)
 				continue
 			}
 		}
 	}
+
+	successfullyIndexedImagesCounter.Add(float64(successCount))
+	failedToIndexImagesCounter.Add(float64(len(unprocessedImages) - successCount))
 
 	span.SetAttributes(
 		attribute.Int("batch_size", len(unprocessedImages)),

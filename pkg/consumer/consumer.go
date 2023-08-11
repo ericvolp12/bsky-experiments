@@ -398,6 +398,17 @@ func (c *Consumer) HandleDeleteRecord(
 			log.Errorf("failed to delete post: %+v", err)
 			// Don't return an error here, because we still want to try to delete the images
 		}
+
+		// Delete sentiment for the post
+		err = c.Store.Queries.DeleteSentimentJob(ctx, store_queries.DeleteSentimentJobParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			log.Errorf("failed to delete sentiment job: %+v", err)
+			// Don't return an error here, because we still want to try to delete the images
+		}
+
 		// Delete images for the post
 		err = c.Store.Queries.DeleteImagesForPost(ctx, store_queries.DeleteImagesForPostParams{
 			PostActorDid: repo,
@@ -600,6 +611,16 @@ func (c *Consumer) HandleCreateRecord(
 		})
 		if err != nil {
 			log.Errorf("failed to create post: %+v", err)
+		}
+
+		// Create a Sentiment Job for the post
+		err = c.Store.Queries.CreateSentimentJob(ctx, store_queries.CreateSentimentJobParams{
+			ActorDid:  repo,
+			Rkey:      rkey,
+			CreatedAt: recCreatedAt,
+		})
+		if err != nil {
+			log.Errorf("failed to create sentiment job: %+v", err)
 		}
 
 		// Create images for the post

@@ -11,14 +11,6 @@ services:
     image: bsky-indexer
     container_name: bsky-indexer
     env_file:
-      - ../../.env
+      - ../../.indexer.env
     ports:
-      - "8094:8094"
-    volumes:
-      - type: bind
-        source: ../../data/
-        target: /app/data/
-      - type: bind
-        source: ../../.env
-        target: /app/.env
-
+      - "8094:8080"
