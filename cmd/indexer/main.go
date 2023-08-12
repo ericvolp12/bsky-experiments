@@ -109,7 +109,7 @@ func main() {
 
 	err := app.Run(os.Args)
 	if err != nil {
-		log.Fatalf("indexer exited with error: %w", err)
+		log.Fatalf("indexer exited with error: %+v", err)
 	}
 }
 
