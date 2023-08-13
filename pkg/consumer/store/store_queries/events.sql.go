@@ -112,7 +112,7 @@ WHERE initiator_did = $1
     AND event_type = $2
     AND (
         window_end > NOW()
-        OR expired_at < NOW()
+        OR expired_at > NOW()
     )
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $4
