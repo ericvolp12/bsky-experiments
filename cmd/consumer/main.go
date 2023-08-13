@@ -310,7 +310,11 @@ func Consumer(cctx *cli.Context) error {
 			}
 			close(repoStreamShutdown)
 		}()
-		<-shutdownRepoStream
+		select {
+		case <-shutdownRepoStream:
+			log.Info("shutting down repo stream")
+		case <-repoStreamShutdown:
+		}
 		cancel()
 	}()
 
