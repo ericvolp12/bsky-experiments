@@ -640,7 +640,7 @@ func (j *Jazbot) ConcludeChallenge(ctx context.Context, event *store_queries.Eve
 	winnerDid := ""
 
 	if initiatorLikes <= 10 || targetLikes <= 10 {
-		resp = fmt.Sprint("The battle between {handle:0} and {handle:1} has ended!\n")
+		resp = fmt.Sprintf("The battle between {handle:0} (%d) and {handle:1} (%d) has ended!\n", initiatorLikes, targetLikes)
 		resp += fmt.Sprint("Unfortunately, one or both participants failed to give out > 10 likes, so there is no winner!")
 
 		resp, facets, err = insertMentions(resp, []string{event.InitiatorDid, event.TargetDid}, []string{initiatorHandle, targetHandle}, facets)
