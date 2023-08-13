@@ -104,6 +104,10 @@ var tracer = otel.Tracer("Consumer")
 func Consumer(cctx *cli.Context) error {
 	ctx := cctx.Context
 
+	// Create a channel that will be closed when we want to stop the application
+	// Usually when a critical routine returns an error
+	kill := make(chan struct{})
+
 	// Trap SIGINT to trigger a shutdown.
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
@@ -246,7 +250,7 @@ func Consumer(cctx *cli.Context) error {
 				c.ProgMux.Unlock()
 				if seq == lastSeq {
 					log.Errorf("no new events in last 15 seconds, shutting down for docker to restart me (last seq: %d)", seq)
-					close(livenessCheckerShutdown)
+					close(kill)
 				} else {
 					log.Infof("last event sequence: %d", seq)
 					lastSeq = seq
@@ -269,16 +273,16 @@ func Consumer(cctx *cli.Context) error {
 	go func() {
 		logger := log.With("source", "metrics_server")
 
-		logger.Infof("metrics server listening on port %d", cctx.Int("port"))
+		logger.Info("metrics server listening on port %d", cctx.Int("port"))
 
 		go func() {
 			if err := metricServer.ListenAndServe(); err != http.ErrServerClosed {
-				logger.Errorf("failed to start metrics server: %+v\n", err)
+				logger.Error("failed to start metrics server: %+v\n", err)
 			}
 		}()
 		<-shutdownMetrics
 		if err := metricServer.Shutdown(ctx); err != nil {
-			logger.Errorf("failed to shutdown metrics server: %+v\n", err)
+			logger.Error("failed to shutdown metrics server: %+v\n", err)
 		}
 		logger.Info("metrics server shut down")
 		close(metricsShutdown)
@@ -305,16 +309,13 @@ func Consumer(cctx *cli.Context) error {
 			err = events.HandleRepoStream(ctx, con, pool)
 			if !errors.Is(err, context.Canceled) {
 				log.Infof("HandleRepoStream returned unexpectedly, killing the consumer: %+v...", err)
+				close(kill)
 			} else {
 				log.Info("HandleRepoStream closed on context cancel...")
 			}
 			close(repoStreamShutdown)
 		}()
-		select {
-		case <-shutdownRepoStream:
-			log.Info("shutting down repo stream")
-		case <-repoStreamShutdown:
-		}
+		<-shutdownRepoStream
 		cancel()
 	}()
 
@@ -323,14 +324,8 @@ func Consumer(cctx *cli.Context) error {
 		log.Info("shutting down on signal")
 	case <-ctx.Done():
 		log.Info("shutting down on context done")
-	case <-repoStreamShutdown:
-		log.Info("shutting down on repo stream early exit")
-	case <-livenessCheckerShutdown:
-		log.Info("shutting down on liveness checker early exit")
-	case <-cursorManagerShutdown:
-		log.Info("shutting down on cursor manager early exit")
-	case <-metricsShutdown:
-		log.Info("shutting down on metrics early exit")
+	case <-kill:
+		log.Info("shutting down on kill")
 	}
 
 	log.Info("shutting down, waiting for workers to clean up...")
