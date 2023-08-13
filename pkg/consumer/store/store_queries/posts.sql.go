@@ -87,6 +87,64 @@ func (q *Queries) DeletePost(ctx context.Context, arg DeletePostParams) error {
 	return err
 }
 
+const getMyPostsByFuzzyContent = `-- name: GetMyPostsByFuzzyContent :many
+SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, has_embedded_media, created_at, inserted_at
+FROM posts
+WHERE actor_did = $1
+    AND content ILIKE concat('%', $4::text, '%')::text
+    AND content not ilike '%!jazbot%'
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type GetMyPostsByFuzzyContentParams struct {
+	ActorDid string `json:"actor_did"`
+	Limit    int32  `json:"limit"`
+	Offset   int32  `json:"offset"`
+	Query    string `json:"query"`
+}
+
+func (q *Queries) GetMyPostsByFuzzyContent(ctx context.Context, arg GetMyPostsByFuzzyContentParams) ([]Post, error) {
+	rows, err := q.query(ctx, q.getMyPostsByFuzzyContentStmt, getMyPostsByFuzzyContent,
+		arg.ActorDid,
+		arg.Limit,
+		arg.Offset,
+		arg.Query,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Post
+	for rows.Next() {
+		var i Post
+		if err := rows.Scan(
+			&i.ActorDid,
+			&i.Rkey,
+			&i.Content,
+			&i.ParentPostActorDid,
+			&i.QuotePostActorDid,
+			&i.QuotePostRkey,
+			&i.ParentPostRkey,
+			&i.RootPostActorDid,
+			&i.RootPostRkey,
+			&i.HasEmbeddedMedia,
+			&i.CreatedAt,
+			&i.InsertedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPost = `-- name: GetPost :one
 SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, has_embedded_media, created_at, inserted_at
 FROM posts

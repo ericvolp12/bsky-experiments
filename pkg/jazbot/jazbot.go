@@ -43,6 +43,7 @@ var SupportedCommands = map[string]string{
 	"findmeafriend":       "Find users with shared interests",
 	"challenge @{handle}": "Challenge a user to a like battle!",
 	"points":              "Get your current points",
+	"search":              "Search your own posts",
 }
 
 func NewJazbot(ctx context.Context, store *store.Store, botDid, plcMirror string) (*Jazbot, error) {
@@ -219,6 +220,20 @@ func (j *Jazbot) HandleRequest(
 			if err != nil {
 				j.Logger.Errorf("failed to get points for user (%s): %+v", actorDid, err)
 			}
+		case "search":
+			validCommandsReceivedCounter.WithLabelValues(command).Inc()
+			if len(parts) < 3 {
+				resp = "Please provide a query to search for"
+				break
+			}
+
+			query := strings.Join(parts[2:], " ")
+
+			var err error
+			resp, facets, err = j.SearchMyPosts(ctx, actorDid, query)
+			if err != nil {
+				j.Logger.Errorf("failed to search for posts for user (%s): %+v", actorDid, err)
+			}
 		default:
 			failedCommandsReceivedCounter.WithLabelValues("invalid_command").Inc()
 			resp = fmt.Sprintf("I'm not familiar with the command: %s", command)
@@ -282,6 +297,46 @@ func (j *Jazbot) HandleRequest(
 	}
 
 	return nil
+}
+
+func (j *Jazbot) SearchMyPosts(ctx context.Context, actorDid string, searchText string) (string, []*appbsky.RichtextFacet, error) {
+	ctx, span := tracer.Start(ctx, "SearchMyPosts")
+	defer span.End()
+
+	resp := ""
+	posts, err := j.Store.Queries.GetMyPostsByFuzzyContent(ctx, store_queries.GetMyPostsByFuzzyContentParams{
+		ActorDid: actorDid,
+		Query:    searchText,
+		Limit:    5,
+	})
+	if err != nil {
+		resp = fmt.Sprintf("I had trouble finding your posts 😢\nPlease try again later!")
+		return resp, nil, fmt.Errorf("failed to search posts for user (%s): %+v", actorDid, err)
+	}
+
+	if len(posts) == 0 {
+		resp = fmt.Sprint("I couldn't find any posts matching your query, I'm sorry 😢")
+		return resp, nil, nil
+	}
+
+	resp = fmt.Sprintf("Here are the posts I found matching your query:\n\n")
+
+	facets := []*appbsky.RichtextFacet{}
+	links := []string{}
+	texts := []string{}
+	for i, post := range posts {
+		resp += fmt.Sprintf("📝 {link:%d}\n", i)
+		links = append(links, fmt.Sprintf("https://bsky.app/profile/%s/post/%s", actorDid, post.Rkey))
+		texts = append(texts, post.Content.String)
+	}
+
+	resp, facets, err = insertLinks(resp, links, texts, facets)
+	if err != nil {
+		resp = fmt.Sprintf("I had trouble finding your posts 😢\nPlease try again later!")
+		return resp, nil, fmt.Errorf("failed to insert links: %+v", err)
+	}
+
+	return resp, facets, nil
 }
 
 func (j *Jazbot) FindFriends(ctx context.Context, actorDid string) (string, []*appbsky.RichtextFacet, error) {
@@ -827,6 +882,52 @@ func insertMentions(text string, dids []string, handles []string, facets []*appb
 
 		// Replace the placeholder with the handle in the text
 		text = strings.Replace(text, match[0], "@"+truncatedHandle, 1)
+	}
+
+	return text, facets, nil
+}
+
+// insertLinks replaces all {link:n} links with an abbreviated link and adds a facet
+func insertLinks(text string, urls []string, texts []string, facets []*appbsky.RichtextFacet) (string, []*appbsky.RichtextFacet, error) {
+	placeholderPattern := regexp.MustCompile(`\{link:(\d+)\}`)
+	matches := placeholderPattern.FindAllStringSubmatch(text, -1)
+
+	for _, match := range matches {
+		if len(match) != 2 {
+			continue
+		}
+
+		index, err := strconv.Atoi(match[1])
+		if err != nil || index >= len(urls) {
+			continue
+		}
+
+		// Truncate if necessary
+		truncatedText := texts[index]
+		if len(truncatedText) > 25 {
+			truncatedText = truncatedText[:22] + "..."
+		}
+
+		// Create the facet
+		startIdx := int64(strings.Index(text, match[0]))
+		endIdx := startIdx + int64(len(truncatedText)) + 1
+
+		facet := &appbsky.RichtextFacet{
+			Features: []*appbsky.RichtextFacet_Features_Elem{{
+				RichtextFacet_Link: &appbsky.RichtextFacet_Link{
+					Uri: urls[index],
+				},
+			}},
+			Index: &appbsky.RichtextFacet_ByteSlice{
+				ByteStart: startIdx,
+				ByteEnd:   endIdx,
+			},
+		}
+
+		facets = append(facets, facet)
+
+		// Replace the placeholder with the truncated link in the text
+		text = strings.Replace(text, match[0], truncatedText, 1)
 	}
 
 	return text, facets, nil

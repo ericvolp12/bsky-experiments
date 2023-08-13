@@ -97,3 +97,11 @@ ORDER BY p.created_at DESC,
     p.actor_did DESC,
     p.rkey DESC
 LIMIT $2;
+-- name: GetMyPostsByFuzzyContent :many
+SELECT *
+FROM posts
+WHERE actor_did = $1
+    AND content ILIKE concat('%', sqlc.arg('query')::text, '%')::text
+    AND content not ilike '%!jazbot%'
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3;

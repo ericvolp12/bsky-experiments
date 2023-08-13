@@ -216,6 +216,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getLikesGivenByActorFromToStmt, err = db.PrepareContext(ctx, getLikesGivenByActorFromTo); err != nil {
 		return nil, fmt.Errorf("error preparing query GetLikesGivenByActorFromTo: %w", err)
 	}
+	if q.getMyPostsByFuzzyContentStmt, err = db.PrepareContext(ctx, getMyPostsByFuzzyContent); err != nil {
+		return nil, fmt.Errorf("error preparing query GetMyPostsByFuzzyContent: %w", err)
+	}
 	if q.getPointAssignmentStmt, err = db.PrepareContext(ctx, getPointAssignment); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPointAssignment: %w", err)
 	}
@@ -625,6 +628,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getLikesGivenByActorFromToStmt: %w", cerr)
 		}
 	}
+	if q.getMyPostsByFuzzyContentStmt != nil {
+		if cerr := q.getMyPostsByFuzzyContentStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getMyPostsByFuzzyContentStmt: %w", cerr)
+		}
+	}
 	if q.getPointAssignmentStmt != nil {
 		if cerr := q.getPointAssignmentStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPointAssignmentStmt: %w", cerr)
@@ -868,6 +876,7 @@ type Queries struct {
 	getLikesByActorStmt                 *sql.Stmt
 	getLikesBySubjectStmt               *sql.Stmt
 	getLikesGivenByActorFromToStmt      *sql.Stmt
+	getMyPostsByFuzzyContentStmt        *sql.Stmt
 	getPointAssignmentStmt              *sql.Stmt
 	getPointAssignmentsForActorStmt     *sql.Stmt
 	getPointAssignmentsForEventStmt     *sql.Stmt
@@ -966,6 +975,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getLikesByActorStmt:                 q.getLikesByActorStmt,
 		getLikesBySubjectStmt:               q.getLikesBySubjectStmt,
 		getLikesGivenByActorFromToStmt:      q.getLikesGivenByActorFromToStmt,
+		getMyPostsByFuzzyContentStmt:        q.getMyPostsByFuzzyContentStmt,
 		getPointAssignmentStmt:              q.getPointAssignmentStmt,
 		getPointAssignmentsForActorStmt:     q.getPointAssignmentsForActorStmt,
 		getPointAssignmentsForEventStmt:     q.getPointAssignmentsForEventStmt,
