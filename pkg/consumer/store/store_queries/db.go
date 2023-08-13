@@ -264,6 +264,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getSentimentForPostStmt, err = db.PrepareContext(ctx, getSentimentForPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSentimentForPost: %w", err)
 	}
+	if q.getTopUsersByPointsStmt, err = db.PrepareContext(ctx, getTopUsersByPoints); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTopUsersByPoints: %w", err)
+	}
 	if q.getTotalLikesGivenByActorStmt, err = db.PrepareContext(ctx, getTotalLikesGivenByActor); err != nil {
 		return nil, fmt.Errorf("error preparing query GetTotalLikesGivenByActor: %w", err)
 	}
@@ -708,6 +711,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getSentimentForPostStmt: %w", cerr)
 		}
 	}
+	if q.getTopUsersByPointsStmt != nil {
+		if cerr := q.getTopUsersByPointsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTopUsersByPointsStmt: %w", cerr)
+		}
+	}
 	if q.getTotalLikesGivenByActorStmt != nil {
 		if cerr := q.getTotalLikesGivenByActorStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getTotalLikesGivenByActorStmt: %w", cerr)
@@ -892,6 +900,7 @@ type Queries struct {
 	getRepostsByActorStmt               *sql.Stmt
 	getRepostsBySubjectStmt             *sql.Stmt
 	getSentimentForPostStmt             *sql.Stmt
+	getTopUsersByPointsStmt             *sql.Stmt
 	getTotalLikesGivenByActorStmt       *sql.Stmt
 	getTotalLikesReceivedByActorStmt    *sql.Stmt
 	getTotalPointsForActorStmt          *sql.Stmt
@@ -991,6 +1000,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getRepostsByActorStmt:               q.getRepostsByActorStmt,
 		getRepostsBySubjectStmt:             q.getRepostsBySubjectStmt,
 		getSentimentForPostStmt:             q.getSentimentForPostStmt,
+		getTopUsersByPointsStmt:             q.getTopUsersByPointsStmt,
 		getTotalLikesGivenByActorStmt:       q.getTotalLikesGivenByActorStmt,
 		getTotalLikesReceivedByActorStmt:    q.getTotalLikesReceivedByActorStmt,
 		getTotalPointsForActorStmt:          q.getTotalPointsForActorStmt,

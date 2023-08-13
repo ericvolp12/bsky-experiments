@@ -162,6 +162,43 @@ func (q *Queries) GetPointAssignmentsForEvent(ctx context.Context, arg GetPointA
 	return items, nil
 }
 
+const getTopUsersByPoints = `-- name: GetTopUsersByPoints :many
+SELECT actor_did,
+    SUM(points) AS total_points
+FROM point_assignments
+GROUP BY actor_did
+ORDER BY total_points DESC
+LIMIT $1
+`
+
+type GetTopUsersByPointsRow struct {
+	ActorDid    string `json:"actor_did"`
+	TotalPoints int64  `json:"total_points"`
+}
+
+func (q *Queries) GetTopUsersByPoints(ctx context.Context, limit int32) ([]GetTopUsersByPointsRow, error) {
+	rows, err := q.query(ctx, q.getTopUsersByPointsStmt, getTopUsersByPoints, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTopUsersByPointsRow
+	for rows.Next() {
+		var i GetTopUsersByPointsRow
+		if err := rows.Scan(&i.ActorDid, &i.TotalPoints); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTotalPointsForActor = `-- name: GetTotalPointsForActor :one
 SELECT COALESCE(SUM(points), 0)::bigint AS total_points
 FROM point_assignments

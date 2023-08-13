@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -98,6 +98,10 @@ func Jazbot(cctx *cli.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// Create a channel that will be closed when we want to stop the application
+	// Usually when a critical routine returns an error
+	kill := make(chan struct{})
+
 	// Trap SIGINT to trigger a shutdown.
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
@@ -185,14 +189,12 @@ func Jazbot(cctx *cli.Context) error {
 		log.Fatalf("failed to create jazbot: %+v\n", err)
 	}
 
-	wg := sync.WaitGroup{}
-
 	pool := events.NewConsumerPool(cctx.Int("worker-count"), 10, c.HandleStreamEvent)
 
 	// Start a goroutine to manage the cursor, saving the current cursor every 5 seconds.
+	shutdownCursorManager := make(chan struct{})
+	cursorManagerShutdown := make(chan struct{})
 	go func() {
-		wg.Add(1)
-		defer wg.Done()
 		ticker := time.NewTicker(5 * time.Second)
 		rawlog, err := zap.NewProduction()
 		if err != nil {
@@ -202,13 +204,14 @@ func Jazbot(cctx *cli.Context) error {
 
 		for {
 			select {
-			case <-ctx.Done():
+			case <-shutdownCursorManager:
 				log.Info("shutting down cursor manager")
 				err := c.WriteCursor(ctx)
 				if err != nil {
 					log.Errorf("failed to write cursor: %+v\n", err)
 				}
 				log.Info("cursor manager shut down successfully")
+				close(cursorManagerShutdown)
 				return
 			case <-ticker.C:
 				err := c.WriteCursor(ctx)
@@ -220,9 +223,9 @@ func Jazbot(cctx *cli.Context) error {
 	}()
 
 	// Start a goroutine to manage the liveness checker, shutting down if no events are received for 15 seconds
+	shutdownLivenessChecker := make(chan struct{})
+	livenessCheckerShutdown := make(chan struct{})
 	go func() {
-		wg.Add(1)
-		defer wg.Done()
 		ticker := time.NewTicker(15 * time.Second)
 		lastSeq := int64(0)
 
@@ -234,8 +237,9 @@ func Jazbot(cctx *cli.Context) error {
 
 		for {
 			select {
-			case <-ctx.Done():
+			case <-shutdownLivenessChecker:
 				log.Info("shutting down liveness checker")
+				close(livenessCheckerShutdown)
 				return
 			case <-ticker.C:
 				c.ProgMux.Lock()
@@ -243,7 +247,7 @@ func Jazbot(cctx *cli.Context) error {
 				c.ProgMux.Unlock()
 				if seq == lastSeq {
 					log.Errorf("no new events in last 15 seconds, shutting down for docker to restart me (last seq: %d)", seq)
-					cancel()
+					close(kill)
 				} else {
 					log.Infof("last event sequence: %d", seq)
 					lastSeq = seq
@@ -261,21 +265,24 @@ func Jazbot(cctx *cli.Context) error {
 	}
 
 	// Startup metrics server
+	shutdownMetrics := make(chan struct{})
+	metricsShutdown := make(chan struct{})
 	go func() {
-		wg.Add(1)
-		defer wg.Done()
-		rawlog, err := zap.NewProduction()
-		if err != nil {
-			log.Fatalf("failed to create logger: %+v\n", err)
-		}
-		log := rawlog.Sugar().With("source", "metrics_server")
+		logger := log.With("source", "metrics_server")
 
-		log.Infof("metrics server listening on port %d", cctx.Int("port"))
+		logger.Info("metrics server listening on port %d", cctx.Int("port"))
 
-		if err := metricServer.ListenAndServe(); err != http.ErrServerClosed {
-			log.Fatalf("failed to start metrics server: %+v\n", err)
+		go func() {
+			if err := metricServer.ListenAndServe(); err != http.ErrServerClosed {
+				logger.Error("failed to start metrics server: %+v\n", err)
+			}
+		}()
+		<-shutdownMetrics
+		if err := metricServer.Shutdown(ctx); err != nil {
+			logger.Error("failed to shutdown metrics server: %+v\n", err)
 		}
-		log.Info("metrics server shut down successfully")
+		logger.Info("metrics server shut down")
+		close(metricsShutdown)
 	}()
 
 	if c.Progress.LastSeq >= 0 {
@@ -290,30 +297,44 @@ func Jazbot(cctx *cli.Context) error {
 	}
 	defer con.Close()
 
+	shutdownRepoStream := make(chan struct{})
+	repoStreamShutdown := make(chan struct{})
 	go func() {
-		wg.Add(1)
-		defer wg.Done()
-		err = events.HandleRepoStream(ctx, con, pool)
-		log.Infof("HandleRepoStream returned unexpectedly: %+v...", err)
+		ctx := context.Background()
+		ctx, cancel := context.WithCancel(ctx)
+		go func() {
+			err = events.HandleRepoStream(ctx, con, pool)
+			if !errors.Is(err, context.Canceled) {
+				log.Infof("HandleRepoStream returned unexpectedly, killing the consumer: %+v...", err)
+				close(kill)
+			} else {
+				log.Info("HandleRepoStream closed on context cancel...")
+			}
+			close(repoStreamShutdown)
+		}()
+		<-shutdownRepoStream
 		cancel()
 	}()
 
 	select {
 	case <-signals:
-		cancel()
-		fmt.Println("shutting down on signal")
+		log.Info("shutting down on signal")
 	case <-ctx.Done():
-		fmt.Println("shutting down on context done")
+		log.Info("shutting down on context done")
+	case <-kill:
+		log.Info("shutting down on kill")
 	}
 
 	log.Info("shutting down, waiting for workers to clean up...")
+	close(shutdownRepoStream)
+	close(shutdownLivenessChecker)
+	close(shutdownCursorManager)
+	close(shutdownMetrics)
 
-	if err := metricServer.Shutdown(ctx); err != nil {
-		log.Errorf("failed to shut down metrics server: %+v\n", err)
-		wg.Done()
-	}
-
-	wg.Wait()
+	<-repoStreamShutdown
+	<-livenessCheckerShutdown
+	<-cursorManagerShutdown
+	<-metricsShutdown
 	log.Info("shut down successfully")
 
 	return nil

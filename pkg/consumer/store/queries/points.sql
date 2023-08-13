@@ -42,3 +42,10 @@ UPDATE point_assignments
 SET points = $3
 WHERE event_id = $1
     AND actor_did = $2;
+-- name: GetTopUsersByPoints :many
+SELECT actor_did,
+    SUM(points) AS total_points
+FROM point_assignments
+GROUP BY actor_did
+ORDER BY total_points DESC
+LIMIT $1;
