@@ -1,4 +1,4 @@
-package jazbot
+package util
 
 import (
 	"context"
@@ -7,14 +7,17 @@ import (
 	"net/http"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
 
-type plcMirrorResponse struct {
+type PLCMirrorResponse struct {
 	Did    string `json:"did"`
 	Handle string `json:"handle"`
 	Error  string `json:"error"`
 }
+
+var tracer = otel.Tracer("util")
 
 func GetHandleFromPLCMirror(ctx context.Context, mirror, did string) (handle string, err error) {
 	ctx, span := tracer.Start(ctx, "GetHandleFromPLCMirror")
@@ -35,7 +38,7 @@ func GetHandleFromPLCMirror(ctx context.Context, mirror, did string) (handle str
 	defer resp.Body.Close()
 
 	// Read the response body into a mirrorResponse
-	mirrorResponse := plcMirrorResponse{}
+	mirrorResponse := PLCMirrorResponse{}
 	err = json.NewDecoder(resp.Body).Decode(&mirrorResponse)
 	if err != nil {
 		span.SetAttributes(attribute.String("response.decode.error", err.Error()))
@@ -70,7 +73,7 @@ func GetDIDFromPLCMirror(ctx context.Context, mirror, handle string) (did string
 	defer resp.Body.Close()
 
 	// Read the response body into a mirrorResponse
-	mirrorResponse := plcMirrorResponse{}
+	mirrorResponse := PLCMirrorResponse{}
 	err = json.NewDecoder(resp.Body).Decode(&mirrorResponse)
 	if err != nil {
 		span.SetAttributes(attribute.String("response.decode.error", err.Error()))

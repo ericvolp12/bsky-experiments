@@ -35,13 +35,13 @@ type Jazbot struct {
 	PLCMirror string
 }
 
-type Command struct {
+type CommandHint struct {
 	Name string
 	Desc string
 	Args []string
 }
 
-var SupportedCommands = map[string]Command{
+var SupportedCommands = map[string]CommandHint{
 	"getlikecount": {
 		Name: "getlikecount",
 		Desc: "Get the # of likes you have received",
