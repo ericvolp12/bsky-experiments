@@ -348,6 +348,26 @@ func (q *Queries) GetLikesGivenByActorFromTo(ctx context.Context, arg GetLikesGi
 	return count, err
 }
 
+const getLikesReceivedByActorFromActor = `-- name: GetLikesReceivedByActorFromActor :one
+SELECT COUNT(*)
+FROM likes
+    JOIN subjects ON likes.subj = subjects.id
+WHERE subjects.actor_did = $1
+    AND likes.actor_did = $2
+`
+
+type GetLikesReceivedByActorFromActorParams struct {
+	To   string `json:"to"`
+	From string `json:"from"`
+}
+
+func (q *Queries) GetLikesReceivedByActorFromActor(ctx context.Context, arg GetLikesReceivedByActorFromActorParams) (int64, error) {
+	row := q.queryRow(ctx, q.getLikesReceivedByActorFromActorStmt, getLikesReceivedByActorFromActor, arg.To, arg.From)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getTotalLikesGivenByActor = `-- name: GetTotalLikesGivenByActor :one
 SELECT COUNT(*)
 FROM likes

@@ -3,6 +3,7 @@ package jazbot
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -73,6 +74,10 @@ var SupportedCommands = map[string]Command{
 	"leaderboard": {
 		Name: "leaderboard",
 		Desc: "Get the top 5 coolest users ever (users with the most points)",
+	},
+	"getstoveylikes": {
+		Name: "getstoveylikes",
+		Desc: "Get the # of likes Stovey has given you",
 	},
 }
 
@@ -231,6 +236,24 @@ func (j *Jazbot) HandleRequest(
 			}
 
 			resp = p.Sprintf("You have given a total of %d likes", likeCount)
+		case "getstoveylikes":
+			validCommandsReceivedCounter.WithLabelValues(command).Inc()
+			stoveyDID := "did:plc:3tm2l7kcljcgacctmmqru3hj"
+			likeCount, err := j.Store.Queries.GetLikesReceivedByActorFromActor(ctx, store_queries.GetLikesReceivedByActorFromActorParams{
+				From: stoveyDID,
+				To:   actorDid,
+			})
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					resp = fmt.Sprintf("Stovey hasn't given you any likes yet 😢")
+					break
+				}
+				j.Logger.Errorf("failed to get like count for user (%s): %+v", actorDid, err)
+				resp = fmt.Sprintf("I had trouble getting your received like count 😢\nPlease try again later!")
+				break
+			}
+
+			resp = p.Sprintf("Stovey has given you a total of %d likes", likeCount)
 		case "findmeafriend":
 			validCommandsReceivedCounter.WithLabelValues(command).Inc()
 			var err error

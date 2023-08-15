@@ -79,6 +79,12 @@ WHERE subjects.actor_did = $1;
 SELECT COUNT(*)
 FROM likes
 WHERE actor_did = $1;
+-- name: GetLikesReceivedByActorFromActor :one
+SELECT COUNT(*)
+FROM likes
+    JOIN subjects ON likes.subj = subjects.id
+WHERE subjects.actor_did = sqlc.arg('to')
+    AND likes.actor_did = sqlc.arg('from');
 -- name: GetLikesGivenByActorFromTo :one
 SELECT COUNT(*)
 FROM likes
