@@ -73,6 +73,8 @@ CREATE TABLE like_counts (
 );
 CREATE INDEX idx_like_counts_num_likes_gt_10 ON like_counts (subject_id)
 WHERE num_likes > 10;
+CREATE INDEX idx_like_counts_num_likes_gt_100 ON like_counts (subject_id)
+WHERE num_likes > 100;
 -- Blocks
 CREATE TABLE blocks (
     actor_did TEXT NOT NULL,

@@ -386,3 +386,124 @@ func (q *Queries) GetPostsFromNonMoots(ctx context.Context, arg GetPostsFromNonM
 	}
 	return items, nil
 }
+
+const getTopPosts = `-- name: GetTopPosts :many
+WITH TopSubjects AS (
+    SELECT s.id, s.actor_did, s.rkey, s.col,
+        lc.num_likes
+    FROM subjects s
+        JOIN like_counts lc ON lc.subject_id = s.id
+    WHERE s.col = 1
+        AND lc.num_likes > 100
+    ORDER BY lc.num_likes DESC
+    LIMIT $1 + 30 OFFSET $2
+)
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
+FROM posts p
+    JOIN TopSubjects s ON p.actor_did = s.actor_did
+    AND p.rkey = s.rkey
+ORDER BY s.num_likes DESC
+LIMIT $1
+`
+
+type GetTopPostsParams struct {
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
+}
+
+func (q *Queries) GetTopPosts(ctx context.Context, arg GetTopPostsParams) ([]Post, error) {
+	rows, err := q.query(ctx, q.getTopPostsStmt, getTopPosts, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Post
+	for rows.Next() {
+		var i Post
+		if err := rows.Scan(
+			&i.ActorDid,
+			&i.Rkey,
+			&i.Content,
+			&i.ParentPostActorDid,
+			&i.QuotePostActorDid,
+			&i.QuotePostRkey,
+			&i.ParentPostRkey,
+			&i.RootPostActorDid,
+			&i.RootPostRkey,
+			&i.HasEmbeddedMedia,
+			&i.CreatedAt,
+			&i.InsertedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTopPostsForActor = `-- name: GetTopPostsForActor :many
+WITH TopSubjects AS (
+    SELECT s.id, s.actor_did, s.rkey, s.col,
+        lc.num_likes
+    FROM subjects s
+        JOIN like_counts lc ON lc.subject_id = s.id
+    WHERE s.col = 1
+        AND lc.num_likes > 1
+        AND s.actor_did = $1
+    ORDER BY lc.num_likes DESC
+    LIMIT $2 OFFSET $3
+)
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
+FROM posts p
+    JOIN TopSubjects s ON p.actor_did = s.actor_did
+    AND p.rkey = s.rkey
+ORDER BY s.num_likes DESC
+`
+
+type GetTopPostsForActorParams struct {
+	ActorDid string `json:"actor_did"`
+	Limit    int32  `json:"limit"`
+	Offset   int32  `json:"offset"`
+}
+
+func (q *Queries) GetTopPostsForActor(ctx context.Context, arg GetTopPostsForActorParams) ([]Post, error) {
+	rows, err := q.query(ctx, q.getTopPostsForActorStmt, getTopPostsForActor, arg.ActorDid, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Post
+	for rows.Next() {
+		var i Post
+		if err := rows.Scan(
+			&i.ActorDid,
+			&i.Rkey,
+			&i.Content,
+			&i.ParentPostActorDid,
+			&i.QuotePostActorDid,
+			&i.QuotePostRkey,
+			&i.ParentPostRkey,
+			&i.RootPostActorDid,
+			&i.RootPostRkey,
+			&i.HasEmbeddedMedia,
+			&i.CreatedAt,
+			&i.InsertedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

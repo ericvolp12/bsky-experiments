@@ -105,3 +105,37 @@ WHERE actor_did = $1
     AND content not ilike '%!jazbot%'
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
+-- name: GetTopPosts :many
+WITH TopSubjects AS (
+    SELECT s.*,
+        lc.num_likes
+    FROM subjects s
+        JOIN like_counts lc ON lc.subject_id = s.id
+    WHERE s.col = 1
+        AND lc.num_likes > 100
+    ORDER BY lc.num_likes DESC
+    LIMIT $1 + 30 OFFSET $2
+)
+SELECT p.*
+FROM posts p
+    JOIN TopSubjects s ON p.actor_did = s.actor_did
+    AND p.rkey = s.rkey
+ORDER BY s.num_likes DESC
+LIMIT $1;
+-- name: GetTopPostsForActor :many
+WITH TopSubjects AS (
+    SELECT s.*,
+        lc.num_likes
+    FROM subjects s
+        JOIN like_counts lc ON lc.subject_id = s.id
+    WHERE s.col = 1
+        AND lc.num_likes > 1
+        AND s.actor_did = $1
+    ORDER BY lc.num_likes DESC
+    LIMIT $2 OFFSET $3
+)
+SELECT p.*
+FROM posts p
+    JOIN TopSubjects s ON p.actor_did = s.actor_did
+    AND p.rkey = s.rkey
+ORDER BY s.num_likes DESC;

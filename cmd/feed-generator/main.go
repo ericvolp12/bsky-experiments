@@ -163,7 +163,7 @@ func main() {
 	feedGenerator.AddFeed(firehoseFeedAliases, firehoseFeed)
 
 	// Create a Bangers feed
-	bangersFeed, bangersFeedAliases, err := bangers.NewBangersFeed(ctx, feedActorDID, postRegistry)
+	bangersFeed, bangersFeedAliases, err := bangers.NewBangersFeed(ctx, feedActorDID, store)
 	if err != nil {
 		log.Fatalf("Failed to create BangersFeed: %v", err)
 	}
