@@ -253,6 +253,35 @@ func (j *Jazbot) HandleRequest(
 				break
 			}
 
+			if likeCount <= 0 {
+				resp = fmt.Sprintf("Stovey hasn't given you any likes yet 😢\nDon't worry though, I still like you!")
+				j.limiter.Wait(ctx)
+
+				like := appbsky.FeedLike{
+					CreatedAt: time.Now().Format(time.RFC3339),
+					Subject: &comatproto.RepoStrongRef{
+						Uri: fmt.Sprintf("at://%s/app.bsky.feed.post/%s", actorDid, rkey),
+						Cid: postCid.String(),
+					},
+				}
+
+				j.clientMux.RLock()
+				out, err := comatproto.RepoCreateRecord(ctx, j.Client, &comatproto.RepoCreateRecord_Input{
+					Collection: "app.bsky.feed.like",
+					Repo:       j.BotDid,
+					Record:     &lexutil.LexiconTypeDecoder{Val: &like},
+				})
+				j.clientMux.RUnlock()
+
+				if err != nil {
+					postsFailedCounter.WithLabelValues("create_failed").Inc()
+					return fmt.Errorf("failed to create record: %+v", err)
+				}
+
+				j.Logger.Infow("like published", "at_uri", out.Uri)
+				break
+			}
+
 			resp = p.Sprintf("Stovey has given you a total of %d likes", likeCount)
 		case "findmeafriend":
 			validCommandsReceivedCounter.WithLabelValues(command).Inc()
