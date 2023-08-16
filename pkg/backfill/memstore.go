@@ -5,18 +5,21 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/bluesky-social/indigo/repomgr"
+	typegen "github.com/whyrusleeping/cbor-gen"
 )
 
-type del struct {
-	repo string
-	path string
+type bufferedOp struct {
+	kind string
+	rec  *typegen.CBORMarshaler
 }
 
 type Memjob struct {
-	repo      string
-	state     string
-	lk        sync.Mutex
-	delBuffer []*del
+	repo        string
+	state       string
+	lk          sync.Mutex
+	bufferedOps map[string][]*bufferedOp
 
 	createdAt time.Time
 	updatedAt time.Time
@@ -43,11 +46,11 @@ func (s *Memstore) EnqueueJob(repo string) error {
 	}
 
 	j := &Memjob{
-		repo:      repo,
-		createdAt: time.Now(),
-		updatedAt: time.Now(),
-		state:     StateEnqueued,
-		delBuffer: []*del{},
+		repo:        repo,
+		createdAt:   time.Now(),
+		updatedAt:   time.Now(),
+		state:       StateEnqueued,
+		bufferedOps: map[string][]*bufferedOp{},
 	}
 	s.jobs[repo] = j
 	return nil
@@ -96,36 +99,68 @@ func (j *Memjob) SetState(ctx context.Context, state string) error {
 	return nil
 }
 
-func (j *Memjob) BufferDelete(ctx context.Context, repo, path string) error {
+func (j *Memjob) ShouldBufferOp(ctx context.Context, kind, path string) (bool, error) {
 	j.lk.Lock()
 	defer j.lk.Unlock()
 
-	j.delBuffer = append(j.delBuffer, &del{
-		repo: repo,
-		path: path,
+	_, hasBufferedEvent := j.bufferedOps[path]
+	shouldBuffer := false
+
+	ek := repomgr.EventKind(kind)
+
+	switch ek {
+	case repomgr.EvtKindCreateRecord:
+		// Only buffer creates if there is already a buffered event at this path
+		// Otherwise it's safe to just process the create
+		if hasBufferedEvent {
+			shouldBuffer = true
+		}
+	case repomgr.EvtKindUpdateRecord:
+		shouldBuffer = true
+	case repomgr.EvtKindDeleteRecord:
+		shouldBuffer = true
+	}
+
+	return shouldBuffer, nil
+}
+
+func (j *Memjob) BufferOp(ctx context.Context, kind, path string, rec *typegen.CBORMarshaler) error {
+	j.lk.Lock()
+	defer j.lk.Unlock()
+
+	if _, ok := j.bufferedOps[path]; !ok {
+		j.bufferedOps[path] = []*bufferedOp{}
+	}
+
+	j.bufferedOps[path] = append(j.bufferedOps[path], &bufferedOp{
+		kind: kind,
+		rec:  rec,
 	})
 
 	j.updatedAt = time.Now()
 	return nil
 }
 
-func (j *Memjob) ForEachBufferedDelete(ctx context.Context, fn func(repo, path string) error) error {
+func (j *Memjob) ForEachBufferedOp(ctx context.Context, fn func(kind, path string, rec *typegen.CBORMarshaler) error) error {
 	j.lk.Lock()
 	defer j.lk.Unlock()
 
-	for _, del := range j.delBuffer {
-		if err := fn(del.repo, del.path); err != nil {
-			return err
+	for path, ops := range j.bufferedOps {
+		for _, op := range ops {
+			if err := fn(op.kind, path, op.rec); err != nil {
+				return err
+			}
 		}
 	}
+
 	return nil
 }
 
-func (j *Memjob) ClearBufferedDeletes(ctx context.Context) error {
+func (j *Memjob) ClearBufferedOps(ctx context.Context) error {
 	j.lk.Lock()
 	defer j.lk.Unlock()
 
-	j.delBuffer = []*del{}
+	j.bufferedOps = map[string][]*bufferedOp{}
 	j.updatedAt = time.Now()
 	return nil
 }

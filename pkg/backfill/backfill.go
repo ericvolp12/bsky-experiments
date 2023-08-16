@@ -7,7 +7,10 @@ import (
 	"sync"
 	"time"
 
+	// Blank import to register types for CBORGEN
+	_ "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/repo"
+	"github.com/bluesky-social/indigo/repomgr"
 	"github.com/ipfs/go-cid"
 	typegen "github.com/whyrusleeping/cbor-gen"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -21,12 +24,13 @@ type Job interface {
 	Repo() string
 	State() string
 	SetState(ctx context.Context, state string) error
-	BufferDelete(ctx context.Context, repo, path string) error
-	// ForEachBufferedDelete calls the given function for each buffered delete
+	ShouldBufferOp(ctx context.Context, kind, path string) (bool, error)
+	BufferOp(ctx context.Context, kind, path string, rec *typegen.CBORMarshaler) error
+	// ForEachBufferedOp calls the given function for each buffered delete
 	// Allowing the Job interface to abstract away the details of how buffered
 	// deletes are stored and/or locked
-	ForEachBufferedDelete(ctx context.Context, fn func(repo, path string) error) error
-	ClearBufferedDeletes(ctx context.Context) error
+	ForEachBufferedOp(ctx context.Context, fn func(kind, path string, rec *typegen.CBORMarshaler) error) error
+	ClearBufferedOps(ctx context.Context) error
 }
 
 // Store is an interface for a backfill store which holds Jobs
@@ -38,7 +42,8 @@ type Store interface {
 // Backfiller is a struct which handles backfilling a repo
 type Backfiller struct {
 	Name               string
-	HandleCreateRecord func(ctx context.Context, repo string, path string, rec typegen.CBORMarshaler) error
+	HandleCreateRecord func(ctx context.Context, repo string, path string, rec *typegen.CBORMarshaler) error
+	HandleUpdateRecord func(ctx context.Context, repo string, path string, rec *typegen.CBORMarshaler) error
 	HandleDeleteRecord func(ctx context.Context, repo string, path string) error
 	Store              Store
 
@@ -75,7 +80,8 @@ var tracer = otel.Tracer("backfiller")
 func NewBackfiller(
 	name string,
 	store Store,
-	handleCreate func(ctx context.Context, repo string, path string, rec typegen.CBORMarshaler) error,
+	handleCreate func(ctx context.Context, repo string, path string, rec *typegen.CBORMarshaler) error,
+	handleUpdate func(ctx context.Context, repo string, path string, rec *typegen.CBORMarshaler) error,
 	handleDelete func(ctx context.Context, repo string, path string) error,
 	parallelBackfills int,
 	parallelRecordCreates int,
@@ -88,6 +94,7 @@ func NewBackfiller(
 		Name:                  name,
 		Store:                 store,
 		HandleCreateRecord:    handleCreate,
+		HandleUpdateRecord:    handleUpdate,
 		HandleDeleteRecord:    handleDelete,
 		ParallelBackfills:     parallelBackfills,
 		ParallelRecordCreates: parallelRecordCreates,
@@ -161,12 +168,27 @@ func (b *Backfiller) FlushBuffer(ctx context.Context, job Job) int {
 
 	processed := 0
 
-	err := job.ForEachBufferedDelete(ctx, func(repo, path string) error {
-		err := b.HandleDeleteRecord(ctx, repo, path)
-		if err != nil {
-			log.Errorf("failed to handle delete record: %+v", err)
+	repo := job.Repo()
+
+	err := job.ForEachBufferedOp(ctx, func(kind, path string, rec *typegen.CBORMarshaler) error {
+		switch repomgr.EventKind(kind) {
+		case repomgr.EvtKindCreateRecord:
+			err := b.HandleCreateRecord(ctx, repo, path, rec)
+			if err != nil {
+				log.Errorf("failed to handle create record: %+v", err)
+			}
+		case repomgr.EvtKindUpdateRecord:
+			err := b.HandleUpdateRecord(ctx, repo, path, rec)
+			if err != nil {
+				log.Errorf("failed to handle update record: %+v", err)
+			}
+		case repomgr.EvtKindDeleteRecord:
+			err := b.HandleDeleteRecord(ctx, repo, path)
+			if err != nil {
+				log.Errorf("failed to handle delete record: %+v", err)
+			}
 		}
-		backfillDeletesBuffered.WithLabelValues(b.Name).Dec()
+		backfillOpsBuffered.WithLabelValues(b.Name).Dec()
 		processed++
 		return nil
 	})
@@ -174,7 +196,7 @@ func (b *Backfiller) FlushBuffer(ctx context.Context, job Job) int {
 		log.Errorf("failed to process buffered deletes: %+v", err)
 	}
 
-	err = job.ClearBufferedDeletes(ctx)
+	err = job.ClearBufferedOps(ctx)
 	if err != nil {
 		log.Errorf("failed to clear buffered deletes: %+v", err)
 	}
@@ -309,7 +331,7 @@ func (b *Backfiller) BackfillRepo(ctx context.Context, job Job) {
 					continue
 				}
 
-				err = b.HandleCreateRecord(ctx, repoDid, item.recordPath, rec)
+				err = b.HandleCreateRecord(ctx, repoDid, item.recordPath, &rec)
 				if err != nil {
 					recordResults <- recordResult{recordPath: item.recordPath, err: fmt.Errorf("failed to handle create record: %w", err)}
 					continue

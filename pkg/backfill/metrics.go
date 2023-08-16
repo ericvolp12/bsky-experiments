@@ -20,9 +20,9 @@ var backfillRecordsProcessed = promauto.NewCounterVec(prometheus.CounterOpts{
 	Help: "The total number of backfill records processed",
 }, []string{"backfiller_name"})
 
-var backfillDeletesBuffered = promauto.NewGaugeVec(prometheus.GaugeOpts{
-	Name: "backfill_deletes_buffered",
-	Help: "The number of backfill deletes buffered",
+var backfillOpsBuffered = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: "backfill_ops_buffered",
+	Help: "The number of backfill operations buffered",
 }, []string{"backfiller_name"})
 
 var backfillBytesProcessed = promauto.NewCounterVec(prometheus.CounterOpts{
