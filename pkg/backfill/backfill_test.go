@@ -72,6 +72,15 @@ func TestBackfill(t *testing.T) {
 	job.BufferOp(ctx, "delete", "app.bsky.feed.follow/4", nil)
 	job.BufferOp(ctx, "delete", "app.bsky.feed.follow/5", nil)
 
+	// Check if a create gets buffered when there is a pending delete
+	shouldBuffer, err := job.ShouldBufferOp(ctx, "create", "app.bsky.feed.follow/1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !shouldBuffer {
+		t.Fatal("should buffer create after delete")
+	}
+
 	job.BufferOp(ctx, "create", "app.bsky.feed.follow/1", nil)
 
 	job.BufferOp(ctx, "update", "app.bsky.feed.follow/1", nil)
