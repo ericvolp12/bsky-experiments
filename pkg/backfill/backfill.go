@@ -299,21 +299,20 @@ func (b *Backfiller) BackfillRepo(ctx context.Context, job Job) {
 			for item := range recordQueue {
 				recordCid, rec, err := r.GetRecord(ctx, item.recordPath)
 				if err != nil {
-					log.Errorf("Error getting record: %v", err)
-					recordResults <- recordResult{recordPath: item.recordPath, err: err}
+					recordResults <- recordResult{recordPath: item.recordPath, err: fmt.Errorf("failed to get record: %w", err)}
 					continue
 				}
 
 				// Verify that the record cid matches the cid in the event
 				if recordCid != item.nodeCid {
-					log.Errorf("mismatch in record and op cid: %s != %s", recordCid, item.nodeCid)
-					recordResults <- recordResult{recordPath: item.recordPath, err: err}
+					recordResults <- recordResult{recordPath: item.recordPath, err: fmt.Errorf("mismatch in record and op cid: %s != %s", recordCid, item.nodeCid)}
 					continue
 				}
 
 				err = b.HandleCreateRecord(ctx, repoDid, item.recordPath, rec)
 				if err != nil {
-					log.Errorf("failed to handle create record: %+v", err)
+					recordResults <- recordResult{recordPath: item.recordPath, err: fmt.Errorf("failed to handle create record: %w", err)}
+					continue
 				}
 
 				backfillRecordsProcessed.WithLabelValues(b.Name).Inc()

@@ -28,7 +28,7 @@ func main() {
 		handleDelete,
 		10,
 		100,
-		"app.bsky.feed.post",
+		"app.bsky.feed.post/",
 		logger,
 		2,
 		"https://bsky.social/xrpc/com.atproto.sync.getCheckout")
