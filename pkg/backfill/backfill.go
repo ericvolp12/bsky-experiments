@@ -2,6 +2,7 @@ package backfill
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -36,7 +37,9 @@ type Job interface {
 
 // Store is an interface for a backfill store which holds Jobs
 type Store interface {
-	BufferOp(ctx context.Context, repo string, kind, path string, rec *typegen.CBORMarshaler) error
+	// BufferOp buffers an operation for a job and returns true if the operation was buffered
+	// If the operation was not buffered, it returns false and an error (ErrJobNotFound or ErrJobComplete)
+	BufferOp(ctx context.Context, repo string, kind, path string, rec *typegen.CBORMarshaler) (bool, error)
 	GetJob(ctx context.Context, repo string) (Job, error)
 	GetNextEnqueuedJob(ctx context.Context) (Job, error)
 }
@@ -75,6 +78,12 @@ var (
 	// StateComplete is the state of a backfill job when it has been processed
 	StateComplete = "complete"
 )
+
+// ErrJobComplete is returned when trying to buffer an op for a job that is complete
+var ErrJobComplete = errors.New("job is complete")
+
+// ErrJobNotFound is returned when trying to buffer an op for a job that doesn't exist
+var ErrJobNotFound = errors.New("job not found")
 
 var tracer = otel.Tracer("backfiller")
 

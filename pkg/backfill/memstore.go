@@ -2,7 +2,6 @@ package backfill
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -24,9 +23,6 @@ type Memjob struct {
 	createdAt time.Time
 	updatedAt time.Time
 }
-
-// ErrJobComplete is returned when trying to buffer an op for a job that is complete
-var ErrJobComplete = errors.New("job is complete")
 
 // Memstore is a simple in-memory implementation of the Backfill Store interface
 type Memstore struct {
@@ -59,14 +55,14 @@ func (s *Memstore) EnqueueJob(repo string) error {
 	return nil
 }
 
-func (s *Memstore) BufferOp(ctx context.Context, repo, kind, path string, rec *typegen.CBORMarshaler) error {
+func (s *Memstore) BufferOp(ctx context.Context, repo, kind, path string, rec *typegen.CBORMarshaler) (bool, error) {
 	s.lk.Lock()
 
 	// If the job doesn't exist, we can't buffer an op for it
 	j, ok := s.jobs[repo]
 	s.lk.Unlock()
 	if !ok {
-		return nil
+		return false, ErrJobNotFound
 	}
 
 	j.lk.Lock()
@@ -74,11 +70,11 @@ func (s *Memstore) BufferOp(ctx context.Context, repo, kind, path string, rec *t
 
 	switch j.state {
 	case StateComplete:
-		return ErrJobComplete
+		return false, ErrJobComplete
 	case StateInProgress:
 	// keep going and buffer the op
 	default:
-		return nil
+		return false, nil
 	}
 
 	j.bufferedOps[path] = append(j.bufferedOps[path], &bufferedOp{
@@ -86,7 +82,7 @@ func (s *Memstore) BufferOp(ctx context.Context, repo, kind, path string, rec *t
 		rec:  rec,
 	})
 	j.updatedAt = time.Now()
-	return nil
+	return true, nil
 }
 
 func (s *Memstore) GetJob(ctx context.Context, repo string) (Job, error) {
