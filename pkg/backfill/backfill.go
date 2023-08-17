@@ -24,17 +24,19 @@ type Job interface {
 	Repo() string
 	State() string
 	SetState(ctx context.Context, state string) error
-	ShouldBufferOp(ctx context.Context, kind, path string) (bool, error)
-	BufferOp(ctx context.Context, kind, path string, rec *typegen.CBORMarshaler) error
-	// ForEachBufferedOp calls the given function for each buffered delete
+
+	// FlushBufferedOps calls the given callback for each buffered operation
+	// Once done it clears the buffer and marks the job as "complete"
 	// Allowing the Job interface to abstract away the details of how buffered
-	// deletes are stored and/or locked
-	ForEachBufferedOp(ctx context.Context, fn func(kind, path string, rec *typegen.CBORMarshaler) error) error
+	// operations are stored and/or locked
+	FlushBufferedOps(ctx context.Context, cb func(kind, path string, rec *typegen.CBORMarshaler) error) error
+
 	ClearBufferedOps(ctx context.Context) error
 }
 
 // Store is an interface for a backfill store which holds Jobs
 type Store interface {
+	BufferOp(ctx context.Context, repo string, kind, path string, rec *typegen.CBORMarshaler) error
 	GetJob(ctx context.Context, repo string) (Job, error)
 	GetNextEnqueuedJob(ctx context.Context) (Job, error)
 }
@@ -160,7 +162,7 @@ func (b *Backfiller) Stop() {
 	b.Logger.Info("backfill processor stopped")
 }
 
-// FlushBuffer processes buffered deletes for a job
+// FlushBuffer processes buffered operations for a job
 func (b *Backfiller) FlushBuffer(ctx context.Context, job Job) int {
 	ctx, span := tracer.Start(ctx, "FlushBuffer")
 	defer span.End()
@@ -170,7 +172,9 @@ func (b *Backfiller) FlushBuffer(ctx context.Context, job Job) int {
 
 	repo := job.Repo()
 
-	err := job.ForEachBufferedOp(ctx, func(kind, path string, rec *typegen.CBORMarshaler) error {
+	// Flush buffered operations, clear the buffer, and mark the job as "complete"
+	// Clearning and marking are handled by the job interface
+	err := job.FlushBufferedOps(ctx, func(kind, path string, rec *typegen.CBORMarshaler) error {
 		switch repomgr.EventKind(kind) {
 		case repomgr.EvtKindCreateRecord:
 			err := b.HandleCreateRecord(ctx, repo, path, rec)
@@ -193,12 +197,7 @@ func (b *Backfiller) FlushBuffer(ctx context.Context, job Job) int {
 		return nil
 	})
 	if err != nil {
-		log.Errorf("failed to process buffered deletes: %+v", err)
-	}
-
-	err = job.ClearBufferedOps(ctx)
-	if err != nil {
-		log.Errorf("failed to clear buffered deletes: %+v", err)
+		log.Errorf("failed to flush buffered ops: %+v", err)
 	}
 
 	return processed
@@ -267,8 +266,11 @@ func (b *Backfiller) BackfillRepo(ctx context.Context, job Job) {
 			log.Errorf("failed to set job state: %+v", err)
 		}
 
-		// Process buffered deletes
-		b.FlushBuffer(ctx, job)
+		// Clear buffered ops
+		err = job.ClearBufferedOps(ctx)
+		if err != nil {
+			log.Errorf("failed to clear buffered ops: %+v", err)
+		}
 		return
 	}
 
@@ -291,8 +293,11 @@ func (b *Backfiller) BackfillRepo(ctx context.Context, job Job) {
 			log.Errorf("failed to set job state: %+v", err)
 		}
 
-		// Process buffered deletes
-		b.FlushBuffer(ctx, job)
+		// Clear buffered ops
+		err = job.ClearBufferedOps(ctx)
+		if err != nil {
+			log.Errorf("failed to clear buffered ops: %+v", err)
+		}
 		return
 	}
 
@@ -359,12 +364,7 @@ func (b *Backfiller) BackfillRepo(ctx context.Context, job Job) {
 	close(recordResults)
 	resultWG.Wait()
 
-	state := "complete"
-
-	// Mark the backfill as "complete"
-	job.SetState(ctx, state)
-
-	// Process buffered deletes
+	// Process buffered operations, marking the job as "complete" when done
 	numProcessed := b.FlushBuffer(ctx, job)
 
 	log.Infow("backfill complete", "buffered_deletes_processed", numProcessed, "records_backfilled", numRecords, "duration", time.Since(start))

@@ -33,7 +33,7 @@ func TestBackfill(t *testing.T) {
 
 	rawLog, err := zap.NewDevelopment()
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	logger = rawLog.Sugar()
@@ -61,29 +61,27 @@ func TestBackfill(t *testing.T) {
 		mem.EnqueueJob(repo)
 	}
 
-	job, err := mem.GetJob(ctx, testRepos[0])
-	if err != nil {
-		t.Fatal(err)
+	// Wait until job 0 is in progress
+	for {
+		s, err := mem.GetJob(ctx, testRepos[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.State() == backfill.StateInProgress {
+			mem.BufferOp(ctx, testRepos[0], "delete", "app.bsky.feed.follow/1", nil)
+			mem.BufferOp(ctx, testRepos[0], "delete", "app.bsky.feed.follow/2", nil)
+			mem.BufferOp(ctx, testRepos[0], "delete", "app.bsky.feed.follow/3", nil)
+			mem.BufferOp(ctx, testRepos[0], "delete", "app.bsky.feed.follow/4", nil)
+			mem.BufferOp(ctx, testRepos[0], "delete", "app.bsky.feed.follow/5", nil)
+
+			mem.BufferOp(ctx, testRepos[0], "create", "app.bsky.feed.follow/1", nil)
+
+			mem.BufferOp(ctx, testRepos[0], "update", "app.bsky.feed.follow/1", nil)
+
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-
-	job.BufferOp(ctx, "delete", "app.bsky.feed.follow/1", nil)
-	job.BufferOp(ctx, "delete", "app.bsky.feed.follow/2", nil)
-	job.BufferOp(ctx, "delete", "app.bsky.feed.follow/3", nil)
-	job.BufferOp(ctx, "delete", "app.bsky.feed.follow/4", nil)
-	job.BufferOp(ctx, "delete", "app.bsky.feed.follow/5", nil)
-
-	// Check if a create gets buffered when there is a pending delete
-	shouldBuffer, err := job.ShouldBufferOp(ctx, "create", "app.bsky.feed.follow/1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !shouldBuffer {
-		t.Fatal("should buffer create after delete")
-	}
-
-	job.BufferOp(ctx, "create", "app.bsky.feed.follow/1", nil)
-
-	job.BufferOp(ctx, "update", "app.bsky.feed.follow/1", nil)
 
 	for {
 		ts.lk.Lock()

@@ -2,11 +2,11 @@ package backfill
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
-	"github.com/bluesky-social/indigo/repomgr"
 	typegen "github.com/whyrusleeping/cbor-gen"
 )
 
@@ -24,6 +24,9 @@ type Memjob struct {
 	createdAt time.Time
 	updatedAt time.Time
 }
+
+// ErrJobComplete is returned when trying to buffer an op for a job that is complete
+var ErrJobComplete = errors.New("job is complete")
 
 // Memstore is a simple in-memory implementation of the Backfill Store interface
 type Memstore struct {
@@ -53,6 +56,36 @@ func (s *Memstore) EnqueueJob(repo string) error {
 		bufferedOps: map[string][]*bufferedOp{},
 	}
 	s.jobs[repo] = j
+	return nil
+}
+
+func (s *Memstore) BufferOp(ctx context.Context, repo, kind, path string, rec *typegen.CBORMarshaler) error {
+	s.lk.Lock()
+
+	// If the job doesn't exist, we can't buffer an op for it
+	j, ok := s.jobs[repo]
+	s.lk.Unlock()
+	if !ok {
+		return nil
+	}
+
+	j.lk.Lock()
+	defer j.lk.Unlock()
+
+	switch j.state {
+	case StateComplete:
+		return ErrJobComplete
+	case StateInProgress:
+	// keep going and buffer the op
+	default:
+		return nil
+	}
+
+	j.bufferedOps[path] = append(j.bufferedOps[path], &bufferedOp{
+		kind: kind,
+		rec:  rec,
+	})
+	j.updatedAt = time.Now()
 	return nil
 }
 
@@ -99,49 +132,7 @@ func (j *Memjob) SetState(ctx context.Context, state string) error {
 	return nil
 }
 
-func (j *Memjob) ShouldBufferOp(ctx context.Context, kind, path string) (bool, error) {
-	j.lk.Lock()
-	defer j.lk.Unlock()
-
-	_, hasBufferedEvent := j.bufferedOps[path]
-	shouldBuffer := false
-
-	ek := repomgr.EventKind(kind)
-
-	switch ek {
-	case repomgr.EvtKindCreateRecord:
-		// Only buffer creates if there is already a buffered event at this path
-		// Otherwise it's safe to just process the create
-		if hasBufferedEvent {
-			shouldBuffer = true
-		}
-	case repomgr.EvtKindUpdateRecord:
-		shouldBuffer = true
-	case repomgr.EvtKindDeleteRecord:
-		shouldBuffer = true
-	}
-
-	return shouldBuffer, nil
-}
-
-func (j *Memjob) BufferOp(ctx context.Context, kind, path string, rec *typegen.CBORMarshaler) error {
-	j.lk.Lock()
-	defer j.lk.Unlock()
-
-	if _, ok := j.bufferedOps[path]; !ok {
-		j.bufferedOps[path] = []*bufferedOp{}
-	}
-
-	j.bufferedOps[path] = append(j.bufferedOps[path], &bufferedOp{
-		kind: kind,
-		rec:  rec,
-	})
-
-	j.updatedAt = time.Now()
-	return nil
-}
-
-func (j *Memjob) ForEachBufferedOp(ctx context.Context, fn func(kind, path string, rec *typegen.CBORMarshaler) error) error {
+func (j *Memjob) FlushBufferedOps(ctx context.Context, fn func(kind, path string, rec *typegen.CBORMarshaler) error) error {
 	j.lk.Lock()
 	defer j.lk.Unlock()
 
@@ -152,6 +143,9 @@ func (j *Memjob) ForEachBufferedOp(ctx context.Context, fn func(kind, path strin
 			}
 		}
 	}
+
+	j.bufferedOps = map[string][]*bufferedOp{}
+	j.state = StateComplete
 
 	return nil
 }
