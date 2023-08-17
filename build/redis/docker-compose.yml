@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  redis:
+    image: 'redis/redis-stack:latest'
+    ulimits:
+      memlock: -1
+    network_mode: "host"
+    restart: always
+    volumes:
+      - ../../redis_data:/data
+      - ./redis.conf:/redis-stack.conf

@@ -7,7 +7,5 @@ target/
 dist/
 __pycache__/
 data
-dragonfly_data
-graph.bin
+redis_data
 keys.json
-meilisearch_data

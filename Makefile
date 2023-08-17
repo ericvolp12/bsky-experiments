@@ -130,11 +130,17 @@ pyroscope-up:
 	@echo "Starting Pyroscope..."
 	docker compose -f build/pyroscope/docker-compose.yml up --build -d
 
-# Start up the DragonflyDB Database
-.PHONY: dragonfly-up
-dragonfly-up:
-	@echo "Starting DragonflyDB..."
-	docker compose -f build/dragonfly/docker-compose.yml up -d
+# Start up the Redis Store
+.PHONY: redis-up
+redis-up:
+	@echo "Starting Redis..."
+	docker compose -f build/redis/docker-compose.yml up -d
+
+# Stop the Redis Store
+.PHONY: redis-down
+redis-down:
+	@echo "Stopping Redis..."
+	docker compose -f build/redis/docker-compose.yml down
 
 # Start up ScyllaDB
 .PHONY: scylla-up
