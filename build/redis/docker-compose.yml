@@ -1,5 +1,14 @@
 version: '3.8'
 services:
+  exporter:
+    image: quay.io/oliver006/redis_exporter
+    ports:
+      - 9121:9121
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: always
+    environment:
+      - REDIS_ADDR=host.docker.internal:6379
   redis:
     image: 'redis/redis-stack:latest'
     ulimits:
