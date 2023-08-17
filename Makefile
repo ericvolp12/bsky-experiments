@@ -188,3 +188,8 @@ sqlc:
 	sqlc generate -f pkg/search/sqlc.yaml
 	@echo "Generating SQLC code for store..."
 	sqlc generate -f pkg/consumer/store/sqlc.yaml
+
+.PHONY: empty-plc
+empty-plc:
+	@echo "Emptying PLC Mirror in Redis..."
+	redis-cli --scan --pattern "plc_directory:*" | xargs -L 100 redis-cli DEL

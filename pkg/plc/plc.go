@@ -3,12 +3,15 @@ package plc
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/redis/go-redis/v9"
@@ -31,6 +34,8 @@ type Directory struct {
 
 	RedisClient *redis.Client
 	RedisPrefix string
+
+	Store *store.Store
 }
 
 type DirectoryEntry struct {
@@ -55,7 +60,7 @@ type Operation struct {
 	Type        string   `json:"type"`
 }
 
-func NewDirectory(endpoint string, redisClient *redis.Client, redisPrefix string) (*Directory, error) {
+func NewDirectory(endpoint string, redisClient *redis.Client, store *store.Store, redisPrefix string) (*Directory, error) {
 	ctx := context.Background()
 	rawLogger, err := zap.NewProduction()
 	if err != nil {
@@ -85,6 +90,8 @@ func NewDirectory(endpoint string, redisClient *redis.Client, redisPrefix string
 
 		RedisClient: redisClient,
 		RedisPrefix: redisPrefix,
+
+		Store: store,
 	}, nil
 }
 
@@ -159,6 +166,15 @@ func (d *Directory) fetchDirectoryEntries(ctx context.Context) {
 
 		resp.Body.Close()
 
+		var tx *sql.Tx
+		if d.Store != nil {
+			tx, err = d.Store.DB.Begin()
+			if err != nil {
+				d.Logger.Errorf("failed to start transaction: %+v", err)
+				return
+			}
+		}
+
 		pipeline := d.RedisClient.Pipeline()
 		for _, entry := range newEntries {
 			if len(entry.Operation.AlsoKnownAs) > 0 {
@@ -181,11 +197,30 @@ func (d *Directory) fetchDirectoryEntries(ctx context.Context) {
 
 				pipeline.Set(ctx, d.RedisPrefix+":by_did:"+entry.Did, handle, 0)
 				pipeline.Set(ctx, d.RedisPrefix+":by_handle:"+handle, entry.Did, 0)
+
+				// Set the DID entry in the database
+				if d.Store != nil && tx != nil {
+					err := d.Store.Queries.WithTx(tx).UpsertActor(ctx, store_queries.UpsertActorParams{
+						Did:       entry.Did,
+						Handle:    handle,
+						CreatedAt: sql.NullTime{Time: entry.CreatedAt, Valid: true},
+					})
+					if err != nil {
+						d.Logger.Errorf("failed to upsert actor: %+v", err)
+					}
+				}
 			}
 		}
 		_, err = pipeline.Exec(ctx)
 		if err != nil {
 			d.Logger.Errorf("failed to set redis keys: %+v", err)
+		}
+
+		if d.Store != nil && tx != nil {
+			err = tx.Commit()
+			if err != nil {
+				d.Logger.Errorf("failed to commit transaction: %+v", err)
+			}
 		}
 
 		d.AfterCursor = newEntries[len(newEntries)-1].CreatedAt

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/plc"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	ginprometheus "github.com/ericvolp12/go-gin-prometheus"
@@ -142,6 +143,17 @@ func main() {
 		DB:       0,
 	})
 
+	var s *store.Store
+	var err error
+
+	storePostgresURL := os.Getenv("POSTGRES_URL")
+	if storePostgresURL != "" {
+		s, err = store.NewStore(storePostgresURL)
+		if err != nil {
+			log.Fatalf("failed to create store: %+v\n", err)
+		}
+	}
+
 	// Enable tracing instrumentation.
 	if err := redisotel.InstrumentTracing(redisClient); err != nil {
 		log.Fatalf("failed to instrument redis with tracing: %+v\n", err)
@@ -153,12 +165,12 @@ func main() {
 	}
 
 	// Test the connection to redis
-	_, err := redisClient.Ping(ctx).Result()
+	_, err = redisClient.Ping(ctx).Result()
 	if err != nil {
 		log.Fatalf("failed to connect to redis: %+v\n", err)
 	}
 
-	plc, err := plc.NewDirectory("https://plc.directory/export", redisClient, "plc_directory")
+	plc, err := plc.NewDirectory("https://plc.directory/export", redisClient, s, "plc_directory")
 	if err != nil {
 		log.Fatalf("failed to create plc directory: %+v\n", err)
 	}

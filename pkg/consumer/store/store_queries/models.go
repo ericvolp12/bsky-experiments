@@ -11,6 +11,14 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
+type Actor struct {
+	Did        string       `json:"did"`
+	Handle     string       `json:"handle"`
+	CreatedAt  sql.NullTime `json:"created_at"`
+	UpdatedAt  sql.NullTime `json:"updated_at"`
+	InsertedAt time.Time    `json:"inserted_at"`
+}
+
 type Block struct {
 	ActorDid   string       `json:"actor_did"`
 	Rkey       string       `json:"rkey"`

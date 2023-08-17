@@ -138,6 +138,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteSentimentJobStmt, err = db.PrepareContext(ctx, deleteSentimentJob); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSentimentJob: %w", err)
 	}
+	if q.findActorsByHandleStmt, err = db.PrepareContext(ctx, findActorsByHandle); err != nil {
+		return nil, fmt.Errorf("error preparing query FindActorsByHandle: %w", err)
+	}
 	if q.findPotentialFriendsStmt, err = db.PrepareContext(ctx, findPotentialFriends); err != nil {
 		return nil, fmt.Errorf("error preparing query FindPotentialFriends: %w", err)
 	}
@@ -146,6 +149,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getActiveEventsForTargetStmt, err = db.PrepareContext(ctx, getActiveEventsForTarget); err != nil {
 		return nil, fmt.Errorf("error preparing query GetActiveEventsForTarget: %w", err)
+	}
+	if q.getActorByDIDStmt, err = db.PrepareContext(ctx, getActorByDID); err != nil {
+		return nil, fmt.Errorf("error preparing query GetActorByDID: %w", err)
+	}
+	if q.getActorByHandleStmt, err = db.PrepareContext(ctx, getActorByHandle); err != nil {
+		return nil, fmt.Errorf("error preparing query GetActorByHandle: %w", err)
 	}
 	if q.getBlockStmt, err = db.PrepareContext(ctx, getBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query GetBlock: %w", err)
@@ -314,6 +323,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.updateRepoBackfillRecordStmt, err = db.PrepareContext(ctx, updateRepoBackfillRecord); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateRepoBackfillRecord: %w", err)
+	}
+	if q.upsertActorStmt, err = db.PrepareContext(ctx, upsertActor); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertActor: %w", err)
 	}
 	return &q, nil
 }
@@ -510,6 +522,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteSentimentJobStmt: %w", cerr)
 		}
 	}
+	if q.findActorsByHandleStmt != nil {
+		if cerr := q.findActorsByHandleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing findActorsByHandleStmt: %w", cerr)
+		}
+	}
 	if q.findPotentialFriendsStmt != nil {
 		if cerr := q.findPotentialFriendsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing findPotentialFriendsStmt: %w", cerr)
@@ -523,6 +540,16 @@ func (q *Queries) Close() error {
 	if q.getActiveEventsForTargetStmt != nil {
 		if cerr := q.getActiveEventsForTargetStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getActiveEventsForTargetStmt: %w", cerr)
+		}
+	}
+	if q.getActorByDIDStmt != nil {
+		if cerr := q.getActorByDIDStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getActorByDIDStmt: %w", cerr)
+		}
+	}
+	if q.getActorByHandleStmt != nil {
+		if cerr := q.getActorByHandleStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getActorByHandleStmt: %w", cerr)
 		}
 	}
 	if q.getBlockStmt != nil {
@@ -805,6 +832,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing updateRepoBackfillRecordStmt: %w", cerr)
 		}
 	}
+	if q.upsertActorStmt != nil {
+		if cerr := q.upsertActorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertActorStmt: %w", cerr)
+		}
+	}
 	return err
 }
 
@@ -882,9 +914,12 @@ type Queries struct {
 	deleteRepostStmt                     *sql.Stmt
 	deleteRepostCountStmt                *sql.Stmt
 	deleteSentimentJobStmt               *sql.Stmt
+	findActorsByHandleStmt               *sql.Stmt
 	findPotentialFriendsStmt             *sql.Stmt
 	getActiveEventsForInitiatorStmt      *sql.Stmt
 	getActiveEventsForTargetStmt         *sql.Stmt
+	getActorByDIDStmt                    *sql.Stmt
+	getActorByHandleStmt                 *sql.Stmt
 	getBlockStmt                         *sql.Stmt
 	getBlocksByActorStmt                 *sql.Stmt
 	getBlocksByActorAndTargetStmt        *sql.Stmt
@@ -941,6 +976,7 @@ type Queries struct {
 	setSentimentForPostStmt              *sql.Stmt
 	upatePointAssignmentStmt             *sql.Stmt
 	updateRepoBackfillRecordStmt         *sql.Stmt
+	upsertActorStmt                      *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -985,9 +1021,12 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteRepostStmt:                     q.deleteRepostStmt,
 		deleteRepostCountStmt:                q.deleteRepostCountStmt,
 		deleteSentimentJobStmt:               q.deleteSentimentJobStmt,
+		findActorsByHandleStmt:               q.findActorsByHandleStmt,
 		findPotentialFriendsStmt:             q.findPotentialFriendsStmt,
 		getActiveEventsForInitiatorStmt:      q.getActiveEventsForInitiatorStmt,
 		getActiveEventsForTargetStmt:         q.getActiveEventsForTargetStmt,
+		getActorByDIDStmt:                    q.getActorByDIDStmt,
+		getActorByHandleStmt:                 q.getActorByHandleStmt,
 		getBlockStmt:                         q.getBlockStmt,
 		getBlocksByActorStmt:                 q.getBlocksByActorStmt,
 		getBlocksByActorAndTargetStmt:        q.getBlocksByActorAndTargetStmt,
@@ -1044,5 +1083,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setSentimentForPostStmt:              q.setSentimentForPostStmt,
 		upatePointAssignmentStmt:             q.upatePointAssignmentStmt,
 		updateRepoBackfillRecordStmt:         q.updateRepoBackfillRecordStmt,
+		upsertActorStmt:                      q.upsertActorStmt,
 	}
 }

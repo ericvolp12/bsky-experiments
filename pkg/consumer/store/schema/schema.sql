@@ -1,3 +1,15 @@
+-- Actors
+CREATE TABLE actors (
+    did TEXT NOT NULL,
+    handle TEXT NOT NULL,
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ,
+    inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    PRIMARY KEY (did)
+);
+CREATE INDEX actors_created_at ON actors (created_at DESC);
+CREATE INDEX actors_handle ON actors (handle);
+CREATE INDEX actors_handle_trgm ON actors USING gin(handle gin_trgm_ops);
 -- Posts
 CREATE TABLE posts (
     actor_did TEXT NOT NULL,
