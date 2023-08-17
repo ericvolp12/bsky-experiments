@@ -83,6 +83,88 @@ func (q *Queries) GetActorByHandle(ctx context.Context, handle string) (Actor, e
 	return i, err
 }
 
+const getActorTypeAhead = `-- name: GetActorTypeAhead :many
+SELECT did,
+    handle,
+    actors.created_at,
+    CASE
+        WHEN f.actor_did IS NOT NULL
+        AND f2.actor_did IS NOT NULL THEN similarity(
+            handle,
+            concat('%', $2::text, '%')
+        ) + 1
+        WHEN f.actor_did IS NOT NULL THEN similarity(
+            handle,
+            concat('%', $2::text, '%')
+        ) + 0.5
+        ELSE similarity(
+            handle,
+            concat('%', $2::text, '%')
+        )
+    END::float AS score
+FROM actors
+    LEFT JOIN follows f ON f.target_did = did
+    AND f.actor_did = $3
+    LEFT JOIN follows f2 ON f2.target_did = $3
+    AND f2.actor_did = did
+WHERE handle ilike concat('%', $2::text, '%')
+    AND NOT EXISTS (
+        SELECT 1
+        FROM blocks b
+        WHERE (
+                b.actor_did = $3
+                AND b.target_did = did
+            )
+            OR (
+                b.actor_did = did
+                AND b.target_did = $3
+            )
+    )
+ORDER BY score DESC
+LIMIT $1
+`
+
+type GetActorTypeAheadParams struct {
+	Limit    int32  `json:"limit"`
+	Query    string `json:"query"`
+	ActorDid string `json:"actor_did"`
+}
+
+type GetActorTypeAheadRow struct {
+	Did       string       `json:"did"`
+	Handle    string       `json:"handle"`
+	CreatedAt sql.NullTime `json:"created_at"`
+	Score     float64      `json:"score"`
+}
+
+func (q *Queries) GetActorTypeAhead(ctx context.Context, arg GetActorTypeAheadParams) ([]GetActorTypeAheadRow, error) {
+	rows, err := q.query(ctx, q.getActorTypeAheadStmt, getActorTypeAhead, arg.Limit, arg.Query, arg.ActorDid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetActorTypeAheadRow
+	for rows.Next() {
+		var i GetActorTypeAheadRow
+		if err := rows.Scan(
+			&i.Did,
+			&i.Handle,
+			&i.CreatedAt,
+			&i.Score,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertActor = `-- name: UpsertActor :exec
 INSERT INTO actors (
         did,

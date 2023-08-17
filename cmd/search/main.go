@@ -216,6 +216,8 @@ func main() {
 	router.GET("/users/by_handle/:handle/cluster", api.GetClusterForHandle)
 	router.GET("/users/by_did/:did/cluster", api.GetClusterForDID)
 
+	router.GET("/actors/type_ahead", api.SearchActorTypeAhead)
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

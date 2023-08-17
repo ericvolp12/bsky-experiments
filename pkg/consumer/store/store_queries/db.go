@@ -156,6 +156,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getActorByHandleStmt, err = db.PrepareContext(ctx, getActorByHandle); err != nil {
 		return nil, fmt.Errorf("error preparing query GetActorByHandle: %w", err)
 	}
+	if q.getActorTypeAheadStmt, err = db.PrepareContext(ctx, getActorTypeAhead); err != nil {
+		return nil, fmt.Errorf("error preparing query GetActorTypeAhead: %w", err)
+	}
 	if q.getBlockStmt, err = db.PrepareContext(ctx, getBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query GetBlock: %w", err)
 	}
@@ -552,6 +555,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getActorByHandleStmt: %w", cerr)
 		}
 	}
+	if q.getActorTypeAheadStmt != nil {
+		if cerr := q.getActorTypeAheadStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getActorTypeAheadStmt: %w", cerr)
+		}
+	}
 	if q.getBlockStmt != nil {
 		if cerr := q.getBlockStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getBlockStmt: %w", cerr)
@@ -920,6 +928,7 @@ type Queries struct {
 	getActiveEventsForTargetStmt         *sql.Stmt
 	getActorByDIDStmt                    *sql.Stmt
 	getActorByHandleStmt                 *sql.Stmt
+	getActorTypeAheadStmt                *sql.Stmt
 	getBlockStmt                         *sql.Stmt
 	getBlocksByActorStmt                 *sql.Stmt
 	getBlocksByActorAndTargetStmt        *sql.Stmt
@@ -1027,6 +1036,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getActiveEventsForTargetStmt:         q.getActiveEventsForTargetStmt,
 		getActorByDIDStmt:                    q.getActorByDIDStmt,
 		getActorByHandleStmt:                 q.getActorByHandleStmt,
+		getActorTypeAheadStmt:                q.getActorTypeAheadStmt,
 		getBlockStmt:                         q.getBlockStmt,
 		getBlocksByActorStmt:                 q.getBlocksByActorStmt,
 		getBlocksByActorAndTargetStmt:        q.getBlocksByActorAndTargetStmt,

@@ -10,8 +10,7 @@ services:
     restart: always
     image: bsky-plc
     container_name: bsky-plc
-    environment:
-      - REDIS_ADDRESS=host.docker.internal:6379
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://host.docker.internal:4318/
+    env_file:
+      - ../../.plc.env
     ports:
       - "8097:8080"

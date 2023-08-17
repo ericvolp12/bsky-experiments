@@ -13,6 +13,7 @@ import (
 	"github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	"github.com/ericvolp12/bsky-experiments/pkg/layout"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/clusters"
@@ -87,6 +88,8 @@ type API struct {
 	StatsCache         *StatsCacheEntry
 	StatsCacheRWMux    *sync.RWMutex
 }
+
+var tracer = otel.Tracer("search-api")
 
 func NewAPI(
 	postRegistry *search.PostRegistry,
@@ -182,7 +185,6 @@ func (api *API) GetClusterList(c *gin.Context) {
 
 func (api *API) GetAuthorStats(c *gin.Context) {
 	ctx := c.Request.Context()
-	tracer := otel.Tracer("search-api")
 	ctx, span := tracer.Start(ctx, "GetAuthorStats")
 	defer span.End()
 
@@ -220,7 +222,6 @@ func (api *API) GetAuthorStats(c *gin.Context) {
 }
 
 func (api *API) RefreshSiteStats(ctx context.Context) error {
-	tracer := otel.Tracer("search-api")
 	ctx, span := tracer.Start(ctx, "RefreshSiteStats")
 	defer span.End()
 
@@ -313,7 +314,6 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 }
 
 func (api *API) LayoutThread(ctx context.Context, rootPostID string, threadView []search.PostView) ([]layout.ThreadViewLayout, error) {
-	tracer := otel.Tracer("search-api")
 	ctx, span := tracer.Start(ctx, "LayoutThread")
 	defer span.End()
 
@@ -352,7 +352,6 @@ type GraphOptRequest struct {
 
 func (api *API) GraphOptOut(c *gin.Context) {
 	ctx := c.Request.Context()
-	tracer := otel.Tracer("search-api")
 	ctx, span := tracer.Start(ctx, "GraphOptOut")
 	defer span.End()
 
@@ -425,7 +424,6 @@ func (api *API) GraphOptOut(c *gin.Context) {
 
 func (api *API) GraphOptIn(c *gin.Context) {
 	ctx := c.Request.Context()
-	tracer := otel.Tracer("search-api")
 	ctx, span := tracer.Start(ctx, "GraphOptIn")
 	defer span.End()
 
@@ -496,9 +494,61 @@ func (api *API) GraphOptIn(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "You have successfully opted back into the Atlas"})
 }
 
+type TypeaheadMatch struct {
+	Handle string  `json:"handle"`
+	DID    string  `json:"did"`
+	Score  float64 `json:"score"`
+}
+
+func (api *API) SearchActorTypeAhead(c *gin.Context) {
+	ctx := c.Request.Context()
+	ctx, span := tracer.Start(ctx, "SearchActorTypeAhead")
+	defer span.End()
+
+	// Get the query and actor DID from the query string
+	query := c.Query("query")
+	actorDid := c.Query("actorDid")
+
+	span.SetAttributes(
+		attribute.String("query", query),
+		attribute.String("actorDid", actorDid),
+	)
+
+	if query == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "query must be provided"})
+		return
+	}
+
+	if actorDid == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "actorDID must be provided"})
+		return
+	}
+
+	// Get the typeahead results
+	rows, err := api.Store.Queries.GetActorTypeAhead(ctx, store_queries.GetActorTypeAheadParams{
+		Query:    query,
+		ActorDid: actorDid,
+		Limit:    25,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	results := []TypeaheadMatch{}
+	for _, row := range rows {
+		results = append(results, TypeaheadMatch{
+			Handle: row.Handle,
+			DID:    row.Did,
+			Score:  row.Score,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"results": results})
+}
+
 func (api *API) GetOptedOutAuthors(c *gin.Context) {
 	ctx := c.Request.Context()
-	tracer := otel.Tracer("search-api")
 	ctx, span := tracer.Start(ctx, "GetOptedOutAuthors")
 	defer span.End()
 
@@ -514,7 +564,6 @@ func (api *API) GetOptedOutAuthors(c *gin.Context) {
 
 func (api *API) ProcessThreadRequest(c *gin.Context) {
 	ctx := c.Request.Context()
-	tracer := otel.Tracer("search-api")
 	ctx, span := tracer.Start(ctx, "processThreadRequest")
 	defer span.End()
 
@@ -605,7 +654,6 @@ func (api *API) ProcessThreadRequest(c *gin.Context) {
 }
 
 func (api *API) GetThreadView(ctx context.Context, postID, authorID string) ([]search.PostView, error) {
-	tracer := otel.Tracer("search-api")
 	ctx, span := tracer.Start(ctx, "GetThreadView")
 	defer span.End()
 
@@ -637,7 +685,6 @@ func (api *API) GetThreadView(ctx context.Context, postID, authorID string) ([]s
 }
 
 func (api *API) getRootOrOldestParent(ctx context.Context, postID string) (*search.Post, error) {
-	tracer := otel.Tracer("search-api")
 	ctx, span := tracer.Start(ctx, "getRootOrOldestParent")
 	defer span.End()
 	// Get post from registry to look for root post
