@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/araddon/dateparse"
@@ -16,7 +18,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	repoDID := "did:plc:p7gxyfr5vii5ntpwo7f6dhe2"
+	repoDID := "did:plc:q6gjnaw2blty4crticxkmujt"
 
 	var url = "https://bsky.social/xrpc/com.atproto.sync.getCheckout?did=" + repoDID
 
@@ -59,7 +61,15 @@ func main() {
 		return
 	}
 
-	r.ForEach(ctx, "app.bsky.feed.post", func(path string, nodeCid cid.Cid) error {
+	repoJSON := ""
+	posts := []string{}
+	likes := []string{}
+	reposts := []string{}
+	follows := []string{}
+	blocks := []string{}
+	profile := ""
+
+	r.ForEach(ctx, "", func(path string, nodeCid cid.Cid) error {
 		recordCid, rec, err := r.GetRecord(ctx, path)
 		if err != nil {
 			log.Printf("Error getting record: %v", err)
@@ -75,7 +85,6 @@ func main() {
 		// Do something with the record `rec`
 		// collection := strings.Split(path, "/")[0]
 		// rkey := strings.Split(path, "/")[1]
-
 		switch rec := rec.(type) {
 		case *bsky.FeedPost:
 			recCreatedAt, parseError := dateparse.ParseAny(rec.CreatedAt)
@@ -83,9 +92,84 @@ func main() {
 				log.Printf("Error parsing date: %v", parseError)
 				return nil
 			}
-			fmt.Printf("(%s@%s): %s\n", repoDID, recCreatedAt, rec.Text)
+			rec.CreatedAt = recCreatedAt.Format(time.RFC3339)
+			recBytes, err := json.Marshal(rec)
+			if err != nil {
+				log.Printf("Error marshaling record: %v", err)
+				return nil
+			}
+			posts = append(posts, string(recBytes))
+		case *bsky.FeedLike:
+			recCreatedAt, parseError := dateparse.ParseAny(rec.CreatedAt)
+			if parseError != nil {
+				log.Printf("Error parsing date: %v", parseError)
+				return nil
+			}
+			rec.CreatedAt = recCreatedAt.Format(time.RFC3339)
+			recBytes, err := json.Marshal(rec)
+			if err != nil {
+				log.Printf("Error marshaling record: %v", err)
+				return nil
+			}
+			likes = append(likes, string(recBytes))
+		case *bsky.FeedRepost:
+			recCreatedAt, parseError := dateparse.ParseAny(rec.CreatedAt)
+			if parseError != nil {
+				log.Printf("Error parsing date: %v", parseError)
+				return nil
+			}
+			rec.CreatedAt = recCreatedAt.Format(time.RFC3339)
+			recBytes, err := json.Marshal(rec)
+			if err != nil {
+				log.Printf("Error marshaling record: %v", err)
+				return nil
+			}
+			reposts = append(reposts, string(recBytes))
+		case *bsky.GraphFollow:
+			recCreatedAt, parseError := dateparse.ParseAny(rec.CreatedAt)
+			if parseError != nil {
+				log.Printf("Error parsing date: %v", parseError)
+				return nil
+			}
+			rec.CreatedAt = recCreatedAt.Format(time.RFC3339)
+			recBytes, err := json.Marshal(rec)
+			if err != nil {
+				log.Printf("Error marshaling record: %v", err)
+				return nil
+			}
+			follows = append(follows, string(recBytes))
+		case *bsky.GraphBlock:
+			recCreatedAt, parseError := dateparse.ParseAny(rec.CreatedAt)
+			if parseError != nil {
+				log.Printf("Error parsing date: %v", parseError)
+				return nil
+			}
+			rec.CreatedAt = recCreatedAt.Format(time.RFC3339)
+			recBytes, err := json.Marshal(rec)
+			if err != nil {
+				log.Printf("Error marshaling record: %v", err)
+				return nil
+			}
+			blocks = append(blocks, string(recBytes))
+		case *bsky.ActorProfile:
+			recBytes, err := json.Marshal(rec)
+			if err != nil {
+				log.Printf("Error marshaling record: %v", err)
+				return nil
+			}
+			profile = string(recBytes)
 		}
 		return nil
 	})
 
+	repoJSON = fmt.Sprintf(`{"posts": [%s],"likes": [%s],"reposts": [%s],"follows": [%s],"blocks": [%s],"profile": %s}`,
+		strings.Join(posts, ","),
+		strings.Join(likes, ","),
+		strings.Join(reposts, ","),
+		strings.Join(follows, ","),
+		strings.Join(blocks, ","),
+		profile,
+	)
+
+	fmt.Println(repoJSON)
 }

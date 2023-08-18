@@ -217,6 +217,7 @@ func main() {
 	router.GET("/users/by_did/:did/cluster", api.GetClusterForDID)
 
 	router.GET("/actors/type_ahead", api.SearchActorTypeAhead)
+	router.GET("/repo/:did", api.GetRepoAsJSON)
 
 	port := os.Getenv("PORT")
 	if port == "" {
