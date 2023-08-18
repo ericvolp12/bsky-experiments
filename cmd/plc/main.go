@@ -187,6 +187,11 @@ func main() {
 			return
 		}
 
+		// Lowercase all the dids
+		for i, did := range dids {
+			dids[i] = strings.ToLower(did)
+		}
+
 		docs, err := plc.GetBatchEntriesForDID(c.Request.Context(), dids)
 		if err != nil {
 			c.JSON(500, gin.H{
@@ -208,6 +213,11 @@ func main() {
 			return
 		}
 
+		// Lowercase all the handles
+		for i, handle := range handles {
+			handles[i] = strings.ToLower(handle)
+		}
+
 		docs, err := plc.GetBatchEntriesForHandle(c.Request.Context(), handles)
 		if err != nil {
 			c.JSON(500, gin.H{
@@ -221,6 +231,8 @@ func main() {
 
 	router.GET("/:lookup_target", func(c *gin.Context) {
 		lookupTarget := c.Param("lookup_target")
+		// Lowercase the lookup target
+		lookupTarget = strings.ToLower(lookupTarget)
 		if strings.HasPrefix(lookupTarget, "did:plc:") {
 			doc, err := plc.GetEntryForDID(c.Request.Context(), lookupTarget)
 			if err != nil {
