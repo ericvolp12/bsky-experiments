@@ -177,6 +177,48 @@ func main() {
 
 	plc.Start()
 
+	router.POST("/batch/by_did", func(c *gin.Context) {
+		var dids []string
+		err := c.BindJSON(&dids)
+		if err != nil {
+			c.JSON(400, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		docs, err := plc.GetBatchEntriesForDID(c.Request.Context(), dids)
+		if err != nil {
+			c.JSON(500, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(200, docs)
+	})
+
+	router.POST("/batch/by_handle", func(c *gin.Context) {
+		var handles []string
+		err := c.BindJSON(&handles)
+		if err != nil {
+			c.JSON(400, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		docs, err := plc.GetBatchEntriesForHandle(c.Request.Context(), handles)
+		if err != nil {
+			c.JSON(500, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(200, docs)
+	})
+
 	router.GET("/:lookup_target", func(c *gin.Context) {
 		lookupTarget := c.Param("lookup_target")
 		if strings.HasPrefix(lookupTarget, "did:plc:") {

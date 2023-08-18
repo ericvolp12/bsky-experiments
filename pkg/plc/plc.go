@@ -246,6 +246,31 @@ func (d *Directory) GetEntryForDID(ctx context.Context, did string) (DirectoryEn
 	}, nil
 }
 
+func (d *Directory) GetBatchEntriesForDID(ctx context.Context, dids []string) ([]DirectoryEntry, error) {
+	cmd := d.RedisClient.MGet(ctx, func() []string {
+		var keys []string
+		for _, did := range dids {
+			keys = append(keys, d.RedisPrefix+":by_did:"+did)
+		}
+		return keys
+	}()...)
+	if cmd.Err() != nil {
+		return nil, cmd.Err()
+	}
+
+	var entries []DirectoryEntry
+	for i, val := range cmd.Val() {
+		if val != nil {
+			entries = append(entries, DirectoryEntry{
+				Did: dids[i],
+				AKA: val.(string),
+			})
+		}
+	}
+
+	return entries, nil
+}
+
 func (d *Directory) GetEntryForHandle(ctx context.Context, handle string) (DirectoryEntry, error) {
 	cmd := d.RedisClient.Get(ctx, d.RedisPrefix+":by_handle:"+handle)
 	if cmd.Err() != nil {
@@ -256,4 +281,29 @@ func (d *Directory) GetEntryForHandle(ctx context.Context, handle string) (Direc
 		Did: cmd.Val(),
 		AKA: handle,
 	}, nil
+}
+
+func (d *Directory) GetBatchEntriesForHandle(ctx context.Context, handles []string) ([]DirectoryEntry, error) {
+	cmd := d.RedisClient.MGet(ctx, func() []string {
+		var keys []string
+		for _, handle := range handles {
+			keys = append(keys, d.RedisPrefix+":by_handle:"+handle)
+		}
+		return keys
+	}()...)
+	if cmd.Err() != nil {
+		return nil, cmd.Err()
+	}
+
+	var entries []DirectoryEntry
+	for i, val := range cmd.Val() {
+		if val != nil {
+			entries = append(entries, DirectoryEntry{
+				Did: val.(string),
+				AKA: handles[i],
+			})
+		}
+	}
+
+	return entries, nil
 }
