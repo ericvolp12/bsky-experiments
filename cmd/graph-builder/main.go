@@ -96,7 +96,7 @@ func main() {
 	}
 
 	plcDirectoryMirror := os.Getenv("PLC_DIRECTORY_MIRROR")
-	if plcDirectoryMirror != "" {
+	if plcDirectoryMirror == "" {
 		plcDirectoryMirror = "https://plc.jazco.io"
 	}
 

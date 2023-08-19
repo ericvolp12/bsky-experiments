@@ -4,49 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
-	"github.com/bluesky-social/indigo/xrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
-
-var TimeoutError = fmt.Errorf("timeout")
-
-func FeedGetPostsWithTimeout(
-	ctx context.Context,
-	client *xrpc.Client,
-	uris []string,
-	timeout time.Duration,
-) (*appbsky.FeedGetPosts_Output, error) {
-	ctx, _ = otel.Tracer("graph-builder").Start(ctx, "FeedGetPostsWithTimeout")
-	type result struct {
-		posts *appbsky.FeedGetPosts_Output
-		err   error
-	}
-
-	resultChan := make(chan result, 1)
-
-	ctx, cancel := context.WithCancel(ctx)
-
-	go func() {
-		start := time.Now()
-		posts, err := appbsky.FeedGetPosts(ctx, client, uris)
-		elapsed := time.Since(start)
-		apiCallDurationHistogram.WithLabelValues("FeedGetPosts").Observe(elapsed.Seconds())
-		resultChan <- result{posts: posts, err: err}
-	}()
-
-	select {
-	case res := <-resultChan:
-		cancel()
-		return res.posts, res.err
-	case <-time.After(timeout):
-		cancel()
-		return nil, TimeoutError
-	}
-}
 
 // DecodeFacets decodes the facets of a richtext record into mentions and links
 func (bsky *BSky) DecodeFacets(

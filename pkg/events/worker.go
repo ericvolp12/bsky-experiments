@@ -11,7 +11,6 @@ import (
 	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/pkg/errors"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
@@ -24,11 +23,10 @@ type Worker struct {
 }
 
 type ImageMeta struct {
-	CID          string `json:"cid"`
-	MimeType     string `json:"mime_type"`
-	AltText      string `json:"alt_text"`
-	FullsizeURL  string `json:"fullsize_url"`
-	ThumbnailURL string `json:"thumbnail_url"`
+	CID      string `json:"cid"`
+	MimeType string `json:"mime_type"`
+	AltText  string `json:"alt_text"`
+	URL      string `json:"fullsize_url"`
 }
 
 func (bsky *BSky) worker(ctx context.Context, workerID int) {
@@ -112,7 +110,7 @@ func (bsky *BSky) ProcessRepoRecord(
 	eventTime string,
 	workerID int,
 ) error {
-	ctx, span := otel.Tracer("graph-builder").Start(ctx, "ProcessRepoRecord")
+	ctx, span := tracer.Start(ctx, "ProcessRepoRecord")
 	defer span.End()
 	start := time.Now()
 
@@ -210,31 +208,16 @@ func (bsky *BSky) ProcessRepoRecord(
 
 	if pst.Embed != nil && pst.Embed.EmbedImages != nil && pst.Embed.EmbedImages.Images != nil {
 		// Fetch the post with metadata from the BSky API (this includes signed URLs for the images)
-		postPath := fmt.Sprintf("at://%s/%s", authorDID, opPath)
-		postMeta, err := bsky.ResolvePost(ctx, postPath, workerID)
-		if err != nil {
-			log.Errorf("error fetching post with metadata: %+v\n", err)
-		} else if postMeta == nil {
-			log.Error("post with metadata not found")
-		} else if postMeta.Embed != nil &&
-			postMeta.Embed.EmbedImages_View != nil &&
-			postMeta.Embed.EmbedImages_View.Images != nil &&
-			len(postMeta.Embed.EmbedImages_View.Images) == len(pst.Embed.EmbedImages.Images) {
-			// Iterate through the images and add them to the list with enriched metadata
-			for idx, image := range pst.Embed.EmbedImages.Images {
-				imageMeta := postMeta.Embed.EmbedImages_View.Images[idx]
-				if image.Image != nil && imageMeta != nil {
-					imageCID := image.Image.Ref.String()
-					images = append(images, ImageMeta{
-						CID:          imageCID,
-						MimeType:     image.Image.MimeType,
-						AltText:      image.Alt,
-						FullsizeURL:  imageMeta.Fullsize,
-						ThumbnailURL: imageMeta.Thumb,
-					})
-				}
-			}
+		for _, image := range pst.Embed.EmbedImages.Images {
+			imageCID := image.Image.Ref.String()
+			images = append(images, ImageMeta{
+				CID:      imageCID,
+				MimeType: image.Image.MimeType,
+				AltText:  image.Alt,
+				URL:      fmt.Sprintf("https://av-cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", authorDID, imageCID),
+			})
 		}
+
 	}
 
 	postLink := fmt.Sprintf("https://bsky.app/profile/%s/post/%s", authorHandle, postID)
@@ -282,14 +265,13 @@ func (bsky *BSky) ProcessRepoRecord(
 			for _, image := range images {
 				altText := image.AltText
 				registryImage := search.Image{
-					CID:          image.CID,
-					PostID:       postID,
-					AuthorDID:    authorDID,
-					MimeType:     image.MimeType,
-					AltText:      &altText,
-					FullsizeURL:  image.FullsizeURL,
-					ThumbnailURL: image.ThumbnailURL,
-					CreatedAt:    t,
+					CID:         image.CID,
+					PostID:      postID,
+					AuthorDID:   authorDID,
+					MimeType:    image.MimeType,
+					AltText:     &altText,
+					FullsizeURL: image.URL,
+					CreatedAt:   t,
 				}
 				span.AddEvent("AddImageToRegistry")
 				err = bsky.PostRegistry.AddImage(ctx, &registryImage)
@@ -333,7 +315,7 @@ func (bsky *BSky) ProcessRelation(
 	authorDID, authorHandle, parentPostURI string,
 	workerID int,
 ) (string, string, error) {
-	ctx, span := otel.Tracer("graph-builder").Start(ctx, "ProcessRelation")
+	ctx, span := tracer.Start(ctx, "ProcessRelation")
 	defer span.End()
 
 	log := bsky.Workers[workerID].Logger
