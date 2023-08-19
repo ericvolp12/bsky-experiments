@@ -17,7 +17,6 @@ import (
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
@@ -125,7 +124,7 @@ func main() {
 		},
 	))
 
-	buckets := prometheus.ExponentialBuckets(0.0001, 2, 16)
+	buckets := prometheus.ExponentialBuckets(0.00001, 2, 20)
 	// Prometheus middleware
 	p := ginprometheus.NewPrometheus("gin", &ginprometheus.DefaultMetricOverrides{
 		RequestDurationSecondsBuckets: &buckets,
@@ -154,15 +153,15 @@ func main() {
 		}
 	}
 
-	// Enable tracing instrumentation.
-	if err := redisotel.InstrumentTracing(redisClient); err != nil {
-		log.Fatalf("failed to instrument redis with tracing: %+v\n", err)
-	}
+	// // Enable tracing instrumentation.
+	// if err := redisotel.InstrumentTracing(redisClient); err != nil {
+	// 	log.Fatalf("failed to instrument redis with tracing: %+v\n", err)
+	// }
 
-	// Enable metrics instrumentation.
-	if err := redisotel.InstrumentMetrics(redisClient); err != nil {
-		log.Fatalf("failed to instrument redis with metrics: %+v\n", err)
-	}
+	// // Enable metrics instrumentation.
+	// if err := redisotel.InstrumentMetrics(redisClient); err != nil {
+	// 	log.Fatalf("failed to instrument redis with metrics: %+v\n", err)
+	// }
 
 	// Test the connection to redis
 	_, err = redisClient.Ping(ctx).Result()
