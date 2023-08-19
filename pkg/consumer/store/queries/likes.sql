@@ -86,11 +86,20 @@ FROM likes
 WHERE subjects.actor_did = sqlc.arg('to')
     AND likes.actor_did = sqlc.arg('from');
 -- name: GetLikesGivenByActorFromTo :one
-SELECT COUNT(*)
-FROM likes
-WHERE actor_did = $1
-    AND created_at > sqlc.arg('from')
-    AND created_at < sqlc.arg('to');
+WITH p AS MATERIALIZED (
+    SELECT p.created_at
+    FROM likes l
+        JOIN subjects s ON l.subj = s.id
+        JOIN posts p ON s.actor_did = p.actor_did
+        AND s.rkey = p.rkey
+    WHERE l.actor_did = $1
+        AND l.created_at > sqlc.arg('from')
+        AND l.created_at < sqlc.arg('to')
+)
+SELECT count(*)
+FROM p
+WHERE p.created_at > sqlc.arg('from')
+    AND p.created_at < sqlc.arg('to');
 -- name: FindPotentialFriends :many
 WITH user_likes AS (
     SELECT subj

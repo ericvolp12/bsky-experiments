@@ -328,11 +328,20 @@ func (q *Queries) GetLikesBySubject(ctx context.Context, arg GetLikesBySubjectPa
 }
 
 const getLikesGivenByActorFromTo = `-- name: GetLikesGivenByActorFromTo :one
-SELECT COUNT(*)
-FROM likes
-WHERE actor_did = $1
-    AND created_at > $2
-    AND created_at < $3
+WITH p AS MATERIALIZED (
+    SELECT p.created_at
+    FROM likes l
+        JOIN subjects s ON l.subj = s.id
+        JOIN posts p ON s.actor_did = p.actor_did
+        AND s.rkey = p.rkey
+    WHERE l.actor_did = $1
+        AND l.created_at > $2
+        AND l.created_at < $3
+)
+SELECT count(*)
+FROM p
+WHERE p.created_at > $2
+    AND p.created_at < $3
 `
 
 type GetLikesGivenByActorFromToParams struct {
