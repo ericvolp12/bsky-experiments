@@ -1,11 +1,6 @@
 # Makefile for Go project
 
 # Variables
-GRAPH_IMAGE_NAME = bsky-graph-builder
-SEARCH_IMAGE_NAME = bsky-search-api
-LOCAL_DATA_DIR = data/
-DOCKER_MOUNT_PATH = /app/data/
-ENV_FILE = .env
 GO_CMD_W_CGO = CGO_ENABLED=1 GOOS=linux go
 GO_CMD = CGO_ENABLED=0 GOOS=linux go
 
@@ -15,35 +10,17 @@ build-graph-builder:
 	@echo "Building Graph Builder Go binary..."
 	$(GO_CMD_W_CGO) build -o graph-builder cmd/graph-builder/*.go
 
-# Build the Graph Builder Docker image
-.PHONY: docker-build-graph-builder
-docker-build-graph-builder:
-	@echo "Building Graph Builder Docker image..."
-	docker build -t $(GRAPH_IMAGE_NAME) -f build/graph-builder/Dockerfile .
-
 # Start up the Graph Builder
 .PHONY: graph-builder-up
 graph-builder-up:
 	@echo "Starting Graph Builder..."
 	docker compose -f build/graph-builder/docker-compose.yml up --build -d
 
-# Restart the Graph Builder
-.PHONY: graph-builder-restart
-graph-builder-restart:
-	@echo "Restarting Graph Builder..."
-	docker compose -f build/graph-builder/docker-compose.yml restart -t 5
-
 # Build the Search API Go binary
 .PHONY: build-search
 build-search:
 	@echo "Building Search Go binary..."
 	$(GO_CMD) build -o search cmd/search/*.go
-
-# Build the Search API Docker image
-.PHONY: docker-build-search
-docker-build-search:
-	@echo "Building Search Builder Docker image..."
-	docker build -t $(SEARCH_IMAGE_NAME) -f build/search/Dockerfile .
 
 .PHONY: search-up
 search-up:
@@ -124,12 +101,6 @@ plc-up:
 	@echo "Starting PLC..."
 	docker compose -f build/plc/docker-compose.yml up --build -d
 
-# Start up the Pyroscope Continuous Profiler Backend
-.PHONY: pyroscope-up
-pyroscope-up:
-	@echo "Starting Pyroscope..."
-	docker compose -f build/pyroscope/docker-compose.yml up --build -d
-
 # Start up the Redis Store
 .PHONY: redis-up
 redis-up:
@@ -141,12 +112,6 @@ redis-up:
 redis-down:
 	@echo "Stopping Redis..."
 	docker compose -f build/redis/docker-compose.yml down
-
-# Start up ScyllaDB
-.PHONY: scylla-up
-scylla-up:
-	@echo "Starting ScyllaDB..."
-	docker compose -f build/scylla/docker-compose.yml up -d
 
 # Build the Consumer
 .PHONY: build-consumer
@@ -169,17 +134,6 @@ build-jazbot:
 jazbot-up:
 	@echo "Starting Jazbot..."
 	docker compose -f build/jazbot/docker-compose.yml up --build -d
-
-# Build QueryCheck
-.PHONY: build-querycheck
-build-querycheck:
-	@echo "Building QueryCheck Go binary..."
-	$(GO_CMD_W_CGO) build -o querycheck cmd/querycheck/*.go
-
-.PHONY: querycheck-up
-querycheck-up:
-	@echo "Starting QueryCheck..."
-	docker compose -f build/querycheck/docker-compose.yml up --build -d
 
 # Generate SQLC Code
 .PHONY: sqlc

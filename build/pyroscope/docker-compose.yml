@@ -1,7 +1,0 @@
-services:
-  pyroscope:
-    image: "pyroscope/pyroscope:latest"
-    ports:
-      - "4040:4040"
-    command:
-      - "server"
