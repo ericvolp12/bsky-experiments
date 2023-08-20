@@ -238,7 +238,7 @@ func FeedGenerator(cctx *cli.Context) error {
 	feedGenerator.AddFeed(bangersFeedAliases, bangersFeed)
 
 	// Create a What's Hot feed
-	hotFeed, hotFeedAliases, err := hot.NewHotFeed(ctx, feedActorDID, store)
+	hotFeed, hotFeedAliases, err := hot.NewHotFeed(ctx, feedActorDID, store, redisClient)
 	if err != nil {
 		log.Fatalf("Failed to create HotFeed: %v", err)
 	}
