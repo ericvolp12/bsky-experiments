@@ -75,24 +75,34 @@ func (f *BangersFeed) fetchAndCachePosts(ctx context.Context, userDID string, fe
 		cacheKey += ":" + userDID
 	}
 
+	p := f.Redis.Pipeline()
+
 	postRefs := []postRef{}
 	for _, post := range posts {
-		postRefs = append(postRefs, postRef{
+		postRef := postRef{
 			ActorDid: post.ActorDid,
 			Rkey:     post.Rkey,
-		})
+		}
+		cacheValue, err := json.Marshal(postRef)
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling post: %w", err)
+		}
+		p.RPush(ctx, cacheKey, cacheValue)
+		postRefs = append(postRefs, postRef)
 	}
 
-	cacheValue, err := json.Marshal(postRefs)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling posts: %w", err)
-	}
 	ttl := atBangersTTL
 	if feed == "bangers" {
 		ttl = userTTL
 	}
 
-	f.Redis.Set(ctx, cacheKey, cacheValue, ttl)
+	p.Expire(ctx, cacheKey, ttl)
+
+	_, err = p.Exec(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error caching posts for feed (%s): %w", feed, err)
+	}
+
 	return postRefs, nil
 }
 
@@ -120,9 +130,9 @@ func (f *BangersFeed) GetPage(ctx context.Context, feed string, userDID string, 
 		cacheKey += ":" + userDID
 	}
 
-	cached, err := f.Redis.Get(ctx, cacheKey).Result()
+	cached, err := f.Redis.LRange(ctx, cacheKey, offset, offset+limit-1).Result()
 
-	if err == redis.Nil || offset+limit > maxPosts {
+	if err == redis.Nil || len(cached) == 0 {
 		posts, err = f.fetchAndCachePosts(ctx, userDID, feed)
 		if err != nil {
 			if errors.As(err, &search.NotFoundError{}) {
@@ -130,16 +140,21 @@ func (f *BangersFeed) GetPage(ctx context.Context, feed string, userDID string, 
 			}
 			return nil, nil, fmt.Errorf("error getting posts from registry for feed (%s): %w", feed, err)
 		}
+		// Truncate the posts to the limit and offset
+		if len(posts) > int(limit) {
+			posts = posts[offset : offset+limit]
+		}
 	} else if err == nil {
-		json.Unmarshal([]byte(cached), &posts)
+		posts = make([]postRef, len(cached))
+		for i, cachedValue := range cached {
+			json.Unmarshal([]byte(cachedValue), &posts[i])
+		}
 	} else {
 		return nil, nil, fmt.Errorf("error getting posts from cache for feed (%s): %w", feed, err)
 	}
 
 	// Serve posts from the cache if within the 3k window
-	if offset+limit <= maxPosts {
-		posts = posts[offset : offset+limit]
-	} else {
+	if offset+limit > maxPosts {
 		var dbPosts []store_queries.Post
 		switch feed {
 		case "bangers":
