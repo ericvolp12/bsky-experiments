@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -27,20 +26,98 @@ import (
 	"github.com/gin-contrib/cors"
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/extra/redisotel/v9"
+	"github.com/redis/go-redis/v9"
+	"github.com/urfave/cli/v2"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.uber.org/zap"
 )
 
-type preheatItem struct {
-	authorID string
-	postID   string
+func main() {
+	app := cli.App{
+		Name:    "feed-generator",
+		Usage:   "bluesky feed generator",
+		Version: "0.1.0",
+	}
+
+	app.Flags = []cli.Flag{
+		&cli.BoolFlag{
+			Name:    "debug",
+			Usage:   "enable debug logging",
+			Value:   false,
+			EnvVars: []string{"DEBUG"},
+		},
+		&cli.IntFlag{
+			Name:    "port",
+			Usage:   "port to serve metrics on",
+			Value:   8080,
+			EnvVars: []string{"PORT"},
+		},
+		&cli.StringFlag{
+			Name:    "redis-address",
+			Usage:   "redis address for storing progress",
+			Value:   "localhost:6379",
+			EnvVars: []string{"REDIS_ADDRESS"},
+		},
+		&cli.StringFlag{
+			Name:    "redis-prefix",
+			Usage:   "redis prefix for storing progress",
+			Value:   "fg",
+			EnvVars: []string{"REDIS_PREFIX"},
+		},
+		&cli.StringFlag{
+			Name:     "registry-postgres-url",
+			Usage:    "postgres url for the registry database",
+			Value:    "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable",
+			Required: true,
+			EnvVars:  []string{"REGISTRY_POSTGRES_URL"},
+		},
+		&cli.StringFlag{
+			Name:     "firehose-postgres-url",
+			Usage:    "postgres url for the firehose database",
+			Value:    "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable",
+			Required: true,
+			EnvVars:  []string{"FIREHOSE_POSTGRES_URL"},
+		},
+		&cli.StringFlag{
+			Name:    "graph-json-url",
+			Usage:   "URL to the exported graph JSON",
+			Value:   "https://s3.jazco.io/exported_graph_enriched.json",
+			EnvVars: []string{"GRAPH_JSON_URL"},
+		},
+		&cli.StringFlag{
+			Name:     "keys-json-path",
+			Usage:    "path to the JSON file containing the API Keys",
+			Required: true,
+			EnvVars:  []string{"KEYS_JSON_PATH"},
+		},
+		&cli.StringFlag{
+			Name:     "service-endpoint",
+			Usage:    "URL that the feed generator will be available at",
+			Required: true,
+			EnvVars:  []string{"SERVICE_ENDPOINT"},
+		},
+		&cli.StringFlag{
+			Name:     "feed-actor-did",
+			Usage:    "DID of the feed actor",
+			Required: true,
+			EnvVars:  []string{"FEED_ACTOR_DID"},
+		},
+	}
+
+	app.Action = FeedGenerator
+
+	err := app.Run(os.Args)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
-func main() {
-	ctx := context.Background()
+func FeedGenerator(cctx *cli.Context) error {
+	ctx := cctx.Context
 	var logger *zap.Logger
 
-	if os.Getenv("DEBUG") == "true" {
+	if cctx.Bool("debug") {
 		logger, _ = zap.NewDevelopment()
 		logger.Info("Starting logger in DEBUG mode...")
 	} else {
@@ -59,21 +136,6 @@ func main() {
 
 	sugar.Info("Reading config from environment...")
 
-	dbConnectionString := os.Getenv("REGISTRY_DB_CONNECTION_STRING")
-	if dbConnectionString == "" {
-		log.Fatal("REGISTRY_DB_CONNECTION_STRING environment variable is required")
-	}
-
-	firehoseConnectionString := os.Getenv("FIREHOSE_DB_CONNECTION_STRING")
-	if firehoseConnectionString == "" {
-		log.Fatal("FIREHOSE_DB_CONNECTION_STRING environment variable is required")
-	}
-
-	graphJSONUrl := os.Getenv("GRAPH_JSON_URL")
-	if graphJSONUrl == "" {
-		graphJSONUrl = "https://s3.jazco.io/exported_graph_enriched.json"
-	}
-
 	// Registers a tracer Provider globally if the exporter endpoint is set
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
 		log.Println("initializing tracer...")
@@ -89,31 +151,37 @@ func main() {
 		}()
 	}
 
-	postRegistry, err := search.NewPostRegistry(dbConnectionString)
+	postRegistry, err := search.NewPostRegistry(cctx.String("registry-postgres-url"))
 	if err != nil {
 		log.Fatalf("Failed to create PostRegistry: %v", err)
 	}
 	defer postRegistry.Close()
 
-	store, err := store.NewStore(firehoseConnectionString)
+	store, err := store.NewStore(cctx.String("firehose-postgres-url"))
 	if err != nil {
 		log.Fatalf("Failed to create Store: %v", err)
 	}
 
-	feedActorDID := os.Getenv("FEED_ACTOR_DID")
-	if feedActorDID == "" {
-		log.Fatal("FEED_ACTOR_DID environment variable must be set")
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: cctx.String("redis-address"),
+	})
+
+	// Enable tracing instrumentation.
+	if err := redisotel.InstrumentTracing(redisClient); err != nil {
+		log.Fatalf("failed to instrument redis with tracing: %+v\n", err)
 	}
 
-	// serviceEndpoint is a URL that the feed generator will be available at
-	serviceEndpoint := os.Getenv("SERVICE_ENDPOINT")
-	if serviceEndpoint == "" {
-		log.Fatal("SERVICE_ENDPOINT environment variable must be set")
+	// Test the connection to redis
+	_, err = redisClient.Ping(ctx).Result()
+	if err != nil {
+		log.Fatalf("failed to connect to redis: %+v\n", err)
 	}
+
+	feedActorDID := cctx.String("feed-actor-did")
 
 	// Set the acceptable DIDs for the feed generator to respond to
 	// We'll default to the feedActorDID and the Service Endpoint as a did:web
-	serviceURL, err := url.Parse(serviceEndpoint)
+	serviceURL, err := url.Parse(cctx.String("service-endpoint"))
 	if err != nil {
 		log.Fatal(fmt.Errorf("error parsing service endpoint: %w", err))
 	}
@@ -124,12 +192,12 @@ func main() {
 
 	acceptableDIDs := []string{feedActorDID, serviceWebDID}
 
-	feedGenerator, err := feedgenerator.NewFeedGenerator(ctx, feedActorDID, serviceWebDID, acceptableDIDs, serviceEndpoint)
+	feedGenerator, err := feedgenerator.NewFeedGenerator(ctx, feedActorDID, serviceWebDID, acceptableDIDs, cctx.String("service-endpoint"))
 	if err != nil {
 		log.Fatalf("Failed to create FeedGenerator: %v", err)
 	}
 
-	endpoints, err := endpoints.NewEndpoints(feedGenerator, graphJSONUrl, postRegistry)
+	endpoints, err := endpoints.NewEndpoints(feedGenerator, cctx.String("graph-json-url"), postRegistry)
 	if err != nil {
 		log.Fatalf("Failed to create Endpoints: %v", err)
 	}
@@ -163,7 +231,7 @@ func main() {
 	feedGenerator.AddFeed(firehoseFeedAliases, firehoseFeed)
 
 	// Create a Bangers feed
-	bangersFeed, bangersFeedAliases, err := bangers.NewBangersFeed(ctx, feedActorDID, store)
+	bangersFeed, bangersFeedAliases, err := bangers.NewBangersFeed(ctx, feedActorDID, store, redisClient)
 	if err != nil {
 		log.Fatalf("Failed to create BangersFeed: %v", err)
 	}
@@ -272,14 +340,9 @@ func main() {
 		log.Fatalf("Failed to create Auth: %v", err)
 	}
 
-	keysJSONPath := os.Getenv("KEYS_JSON_PATH")
-	if keysJSONPath == "" {
-		log.Fatal("KEYS_JSON_PATH environment variable is required")
-	}
-
 	// Add Auth Entities to auth for API Key Auth
 	// Read the JSON file
-	file, err := os.Open(keysJSONPath)
+	file, err := os.Open(cctx.String("keys-json-path"))
 	if err != nil {
 		log.Fatalf("Failed to open file: %v", err)
 	}
@@ -319,11 +382,6 @@ func main() {
 	router.PUT("/unassign_user_from_feed", endpoints.UnassignUserFromFeed)
 	router.GET("/feed_members", endpoints.GetFeedMembers)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	log.Printf("Starting server on port %s", port)
-	router.Run(fmt.Sprintf(":%s", port))
+	log.Printf("Starting server on port %d", cctx.Int("port"))
+	return router.Run(fmt.Sprintf(":%d", cctx.Int("port")))
 }

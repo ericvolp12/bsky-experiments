@@ -9,11 +9,8 @@ services:
       - "host.docker.internal:host-gateway"
     image: bsky-feedgen-go #:stable
     container_name: bsky-feedgen-go
-    environment:
-      - GIN_MODE=release
-      - KEYS_JSON_PATH=/keys.json
     env_file:
-      - ../../.env
+      - ../../.feedgen.env
     ports:
       - "8095:8080"
     volumes:
