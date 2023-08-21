@@ -147,3 +147,4 @@ sqlc:
 empty-plc:
 	@echo "Emptying PLC Mirror in Redis..."
 	redis-cli --scan --pattern "plc_directory:*" | xargs -L 100 redis-cli DEL
+
