@@ -34,6 +34,9 @@ interface PostResponse {
   error: string;
 }
 
+const ep =
+  window.location.hostname === "localhost" ? "http://10.0.6.32:9003" : "";
+
 const FeedList: FC<{}> = () => {
   const { handleOrDid, rkey } = useParams<{
     handleOrDid: string;
@@ -47,7 +50,7 @@ const FeedList: FC<{}> = () => {
   }, []);
 
   const fetchPost = () => {
-    fetch(`http://10.0.6.32:9003/api/v1/profile/${handleOrDid}/post/${rkey}`)
+    fetch(`${ep}/api/v1/profile/${handleOrDid}/post/${rkey}`)
       .then((res) => res.json())
       .then((res: PostResponse) => {
         if (res.error) {
