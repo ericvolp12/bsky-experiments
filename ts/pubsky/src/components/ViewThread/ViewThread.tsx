@@ -79,7 +79,7 @@ const FeedList: FC<{}> = () => {
         </h3>
       </div>
       <div className="mt-2 sm:mt-8 flow-root">
-        <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg pb-5 bg-gray-700 mb-4">
+        <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg pb-5 bg-gray-700 sm:mb-4">
           {post && (
             <div className="flow-root sm:px-4">
               <div className="px-6 py-4 mt-4 pb-8">
