@@ -9,6 +9,8 @@ import (
 	"context"
 	"database/sql"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 const createPost = `-- name: CreatePost :exec
@@ -175,6 +177,145 @@ func (q *Queries) GetPost(ctx context.Context, arg GetPostParams) (Post, error) 
 		&i.InsertedAt,
 	)
 	return i, err
+}
+
+const getPostWithReplies = `-- name: GetPostWithReplies :many
+WITH RootPost AS (
+    SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at,
+        array_agg(COALESCE(i.cid, ''))::TEXT [] as image_cids,
+        array_agg(COALESCE(i.alt_text, ''))::TEXT [] as image_alts
+    FROM posts p
+        LEFT JOIN images i ON p.actor_did = i.post_actor_did
+        AND p.rkey = i.post_rkey
+    WHERE p.actor_did = $1
+        AND p.rkey = $2
+    GROUP BY p.actor_did,
+        p.rkey
+),
+Replies AS (
+    SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at,
+        array_agg(COALESCE(i.cid, ''))::TEXT [] as image_cids,
+        array_agg(COALESCE(i.alt_text, ''))::TEXT [] as image_alts
+    FROM posts p
+        LEFT JOIN images i ON p.actor_did = i.post_actor_did
+        AND p.rkey = i.post_rkey
+    WHERE p.parent_post_actor_did = (
+            SELECT actor_did
+            FROM RootPost
+        )
+        AND p.parent_post_rkey = (
+            SELECT rkey
+            FROM RootPost
+        )
+    GROUP BY p.actor_did,
+        p.rkey
+),
+RootLikeCount AS (
+    SELECT lc.subject_id,
+        lc.num_likes
+    FROM subjects s
+        JOIN like_counts lc ON s.id = lc.subject_id
+    WHERE s.actor_did = (
+            SELECT actor_did
+            FROM RootPost
+        )
+        AND s.rkey = (
+            SELECT rkey
+            FROM RootPost
+        )
+),
+ReplyLikeCounts AS (
+    SELECT s.actor_did,
+        s.rkey,
+        lc.num_likes
+    FROM subjects s
+        JOIN like_counts lc ON s.id = lc.subject_id
+    WHERE s.actor_did IN (
+            SELECT actor_did
+            FROM Replies
+        )
+        AND s.rkey IN (
+            SELECT rkey
+            FROM Replies
+        )
+)
+SELECT rp.actor_did, rp.rkey, rp.content, rp.parent_post_actor_did, rp.quote_post_actor_did, rp.quote_post_rkey, rp.parent_post_rkey, rp.root_post_actor_did, rp.root_post_rkey, rp.has_embedded_media, rp.created_at, rp.inserted_at, rp.image_cids, rp.image_alts,
+    rlc.num_likes AS like_count
+FROM RootPost rp
+    LEFT JOIN RootLikeCount rlc ON rlc.subject_id = (
+        SELECT id
+        FROM subjects
+        WHERE actor_did = rp.actor_did
+            AND rkey = rp.rkey
+    )
+UNION ALL
+SELECT r.actor_did, r.rkey, r.content, r.parent_post_actor_did, r.quote_post_actor_did, r.quote_post_rkey, r.parent_post_rkey, r.root_post_actor_did, r.root_post_rkey, r.has_embedded_media, r.created_at, r.inserted_at, r.image_cids, r.image_alts,
+    rlc.num_likes AS like_count
+FROM Replies r
+    LEFT JOIN ReplyLikeCounts rlc ON r.actor_did = rlc.actor_did
+    AND r.rkey = rlc.rkey
+`
+
+type GetPostWithRepliesParams struct {
+	ActorDid string `json:"actor_did"`
+	Rkey     string `json:"rkey"`
+}
+
+type GetPostWithRepliesRow struct {
+	ActorDid           string         `json:"actor_did"`
+	Rkey               string         `json:"rkey"`
+	Content            sql.NullString `json:"content"`
+	ParentPostActorDid sql.NullString `json:"parent_post_actor_did"`
+	QuotePostActorDid  sql.NullString `json:"quote_post_actor_did"`
+	QuotePostRkey      sql.NullString `json:"quote_post_rkey"`
+	ParentPostRkey     sql.NullString `json:"parent_post_rkey"`
+	RootPostActorDid   sql.NullString `json:"root_post_actor_did"`
+	RootPostRkey       sql.NullString `json:"root_post_rkey"`
+	HasEmbeddedMedia   bool           `json:"has_embedded_media"`
+	CreatedAt          sql.NullTime   `json:"created_at"`
+	InsertedAt         time.Time      `json:"inserted_at"`
+	ImageCids          []string       `json:"image_cids"`
+	ImageAlts          []string       `json:"image_alts"`
+	LikeCount          sql.NullInt64  `json:"like_count"`
+}
+
+func (q *Queries) GetPostWithReplies(ctx context.Context, arg GetPostWithRepliesParams) ([]GetPostWithRepliesRow, error) {
+	rows, err := q.query(ctx, q.getPostWithRepliesStmt, getPostWithReplies, arg.ActorDid, arg.Rkey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPostWithRepliesRow
+	for rows.Next() {
+		var i GetPostWithRepliesRow
+		if err := rows.Scan(
+			&i.ActorDid,
+			&i.Rkey,
+			&i.Content,
+			&i.ParentPostActorDid,
+			&i.QuotePostActorDid,
+			&i.QuotePostRkey,
+			&i.ParentPostRkey,
+			&i.RootPostActorDid,
+			&i.RootPostRkey,
+			&i.HasEmbeddedMedia,
+			&i.CreatedAt,
+			&i.InsertedAt,
+			pq.Array(&i.ImageCids),
+			pq.Array(&i.ImageAlts),
+			&i.LikeCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getPostsByActor = `-- name: GetPostsByActor :many

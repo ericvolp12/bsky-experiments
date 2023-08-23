@@ -2,6 +2,7 @@
 CREATE TABLE actors (
     did TEXT NOT NULL,
     handle TEXT NOT NULL,
+    pro_pic_cid TEXT,
     created_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ,
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -10,6 +11,8 @@ CREATE TABLE actors (
 CREATE INDEX actors_created_at ON actors (created_at DESC);
 CREATE INDEX actors_handle ON actors (handle);
 CREATE INDEX actors_handle_trgm ON actors USING gin(handle gin_trgm_ops);
+CREATE INDEX actors_no_pro_pic ON actors (pro_pic_cid)
+WHERE pro_pic_cid IS NULL;
 -- Posts
 CREATE TABLE posts (
     actor_did TEXT NOT NULL,
@@ -31,6 +34,9 @@ CREATE INDEX posts_created_at_index ON posts (created_at DESC);
 CREATE INDEX posts_roots_or_quotes_only_created_at ON posts (created_at DESC)
 WHERE root_post_rkey IS NULL
     AND parent_post_rkey IS NULL;
+CREATE INDEX posts_parents ON posts (parent_post_actor_did, parent_post_rkey)
+WHERE parent_post_actor_did IS NOT NULL
+    AND parent_post_rkey IS NOT NULL;
 -- Subjects
 CREATE TABLE collections (
     id SERIAL PRIMARY KEY,

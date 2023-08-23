@@ -11,7 +11,7 @@ import (
 )
 
 const findActorsByHandle = `-- name: FindActorsByHandle :many
-SELECT did, handle, created_at, updated_at, inserted_at
+SELECT did, handle, pro_pic_cid, created_at, updated_at, inserted_at
 FROM actors
 WHERE handle ILIKE concat('%', $1, '%')
 `
@@ -28,6 +28,7 @@ func (q *Queries) FindActorsByHandle(ctx context.Context, concat interface{}) ([
 		if err := rows.Scan(
 			&i.Did,
 			&i.Handle,
+			&i.ProPicCid,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.InsertedAt,
@@ -46,7 +47,7 @@ func (q *Queries) FindActorsByHandle(ctx context.Context, concat interface{}) ([
 }
 
 const getActorByDID = `-- name: GetActorByDID :one
-SELECT did, handle, created_at, updated_at, inserted_at
+SELECT did, handle, pro_pic_cid, created_at, updated_at, inserted_at
 FROM actors
 WHERE did = $1
 `
@@ -57,6 +58,7 @@ func (q *Queries) GetActorByDID(ctx context.Context, did string) (Actor, error) 
 	err := row.Scan(
 		&i.Did,
 		&i.Handle,
+		&i.ProPicCid,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.InsertedAt,
@@ -65,7 +67,7 @@ func (q *Queries) GetActorByDID(ctx context.Context, did string) (Actor, error) 
 }
 
 const getActorByHandle = `-- name: GetActorByHandle :one
-SELECT did, handle, created_at, updated_at, inserted_at
+SELECT did, handle, pro_pic_cid, created_at, updated_at, inserted_at
 FROM actors
 WHERE handle = $1
 `
@@ -76,6 +78,7 @@ func (q *Queries) GetActorByHandle(ctx context.Context, handle string) (Actor, e
 	err := row.Scan(
 		&i.Did,
 		&i.Handle,
+		&i.ProPicCid,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.InsertedAt,
@@ -163,6 +166,61 @@ func (q *Queries) GetActorTypeAhead(ctx context.Context, arg GetActorTypeAheadPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const getActorsWithoutPropic = `-- name: GetActorsWithoutPropic :many
+SELECT did, handle, pro_pic_cid, created_at, updated_at, inserted_at
+FROM actors
+WHERE pro_pic_cid IS NULL
+LIMIT $1
+`
+
+func (q *Queries) GetActorsWithoutPropic(ctx context.Context, limit int32) ([]Actor, error) {
+	rows, err := q.query(ctx, q.getActorsWithoutPropicStmt, getActorsWithoutPropic, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Actor
+	for rows.Next() {
+		var i Actor
+		if err := rows.Scan(
+			&i.Did,
+			&i.Handle,
+			&i.ProPicCid,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.InsertedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateActorPropic = `-- name: UpdateActorPropic :exec
+UPDATE actors
+SET pro_pic_cid = $2,
+    updated_at = $3
+WHERE did = $1
+`
+
+type UpdateActorPropicParams struct {
+	Did       string         `json:"did"`
+	ProPicCid sql.NullString `json:"pro_pic_cid"`
+	UpdatedAt sql.NullTime   `json:"updated_at"`
+}
+
+func (q *Queries) UpdateActorPropic(ctx context.Context, arg UpdateActorPropicParams) error {
+	_, err := q.exec(ctx, q.updateActorPropicStmt, updateActorPropic, arg.Did, arg.ProPicCid, arg.UpdatedAt)
+	return err
 }
 
 const upsertActor = `-- name: UpsertActor :exec

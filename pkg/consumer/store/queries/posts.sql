@@ -139,3 +139,78 @@ FROM posts p
     JOIN TopSubjects s ON p.actor_did = s.actor_did
     AND p.rkey = s.rkey
 ORDER BY s.num_likes DESC;
+-- name: GetPostWithReplies :many
+WITH RootPost AS (
+    SELECT p.*,
+        array_agg(COALESCE(i.cid, ''))::TEXT [] as image_cids,
+        array_agg(COALESCE(i.alt_text, ''))::TEXT [] as image_alts
+    FROM posts p
+        LEFT JOIN images i ON p.actor_did = i.post_actor_did
+        AND p.rkey = i.post_rkey
+    WHERE p.actor_did = sqlc.arg('actor_did')
+        AND p.rkey = sqlc.arg('rkey')
+    GROUP BY p.actor_did,
+        p.rkey
+),
+Replies AS (
+    SELECT p.*,
+        array_agg(COALESCE(i.cid, ''))::TEXT [] as image_cids,
+        array_agg(COALESCE(i.alt_text, ''))::TEXT [] as image_alts
+    FROM posts p
+        LEFT JOIN images i ON p.actor_did = i.post_actor_did
+        AND p.rkey = i.post_rkey
+    WHERE p.parent_post_actor_did = (
+            SELECT actor_did
+            FROM RootPost
+        )
+        AND p.parent_post_rkey = (
+            SELECT rkey
+            FROM RootPost
+        )
+    GROUP BY p.actor_did,
+        p.rkey
+),
+RootLikeCount AS (
+    SELECT lc.subject_id,
+        lc.num_likes
+    FROM subjects s
+        JOIN like_counts lc ON s.id = lc.subject_id
+    WHERE s.actor_did = (
+            SELECT actor_did
+            FROM RootPost
+        )
+        AND s.rkey = (
+            SELECT rkey
+            FROM RootPost
+        )
+),
+ReplyLikeCounts AS (
+    SELECT s.actor_did,
+        s.rkey,
+        lc.num_likes
+    FROM subjects s
+        JOIN like_counts lc ON s.id = lc.subject_id
+    WHERE s.actor_did IN (
+            SELECT actor_did
+            FROM Replies
+        )
+        AND s.rkey IN (
+            SELECT rkey
+            FROM Replies
+        )
+)
+SELECT rp.*,
+    rlc.num_likes AS like_count
+FROM RootPost rp
+    LEFT JOIN RootLikeCount rlc ON rlc.subject_id = (
+        SELECT id
+        FROM subjects
+        WHERE actor_did = rp.actor_did
+            AND rkey = rp.rkey
+    )
+UNION ALL
+SELECT r.*,
+    rlc.num_likes AS like_count
+FROM Replies r
+    LEFT JOIN ReplyLikeCounts rlc ON r.actor_did = rlc.actor_did
+    AND r.rkey = rlc.rkey;

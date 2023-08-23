@@ -12,11 +12,12 @@ import (
 )
 
 type Actor struct {
-	Did        string       `json:"did"`
-	Handle     string       `json:"handle"`
-	CreatedAt  sql.NullTime `json:"created_at"`
-	UpdatedAt  sql.NullTime `json:"updated_at"`
-	InsertedAt time.Time    `json:"inserted_at"`
+	Did        string         `json:"did"`
+	Handle     string         `json:"handle"`
+	ProPicCid  sql.NullString `json:"pro_pic_cid"`
+	CreatedAt  sql.NullTime   `json:"created_at"`
+	UpdatedAt  sql.NullTime   `json:"updated_at"`
+	InsertedAt time.Time      `json:"inserted_at"`
 }
 
 type Block struct {

@@ -61,3 +61,13 @@ WHERE handle ilike concat('%', sqlc.arg('query')::text, '%')
     )
 ORDER BY score DESC
 LIMIT $1;
+-- name: GetActorsWithoutPropic :many
+SELECT *
+FROM actors
+WHERE pro_pic_cid IS NULL
+LIMIT $1;
+-- name: UpdateActorPropic :exec
+UPDATE actors
+SET pro_pic_cid = $2,
+    updated_at = $3
+WHERE did = $1;

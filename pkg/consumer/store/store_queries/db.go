@@ -159,6 +159,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getActorTypeAheadStmt, err = db.PrepareContext(ctx, getActorTypeAhead); err != nil {
 		return nil, fmt.Errorf("error preparing query GetActorTypeAhead: %w", err)
 	}
+	if q.getActorsWithoutPropicStmt, err = db.PrepareContext(ctx, getActorsWithoutPropic); err != nil {
+		return nil, fmt.Errorf("error preparing query GetActorsWithoutPropic: %w", err)
+	}
 	if q.getBlockStmt, err = db.PrepareContext(ctx, getBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query GetBlock: %w", err)
 	}
@@ -246,6 +249,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPostStmt, err = db.PrepareContext(ctx, getPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPost: %w", err)
 	}
+	if q.getPostWithRepliesStmt, err = db.PrepareContext(ctx, getPostWithReplies); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPostWithReplies: %w", err)
+	}
 	if q.getPostWithSentimentStmt, err = db.PrepareContext(ctx, getPostWithSentiment); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostWithSentiment: %w", err)
 	}
@@ -323,6 +329,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.upatePointAssignmentStmt, err = db.PrepareContext(ctx, upatePointAssignment); err != nil {
 		return nil, fmt.Errorf("error preparing query UpatePointAssignment: %w", err)
+	}
+	if q.updateActorPropicStmt, err = db.PrepareContext(ctx, updateActorPropic); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateActorPropic: %w", err)
 	}
 	if q.updateRepoBackfillRecordStmt, err = db.PrepareContext(ctx, updateRepoBackfillRecord); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateRepoBackfillRecord: %w", err)
@@ -560,6 +569,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getActorTypeAheadStmt: %w", cerr)
 		}
 	}
+	if q.getActorsWithoutPropicStmt != nil {
+		if cerr := q.getActorsWithoutPropicStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getActorsWithoutPropicStmt: %w", cerr)
+		}
+	}
 	if q.getBlockStmt != nil {
 		if cerr := q.getBlockStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getBlockStmt: %w", cerr)
@@ -705,6 +719,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPostStmt: %w", cerr)
 		}
 	}
+	if q.getPostWithRepliesStmt != nil {
+		if cerr := q.getPostWithRepliesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPostWithRepliesStmt: %w", cerr)
+		}
+	}
 	if q.getPostWithSentimentStmt != nil {
 		if cerr := q.getPostWithSentimentStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostWithSentimentStmt: %w", cerr)
@@ -835,6 +854,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing upatePointAssignmentStmt: %w", cerr)
 		}
 	}
+	if q.updateActorPropicStmt != nil {
+		if cerr := q.updateActorPropicStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateActorPropicStmt: %w", cerr)
+		}
+	}
 	if q.updateRepoBackfillRecordStmt != nil {
 		if cerr := q.updateRepoBackfillRecordStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateRepoBackfillRecordStmt: %w", cerr)
@@ -929,6 +953,7 @@ type Queries struct {
 	getActorByDIDStmt                    *sql.Stmt
 	getActorByHandleStmt                 *sql.Stmt
 	getActorTypeAheadStmt                *sql.Stmt
+	getActorsWithoutPropicStmt           *sql.Stmt
 	getBlockStmt                         *sql.Stmt
 	getBlocksByActorStmt                 *sql.Stmt
 	getBlocksByActorAndTargetStmt        *sql.Stmt
@@ -958,6 +983,7 @@ type Queries struct {
 	getPointAssignmentsForActorStmt      *sql.Stmt
 	getPointAssignmentsForEventStmt      *sql.Stmt
 	getPostStmt                          *sql.Stmt
+	getPostWithRepliesStmt               *sql.Stmt
 	getPostWithSentimentStmt             *sql.Stmt
 	getPostsByActorStmt                  *sql.Stmt
 	getPostsByActorsFollowingTargetStmt  *sql.Stmt
@@ -984,6 +1010,7 @@ type Queries struct {
 	incrementRepostCountByNStmt          *sql.Stmt
 	setSentimentForPostStmt              *sql.Stmt
 	upatePointAssignmentStmt             *sql.Stmt
+	updateActorPropicStmt                *sql.Stmt
 	updateRepoBackfillRecordStmt         *sql.Stmt
 	upsertActorStmt                      *sql.Stmt
 }
@@ -1037,6 +1064,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getActorByDIDStmt:                    q.getActorByDIDStmt,
 		getActorByHandleStmt:                 q.getActorByHandleStmt,
 		getActorTypeAheadStmt:                q.getActorTypeAheadStmt,
+		getActorsWithoutPropicStmt:           q.getActorsWithoutPropicStmt,
 		getBlockStmt:                         q.getBlockStmt,
 		getBlocksByActorStmt:                 q.getBlocksByActorStmt,
 		getBlocksByActorAndTargetStmt:        q.getBlocksByActorAndTargetStmt,
@@ -1066,6 +1094,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getPointAssignmentsForActorStmt:      q.getPointAssignmentsForActorStmt,
 		getPointAssignmentsForEventStmt:      q.getPointAssignmentsForEventStmt,
 		getPostStmt:                          q.getPostStmt,
+		getPostWithRepliesStmt:               q.getPostWithRepliesStmt,
 		getPostWithSentimentStmt:             q.getPostWithSentimentStmt,
 		getPostsByActorStmt:                  q.getPostsByActorStmt,
 		getPostsByActorsFollowingTargetStmt:  q.getPostsByActorsFollowingTargetStmt,
@@ -1092,6 +1121,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		incrementRepostCountByNStmt:          q.incrementRepostCountByNStmt,
 		setSentimentForPostStmt:              q.setSentimentForPostStmt,
 		upatePointAssignmentStmt:             q.upatePointAssignmentStmt,
+		updateActorPropicStmt:                q.updateActorPropicStmt,
 		updateRepoBackfillRecordStmt:         q.updateRepoBackfillRecordStmt,
 		upsertActorStmt:                      q.upsertActorStmt,
 	}

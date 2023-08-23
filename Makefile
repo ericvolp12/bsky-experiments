@@ -148,3 +148,12 @@ empty-plc:
 	@echo "Emptying PLC Mirror in Redis..."
 	redis-cli --scan --pattern "plc_directory:*" | xargs -L 100 redis-cli DEL
 
+.PHONY: build-pubsky
+build-pubsky:
+	@echo "Building Pubsky Go binary..."
+	$(GO_CMD_W_CGO) build -o pubsky cmd/pubsky/*.go
+
+.PHONY: pubsky-up
+pubsky-up:
+	@echo "Starting Pubsky..."
+	docker compose -f build/pubsky/docker-compose.yml up --build -d
