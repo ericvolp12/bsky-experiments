@@ -110,6 +110,9 @@ func (p *Pubsky) HandleGetPost(c *gin.Context) {
 
 	// Construct image URLs for the root post
 	for i, cid := range rootDBPost.ImageCids {
+		if cid == "" {
+			continue
+		}
 		alt := rootDBPost.ImageAlts[i]
 
 		url := fmt.Sprintf("https://av-cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", did, cid)

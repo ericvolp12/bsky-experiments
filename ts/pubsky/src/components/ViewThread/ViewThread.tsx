@@ -81,7 +81,7 @@ const FeedList: FC<{}> = () => {
       <div className="mt-2 sm:mt-8 flow-root">
         <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg pb-5 bg-gray-700">
           {post && (
-            <div className="flow-root px-4">
+            <div className="flow-root sm:px-4">
               <div className="px-6 py-4 mt-4 pb-8">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
@@ -107,19 +107,21 @@ const FeedList: FC<{}> = () => {
                     </p>
                   </div>
                 </div>
-                <div className="mt-4">
+                <div>
                   <div className="ml-3 flex-1">
-                    <div className="flex flex-wrap mr-0 gap-2">
-                      {post?.images?.map((image, idx) => (
-                        <div key={idx}>
-                          <img
-                            className="h-auto max-w-full rounded-lg"
-                            src={image.url}
-                            alt={image.alt}
-                          />
-                        </div>
-                      ))}
-                    </div>
+                    {post?.images && post?.images?.length > 0 && (
+                      <div className="flex flex-wrap mr-0 gap-2 mt-2">
+                        {post?.images?.map((image, idx) => (
+                          <div key={idx}>
+                            <img
+                              className="h-auto max-w-full rounded-lg"
+                              src={image.url}
+                              alt={image.alt}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <p className="text-sm text-gray-100 mt-2">
                       {post?.content
                         ?.split("\n")
@@ -142,6 +144,13 @@ const FeedList: FC<{}> = () => {
                   </div>
                 </div>
               </div>
+              {post?.replies && post?.replies?.length > 0 && (
+                <div className="block">
+                  <div className="pb-4 px-4">
+                    <div className="border-gray-800 border-t-2" />
+                  </div>
+                </div>
+              )}
               <ul role="list" className="-mb-8">
                 {post.replies?.map((reply, replyIdx) => (
                   <li key={reply?.actor_did + "-" + reply?.rkey}>
