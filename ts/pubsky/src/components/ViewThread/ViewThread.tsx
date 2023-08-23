@@ -1,7 +1,7 @@
 import { FC, useEffect, useState } from "react";
 import ErrorMsg from "../ErrorMsg/ErrorMsg";
-import { useParams } from "react-router-dom";
-import { HandThumbUpIcon } from "@heroicons/react/24/solid";
+import { Link, useParams } from "react-router-dom";
+import { HandThumbUpIcon, UserIcon } from "@heroicons/react/24/solid";
 
 interface Image {
   cid: string;
@@ -12,6 +12,7 @@ interface Image {
 interface Post {
   actor_did: string;
   actor_handle?: string;
+  actor_propic_url?: string;
   rkey: string;
   content: string;
   parent_post_actor_did?: string;
@@ -61,8 +62,9 @@ const FeedList: FC<{}> = () => {
   };
 
   useEffect(() => {
+    setPost(undefined);
     fetchPost();
-  }, []);
+  }, [handleOrDid, rkey]);
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -71,20 +73,30 @@ const FeedList: FC<{}> = () => {
           <ErrorMsg error={error} />
         </div>
       )}
-      <div className="mt-8 flow-root">
+      <div className="text-center pt-2 sm:pt-6">
+        <h3 className="text-xl leading-6 font-medium text-gray-100">
+          Pubsky Thread Viewer
+        </h3>
+      </div>
+      <div className="mt-2 sm:mt-8 flow-root">
         <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg pb-5 bg-gray-700">
           {post && (
             <div className="flow-root px-4">
               <div className="px-6 py-4 mt-4 pb-8">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <img
-                      className="h-10 w-10 rounded-full"
-                      src={post?.images?.[0].url}
-                      alt={post?.images?.[0].alt}
-                    />
+                    {(post?.actor_propic_url && (
+                      <img
+                        className="h-10 w-10 rounded-full"
+                        src={post?.actor_propic_url || ""}
+                      />
+                    )) || (
+                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-600 text-white">
+                        <UserIcon />
+                      </div>
+                    )}
                   </div>
-                  <div className="ml-3 min-w-0 flex-1 inline-flex justify-between">
+                  <div className="ml-3 min-w-0 flex-1 inline-flex ">
                     <p className="text-sm font-medium text-gray-100 truncate">
                       <a
                         href={`https://bsky.app/profile/${post?.actor_did}`}
@@ -93,17 +105,11 @@ const FeedList: FC<{}> = () => {
                         {post?.actor_handle}
                       </a>
                     </p>
-
-                    <p className="text-xs text-gray-300">
-                      {post?.created_at
-                        ? new Date(post?.created_at).toLocaleString()
-                        : ""}
-                    </p>
                   </div>
                 </div>
                 <div className="mt-4">
                   <div className="ml-3 flex-1">
-                    <div className="flex flex-wrap mr-12">
+                    <div className="flex flex-wrap mr-0 gap-2">
                       {post?.images?.map((image, idx) => (
                         <div key={idx}>
                           <img
@@ -114,13 +120,13 @@ const FeedList: FC<{}> = () => {
                         </div>
                       ))}
                     </div>
-                    <p className="text-sm text-gray-100">
+                    <p className="text-sm text-gray-100 mt-2">
                       {post?.content
                         ?.split("\n")
                         .map((line, idx) => <p key={idx}>{line}</p>) || ""}
                     </p>
                   </div>
-                  <div className="ml-auto flex justify-end">
+                  <div className="flex justify-between mt-2 ml-2">
                     <span className="inline-flex px-3 py-0.5 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
                       <HandThumbUpIcon
                         className="-ml-1 mr-0.5 h-5 w-5 text-blue-500"
@@ -128,6 +134,11 @@ const FeedList: FC<{}> = () => {
                       />
                       {post?.like_count.toLocaleString()}
                     </span>
+                    <p className="text-xs text-gray-300 mt-auto mb-auto">
+                      {post?.created_at
+                        ? new Date(post?.created_at).toLocaleString()
+                        : ""}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -144,39 +155,30 @@ const FeedList: FC<{}> = () => {
                       <div className="relative flex items-start space-x-3 ml-3">
                         <>
                           <div className="relative">
-                            <img
-                              className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-600"
-                              src={`https://cdn.bsky.social/imgproxy/7LvKFeY0otwnAW11x2UcLeTL__m_WDqZgw8BHJT59tY/rs:fill:1000:1000:1:0/plain/bafkreigio6g2gv3phaprfjukxpwytdyxyic45reldeptypywkt7xrhi3h4@jpeg`}
-                              alt={reply?.images?.[0].alt}
-                            />
+                            {(reply?.actor_propic_url && (
+                              <img
+                                className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-600"
+                                src={reply?.actor_propic_url || ""}
+                              />
+                            )) || (
+                              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-600 text-white">
+                                <UserIcon />
+                              </div>
+                            )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="inline-flex justify-between w-full">
-                              <div className="text-sm">
+                            <div className="inline-flex justify-between">
+                              <div className="text-sm truncate text-gray-100 font-semibold">
                                 <a
                                   href={`https://bsky.app/profile/${reply?.actor_did}`}
                                   target="_blank"
-                                  className="font-semibold text-gray-100"
                                 >
                                   {reply?.actor_handle}
                                 </a>
                               </div>
-                              <div>
-                                <p className="mt-0.5 text-xs text-gray-300 mr-4">
-                                  <a
-                                    href={`/profile/${reply?.actor_did}/post/${reply?.rkey}`}
-                                  >
-                                    {reply?.created_at
-                                      ? new Date(
-                                          reply?.created_at
-                                        ).toLocaleString()
-                                      : ""}
-                                  </a>
-                                </p>
-                              </div>
                             </div>
                             {reply?.images && reply?.images?.length > 0 && (
-                              <div className="flex flex-wrap mr-12 mt-2">
+                              <div className="flex flex-wrap mr-12 mt-2 gap-2">
                                 {reply?.images?.map((image, idx) => (
                                   <div key={idx}>
                                     <img
@@ -194,7 +196,7 @@ const FeedList: FC<{}> = () => {
                                 .map((line, idx) => <p key={idx}>{line}</p>) ||
                                 ""}
                             </div>
-                            <div className="flex justify-end mr-4">
+                            <div className="flex justify-between mr-4 mt-2">
                               <span className="inline-flex px-3 py-0.5 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
                                 <HandThumbUpIcon
                                   className="-ml-1 mr-0.5 h-5 w-5 text-blue-500"
@@ -202,6 +204,17 @@ const FeedList: FC<{}> = () => {
                                 />
                                 {reply?.like_count.toLocaleString()}
                               </span>
+                              <p className="my-auto text-xs text-gray-300 hover:underline">
+                                <Link
+                                  to={`/profile/${reply?.actor_did}/post/${reply?.rkey}`}
+                                >
+                                  {reply?.created_at
+                                    ? new Date(
+                                        reply?.created_at
+                                      ).toLocaleString()
+                                    : ""}
+                                </Link>
+                              </p>
                             </div>
                           </div>
                         </>

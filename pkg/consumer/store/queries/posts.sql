@@ -142,21 +142,29 @@ ORDER BY s.num_likes DESC;
 -- name: GetPostWithReplies :many
 WITH RootPost AS (
     SELECT p.*,
+        a.handle,
+        a.pro_pic_cid,
         array_agg(COALESCE(i.cid, ''))::TEXT [] as image_cids,
         array_agg(COALESCE(i.alt_text, ''))::TEXT [] as image_alts
     FROM posts p
+        LEFT JOIN actors a ON p.actor_did = a.did
         LEFT JOIN images i ON p.actor_did = i.post_actor_did
         AND p.rkey = i.post_rkey
     WHERE p.actor_did = sqlc.arg('actor_did')
         AND p.rkey = sqlc.arg('rkey')
     GROUP BY p.actor_did,
-        p.rkey
+        p.rkey,
+        a.handle,
+        a.pro_pic_cid
 ),
 Replies AS (
     SELECT p.*,
+        a.handle,
+        a.pro_pic_cid,
         array_agg(COALESCE(i.cid, ''))::TEXT [] as image_cids,
         array_agg(COALESCE(i.alt_text, ''))::TEXT [] as image_alts
     FROM posts p
+        LEFT JOIN actors a ON p.actor_did = a.did
         LEFT JOIN images i ON p.actor_did = i.post_actor_did
         AND p.rkey = i.post_rkey
     WHERE p.parent_post_actor_did = (
@@ -168,7 +176,9 @@ Replies AS (
             FROM RootPost
         )
     GROUP BY p.actor_did,
-        p.rkey
+        p.rkey,
+        a.handle,
+        a.pro_pic_cid
 ),
 RootLikeCount AS (
     SELECT lc.subject_id,

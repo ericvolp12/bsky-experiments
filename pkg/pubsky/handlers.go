@@ -20,6 +20,7 @@ type Image struct {
 type Post struct {
 	ActorDid           string    `json:"actor_did"`
 	ActorHandle        string    `json:"actor_handle,omitempty"`
+	ActorProPicURL     string    `json:"actor_propic_url,omitempty"`
 	Rkey               string    `json:"rkey"`
 	Content            string    `json:"content"`
 	ParentPostActorDid string    `json:"parent_post_actor_did,omitempty"`
@@ -84,9 +85,15 @@ func (p *Pubsky) HandleGetPost(c *gin.Context) {
 	rootDBPost := dbPosts[0]
 	dbPosts = dbPosts[1:]
 
+	var actorPropicURL string
+	if rootDBPost.ProPicCid.Valid {
+		actorPropicURL = fmt.Sprintf("https://av-cdn.bsky.app/img/avatar/plain/%s/%s@jpeg", did, rootDBPost.ProPicCid.String)
+	}
+
 	rootPost := Post{
 		ActorDid:           rootDBPost.ActorDid,
 		ActorHandle:        handle,
+		ActorProPicURL:     actorPropicURL,
 		Rkey:               rootDBPost.Rkey,
 		Content:            rootDBPost.Content.String,
 		ParentPostActorDid: rootDBPost.ParentPostActorDid.String,
@@ -138,9 +145,15 @@ func (p *Pubsky) HandleGetPost(c *gin.Context) {
 				}
 			}
 
+			var actorPropicURL string
+			if dbPost.ProPicCid.Valid {
+				actorPropicURL = fmt.Sprintf("https://av-cdn.bsky.app/img/avatar/plain/%s/%s@jpeg", dbPost.ActorDid, dbPost.ProPicCid.String)
+			}
+
 			post := Post{
 				ActorDid:           dbPost.ActorDid,
 				ActorHandle:        handle,
+				ActorProPicURL:     actorPropicURL,
 				Rkey:               dbPost.Rkey,
 				Content:            dbPost.Content.String,
 				ParentPostActorDid: dbPost.ParentPostActorDid.String,
