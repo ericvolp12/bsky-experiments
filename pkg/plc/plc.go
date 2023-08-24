@@ -31,11 +31,12 @@ var plcDirectoryRequestHistogram = promauto.NewHistogramVec(prometheus.Histogram
 }, []string{"status_code"})
 
 type Directory struct {
-	Endpoint    string
-	RateLimiter *rate.Limiter
-	CheckPeriod time.Duration
-	AfterCursor time.Time
-	Logger      *zap.SugaredLogger
+	Endpoint       string
+	PLCRateLimiter *rate.Limiter
+	PDSRateLimiter *rate.Limiter
+	CheckPeriod    time.Duration
+	AfterCursor    time.Time
+	Logger         *zap.SugaredLogger
 
 	ValidationTTL time.Duration
 
@@ -91,11 +92,12 @@ func NewDirectory(endpoint string, redisClient *redis.Client, store *store.Store
 	}
 
 	return &Directory{
-		Endpoint:    endpoint,
-		Logger:      logger,
-		RateLimiter: rate.NewLimiter(rate.Limit(2), 1),
-		CheckPeriod: 30 * time.Second,
-		AfterCursor: lastCursor,
+		Endpoint:       endpoint,
+		Logger:         logger,
+		PLCRateLimiter: rate.NewLimiter(rate.Limit(2), 1),
+		PDSRateLimiter: rate.NewLimiter(rate.Limit(60), 1),
+		CheckPeriod:    30 * time.Second,
+		AfterCursor:    lastCursor,
 
 		ValidationTTL: 12 * time.Hour,
 
@@ -118,7 +120,7 @@ func (d *Directory) Start() {
 	}()
 
 	go func() {
-		d.ValidateHandles(ctx, 1000, 5*time.Second)
+		d.ValidateHandles(ctx, 1200, 5*time.Second)
 	}()
 }
 
@@ -139,7 +141,7 @@ func (d *Directory) fetchDirectoryEntries(ctx context.Context) {
 			q.Add("after", d.AfterCursor.Format(time.RFC3339Nano))
 		}
 		req.URL.RawQuery = q.Encode()
-		d.RateLimiter.Wait(ctx)
+		d.PLCRateLimiter.Wait(ctx)
 		start := time.Now()
 		resp, err := client.Do(req)
 		plcDirectoryRequestHistogram.WithLabelValues(fmt.Sprintf("%d", resp.StatusCode)).Observe(time.Since(start).Seconds())
@@ -397,7 +399,10 @@ func (d *Directory) ValidateHandle(ctx context.Context, client *http.Client, did
 		return false, append(errs, fmt.Errorf("failed to create request for HTTPS validation: %+v", err))
 	}
 
-	d.RateLimiter.Wait(ctx)
+	// If the handle ends in `.bsky.social`, use the PDS rate limiter
+	if strings.HasSuffix(handle, ".bsky.social") {
+		d.PDSRateLimiter.Wait(ctx)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
