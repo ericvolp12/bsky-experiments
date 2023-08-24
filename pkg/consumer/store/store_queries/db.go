@@ -159,6 +159,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getActorTypeAheadStmt, err = db.PrepareContext(ctx, getActorTypeAhead); err != nil {
 		return nil, fmt.Errorf("error preparing query GetActorTypeAhead: %w", err)
 	}
+	if q.getActorsForValidationStmt, err = db.PrepareContext(ctx, getActorsForValidation); err != nil {
+		return nil, fmt.Errorf("error preparing query GetActorsForValidation: %w", err)
+	}
 	if q.getActorsWithoutPropicStmt, err = db.PrepareContext(ctx, getActorsWithoutPropic); err != nil {
 		return nil, fmt.Errorf("error preparing query GetActorsWithoutPropic: %w", err)
 	}
@@ -332,6 +335,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.updateActorPropicStmt, err = db.PrepareContext(ctx, updateActorPropic); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateActorPropic: %w", err)
+	}
+	if q.updateActorsValidationStmt, err = db.PrepareContext(ctx, updateActorsValidation); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateActorsValidation: %w", err)
 	}
 	if q.updateRepoBackfillRecordStmt, err = db.PrepareContext(ctx, updateRepoBackfillRecord); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateRepoBackfillRecord: %w", err)
@@ -567,6 +573,11 @@ func (q *Queries) Close() error {
 	if q.getActorTypeAheadStmt != nil {
 		if cerr := q.getActorTypeAheadStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getActorTypeAheadStmt: %w", cerr)
+		}
+	}
+	if q.getActorsForValidationStmt != nil {
+		if cerr := q.getActorsForValidationStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getActorsForValidationStmt: %w", cerr)
 		}
 	}
 	if q.getActorsWithoutPropicStmt != nil {
@@ -859,6 +870,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing updateActorPropicStmt: %w", cerr)
 		}
 	}
+	if q.updateActorsValidationStmt != nil {
+		if cerr := q.updateActorsValidationStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateActorsValidationStmt: %w", cerr)
+		}
+	}
 	if q.updateRepoBackfillRecordStmt != nil {
 		if cerr := q.updateRepoBackfillRecordStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateRepoBackfillRecordStmt: %w", cerr)
@@ -953,6 +969,7 @@ type Queries struct {
 	getActorByDIDStmt                    *sql.Stmt
 	getActorByHandleStmt                 *sql.Stmt
 	getActorTypeAheadStmt                *sql.Stmt
+	getActorsForValidationStmt           *sql.Stmt
 	getActorsWithoutPropicStmt           *sql.Stmt
 	getBlockStmt                         *sql.Stmt
 	getBlocksByActorStmt                 *sql.Stmt
@@ -1011,6 +1028,7 @@ type Queries struct {
 	setSentimentForPostStmt              *sql.Stmt
 	upatePointAssignmentStmt             *sql.Stmt
 	updateActorPropicStmt                *sql.Stmt
+	updateActorsValidationStmt           *sql.Stmt
 	updateRepoBackfillRecordStmt         *sql.Stmt
 	upsertActorStmt                      *sql.Stmt
 }
@@ -1064,6 +1082,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getActorByDIDStmt:                    q.getActorByDIDStmt,
 		getActorByHandleStmt:                 q.getActorByHandleStmt,
 		getActorTypeAheadStmt:                q.getActorTypeAheadStmt,
+		getActorsForValidationStmt:           q.getActorsForValidationStmt,
 		getActorsWithoutPropicStmt:           q.getActorsWithoutPropicStmt,
 		getBlockStmt:                         q.getBlockStmt,
 		getBlocksByActorStmt:                 q.getBlocksByActorStmt,
@@ -1122,6 +1141,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		setSentimentForPostStmt:              q.setSentimentForPostStmt,
 		upatePointAssignmentStmt:             q.upatePointAssignmentStmt,
 		updateActorPropicStmt:                q.updateActorPropicStmt,
+		updateActorsValidationStmt:           q.updateActorsValidationStmt,
 		updateRepoBackfillRecordStmt:         q.updateRepoBackfillRecordStmt,
 		upsertActorStmt:                      q.upsertActorStmt,
 	}

@@ -2,6 +2,8 @@
 CREATE TABLE actors (
     did TEXT NOT NULL,
     handle TEXT NOT NULL,
+    handle_valid BOOLEAN DEFAULT FALSE NOT NULL,
+    last_validated TIMESTAMPTZ,
     pro_pic_cid TEXT,
     created_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ,

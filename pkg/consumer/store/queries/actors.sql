@@ -71,3 +71,15 @@ UPDATE actors
 SET pro_pic_cid = $2,
     updated_at = $3
 WHERE did = $1;
+-- name: GetActorsForValidation :many
+SELECT *
+from actors
+WHERE last_validated is NULL
+    OR last_validated < $1
+ORDER BY did
+LIMIT $2;
+-- name: UpdateActorsValidation :exec
+UPDATE actors
+SET last_validated = $1,
+    handle_valid = $2
+WHERE did = ANY(sqlc.arg('dids')::text []);

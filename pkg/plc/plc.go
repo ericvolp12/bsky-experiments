@@ -6,8 +6,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
@@ -16,7 +18,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/time/rate"
 )
 
@@ -31,6 +36,8 @@ type Directory struct {
 	CheckPeriod time.Duration
 	AfterCursor time.Time
 	Logger      *zap.SugaredLogger
+
+	ValidationTTL time.Duration
 
 	RedisClient *redis.Client
 	RedisPrefix string
@@ -60,6 +67,8 @@ type Operation struct {
 	Type        string   `json:"type"`
 }
 
+var tracer = otel.Tracer("plc-directory")
+
 func NewDirectory(endpoint string, redisClient *redis.Client, store *store.Store, redisPrefix string) (*Directory, error) {
 	ctx := context.Background()
 	rawLogger, err := zap.NewProduction()
@@ -88,6 +97,8 @@ func NewDirectory(endpoint string, redisClient *redis.Client, store *store.Store
 		CheckPeriod: 30 * time.Second,
 		AfterCursor: lastCursor,
 
+		ValidationTTL: 12 * time.Hour,
+
 		RedisClient: redisClient,
 		RedisPrefix: redisPrefix,
 
@@ -104,6 +115,10 @@ func (d *Directory) Start() {
 		for range ticker.C {
 			d.fetchDirectoryEntries(ctx)
 		}
+	}()
+
+	go func() {
+		d.ValidateHandles(ctx, 1000, 5*time.Second)
 	}()
 }
 
@@ -232,6 +247,181 @@ func (d *Directory) fetchDirectoryEntries(ctx context.Context) {
 	}
 
 	d.Logger.Info("finished fetching directory entries")
+}
+
+var plcDirectoryValidationHistogram = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name: "plc_directory_validation_duration_seconds",
+	Help: "Histogram of the time (in seconds) each validation of the PLC directory takes",
+}, []string{"is_valid"})
+
+func (d *Directory) ValidateHandles(ctx context.Context, pageSize int, timeBetweenLoops time.Duration) {
+	logger := d.Logger.With("source", "plc_directory_validation")
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("context cancelled, stopping validation loop")
+			return
+		default:
+			if !d.ValidateHandlePage(ctx, pageSize) {
+				time.Sleep(timeBetweenLoops)
+			}
+		}
+	}
+}
+
+func (d *Directory) ValidateHandlePage(ctx context.Context, pageSize int) bool {
+	ctx, span := tracer.Start(ctx, "ValidateHandles")
+	defer span.End()
+
+	logger := d.Logger.With("source", "plc_directory_validation_page")
+
+	logger.Info("validating handles entries...")
+
+	start := time.Now()
+
+	actors, err := d.Store.Queries.GetActorsForValidation(ctx, store_queries.GetActorsForValidationParams{
+		LastValidated: sql.NullTime{Time: time.Now().Add(-d.ValidationTTL), Valid: true},
+		Limit:         int32(pageSize),
+	})
+	if err != nil {
+		logger.Errorf("failed to get actors for validation: %+v", err)
+		return false
+	}
+
+	queryDone := time.Now()
+
+	validDids := []string{}
+	validLk := &sync.Mutex{}
+	invalidDids := []string{}
+	invalidLk := &sync.Mutex{}
+
+	client := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+
+	// Validate in 20 goroutines
+	sem := semaphore.NewWeighted(20)
+	wg := &sync.WaitGroup{}
+	for _, actor := range actors {
+		wg.Add(1)
+		go func(actor store_queries.Actor) {
+			defer wg.Done()
+			defer sem.Release(1)
+			validStart := time.Now()
+			valid, errs := d.ValidateHandle(ctx, client, actor.Did, actor.Handle)
+			plcDirectoryValidationHistogram.WithLabelValues(fmt.Sprintf("%t", valid)).Observe(time.Since(validStart).Seconds())
+			if valid {
+				validLk.Lock()
+				validDids = append(validDids, actor.Did)
+				validLk.Unlock()
+			} else {
+				invalidLk.Lock()
+				invalidDids = append(invalidDids, actor.Did)
+				invalidLk.Unlock()
+				logger.Errorw("failed to validate handle",
+					"did", actor.Did,
+					"handle", actor.Handle,
+					"errors", errs,
+				)
+
+			}
+		}(actor)
+		sem.Acquire(ctx, 1)
+	}
+
+	wg.Wait()
+
+	validationDone := time.Now()
+
+	// Update the actors in the database
+	if len(validDids) > 0 {
+		err = d.Store.Queries.UpdateActorsValidation(ctx, store_queries.UpdateActorsValidationParams{
+			Dids:          validDids,
+			HandleValid:   true,
+			LastValidated: sql.NullTime{Time: time.Now(), Valid: true},
+		})
+		if err != nil {
+			logger.Errorf("failed to update valid actors: %+v", err)
+		}
+	}
+	if len(invalidDids) > 0 {
+		err = d.Store.Queries.UpdateActorsValidation(ctx, store_queries.UpdateActorsValidationParams{
+			Dids:          invalidDids,
+			HandleValid:   false,
+			LastValidated: sql.NullTime{Time: time.Now(), Valid: true},
+		})
+		if err != nil {
+			logger.Errorf("failed to update invalid actors: %+v", err)
+		}
+	}
+
+	updateDone := time.Now()
+
+	logger.Infow("finished validating directory entries",
+		"valid", len(validDids),
+		"invalid", len(invalidDids),
+		"query_time", queryDone.Sub(start).Seconds(),
+		"validation_time", validationDone.Sub(queryDone).Seconds(),
+		"update_time", updateDone.Sub(validationDone).Seconds(),
+		"total_time", updateDone.Sub(start).Seconds(),
+	)
+
+	if len(actors) >= pageSize {
+		return true
+	}
+
+	return false
+}
+
+func (d *Directory) ValidateHandle(ctx context.Context, client *http.Client, did string, handle string) (bool, []error) {
+	ctx, span := tracer.Start(ctx, "ValidateHandle")
+	defer span.End()
+
+	var errs []error
+	expectedTxtValue := fmt.Sprintf("did=%s", did)
+
+	// Start by looking up TXT records for the Handle
+	txtrecords, err := net.DefaultResolver.LookupTXT(ctx, fmt.Sprintf("_atproto.%s", handle))
+	if err != nil {
+		errs = append(errs, fmt.Errorf("failed to lookup TXT records for handle: %+v", err))
+	} else {
+		for _, txt := range txtrecords {
+			if txt == expectedTxtValue {
+				span.SetAttributes(attribute.Bool("txt_validated", true))
+				return true, nil
+			}
+		}
+	}
+
+	// If no TXT records were found, check /.well-known/atproto-did
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("https://%s/.well-known/atproto-did", handle), nil)
+	if err != nil {
+		return false, append(errs, fmt.Errorf("failed to create request for HTTPS validation: %+v", err))
+	}
+
+	d.RateLimiter.Wait(ctx)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, append(errs, fmt.Errorf("failed to fetch /.well-known/atproto-did: %+v", err))
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		span.SetAttributes(attribute.Bool("both_invalid", true))
+		span.SetAttributes(attribute.Int("https_status_code", resp.StatusCode))
+		return false, append(errs, fmt.Errorf("failed to fetch /.well-known/atproto-did: %s", resp.Status))
+	}
+
+	// There should only be one line in the response with the contenr of the DID
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == did {
+			span.SetAttributes(attribute.Bool("https_validated", true))
+			return true, nil
+		}
+	}
+
+	span.SetAttributes(attribute.Bool("both_invalid", true))
+	return false, append(errs, fmt.Errorf("failed to find DID in /.well-known/atproto-did"))
 }
 
 func (d *Directory) GetEntryForDID(ctx context.Context, did string) (DirectoryEntry, error) {

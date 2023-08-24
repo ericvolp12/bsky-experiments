@@ -8,10 +8,12 @@ package store_queries
 import (
 	"context"
 	"database/sql"
+
+	"github.com/lib/pq"
 )
 
 const findActorsByHandle = `-- name: FindActorsByHandle :many
-SELECT did, handle, pro_pic_cid, created_at, updated_at, inserted_at
+SELECT did, handle, handle_valid, last_validated, pro_pic_cid, created_at, updated_at, inserted_at
 FROM actors
 WHERE handle ILIKE concat('%', $1, '%')
 `
@@ -28,6 +30,8 @@ func (q *Queries) FindActorsByHandle(ctx context.Context, concat interface{}) ([
 		if err := rows.Scan(
 			&i.Did,
 			&i.Handle,
+			&i.HandleValid,
+			&i.LastValidated,
 			&i.ProPicCid,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -47,7 +51,7 @@ func (q *Queries) FindActorsByHandle(ctx context.Context, concat interface{}) ([
 }
 
 const getActorByDID = `-- name: GetActorByDID :one
-SELECT did, handle, pro_pic_cid, created_at, updated_at, inserted_at
+SELECT did, handle, handle_valid, last_validated, pro_pic_cid, created_at, updated_at, inserted_at
 FROM actors
 WHERE did = $1
 `
@@ -58,6 +62,8 @@ func (q *Queries) GetActorByDID(ctx context.Context, did string) (Actor, error) 
 	err := row.Scan(
 		&i.Did,
 		&i.Handle,
+		&i.HandleValid,
+		&i.LastValidated,
 		&i.ProPicCid,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -67,7 +73,7 @@ func (q *Queries) GetActorByDID(ctx context.Context, did string) (Actor, error) 
 }
 
 const getActorByHandle = `-- name: GetActorByHandle :one
-SELECT did, handle, pro_pic_cid, created_at, updated_at, inserted_at
+SELECT did, handle, handle_valid, last_validated, pro_pic_cid, created_at, updated_at, inserted_at
 FROM actors
 WHERE handle = $1
 `
@@ -78,6 +84,8 @@ func (q *Queries) GetActorByHandle(ctx context.Context, handle string) (Actor, e
 	err := row.Scan(
 		&i.Did,
 		&i.Handle,
+		&i.HandleValid,
+		&i.LastValidated,
 		&i.ProPicCid,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -168,8 +176,54 @@ func (q *Queries) GetActorTypeAhead(ctx context.Context, arg GetActorTypeAheadPa
 	return items, nil
 }
 
+const getActorsForValidation = `-- name: GetActorsForValidation :many
+SELECT did, handle, handle_valid, last_validated, pro_pic_cid, created_at, updated_at, inserted_at
+from actors
+WHERE last_validated is NULL
+    OR last_validated < $1
+ORDER BY did
+LIMIT $2
+`
+
+type GetActorsForValidationParams struct {
+	LastValidated sql.NullTime `json:"last_validated"`
+	Limit         int32        `json:"limit"`
+}
+
+func (q *Queries) GetActorsForValidation(ctx context.Context, arg GetActorsForValidationParams) ([]Actor, error) {
+	rows, err := q.query(ctx, q.getActorsForValidationStmt, getActorsForValidation, arg.LastValidated, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Actor
+	for rows.Next() {
+		var i Actor
+		if err := rows.Scan(
+			&i.Did,
+			&i.Handle,
+			&i.HandleValid,
+			&i.LastValidated,
+			&i.ProPicCid,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.InsertedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getActorsWithoutPropic = `-- name: GetActorsWithoutPropic :many
-SELECT did, handle, pro_pic_cid, created_at, updated_at, inserted_at
+SELECT did, handle, handle_valid, last_validated, pro_pic_cid, created_at, updated_at, inserted_at
 FROM actors
 WHERE pro_pic_cid IS NULL
 LIMIT $1
@@ -187,6 +241,8 @@ func (q *Queries) GetActorsWithoutPropic(ctx context.Context, limit int32) ([]Ac
 		if err := rows.Scan(
 			&i.Did,
 			&i.Handle,
+			&i.HandleValid,
+			&i.LastValidated,
 			&i.ProPicCid,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -220,6 +276,24 @@ type UpdateActorPropicParams struct {
 
 func (q *Queries) UpdateActorPropic(ctx context.Context, arg UpdateActorPropicParams) error {
 	_, err := q.exec(ctx, q.updateActorPropicStmt, updateActorPropic, arg.Did, arg.ProPicCid, arg.UpdatedAt)
+	return err
+}
+
+const updateActorsValidation = `-- name: UpdateActorsValidation :exec
+UPDATE actors
+SET last_validated = $1,
+    handle_valid = $2
+WHERE did = ANY($3::text [])
+`
+
+type UpdateActorsValidationParams struct {
+	LastValidated sql.NullTime `json:"last_validated"`
+	HandleValid   bool         `json:"handle_valid"`
+	Dids          []string     `json:"dids"`
+}
+
+func (q *Queries) UpdateActorsValidation(ctx context.Context, arg UpdateActorsValidationParams) error {
+	_, err := q.exec(ctx, q.updateActorsValidationStmt, updateActorsValidation, arg.LastValidated, arg.HandleValid, pq.Array(arg.Dids))
 	return err
 }
 
