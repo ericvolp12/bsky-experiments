@@ -156,17 +156,23 @@ func Indexer(cctx *cli.Context) error {
 		}()
 	}
 
-	postRegistry, err := search.NewPostRegistry(cctx.String("registry-postgres-url"))
-	if err != nil {
-		return fmt.Errorf("failed to initialize post registry: %w", err)
+	var postRegistry *search.PostRegistry
+	if cctx.String("registry-postgres-url") != "" {
+		postRegistry, err = search.NewPostRegistry(cctx.String("registry-postgres-url"))
+		if err != nil {
+			return fmt.Errorf("failed to initialize post registry: %w", err)
+		}
+		defer postRegistry.Close()
 	}
-	defer postRegistry.Close()
 
-	store, err := store.NewStore(cctx.String("store-postgres-url"))
-	if err != nil {
-		return fmt.Errorf("failed to initialize store: %w", err)
+	var st *store.Store
+	if cctx.String("store-postgres-url") != "" {
+		st, err = store.NewStore(cctx.String("store-postgres-url"))
+		if err != nil {
+			return fmt.Errorf("failed to initialize store: %w", err)
+		}
+		defer st.Close()
 	}
-	defer store.Close()
 
 	if cctx.String("object-detection-service-host") == "" {
 		return fmt.Errorf("object detection service host is required")
@@ -213,14 +219,19 @@ func Indexer(cctx *cli.Context) error {
 	}()
 
 	index := &Index{
-		PostRegistry:                postRegistry,
 		Detection:                   detection,
 		Sentiment:                   sentiment,
 		PositiveConfidenceThreshold: cctx.Float64("positive-confidence-threshold"),
 		NegativeConfidenceThreshold: cctx.Float64("negative-confidence-threshold"),
 		Logger:                      logger,
-		Store:                       store,
 		Limiter:                     rate.NewLimiter(rate.Limit(4), 1),
+	}
+
+	if st != nil {
+		index.Store = st
+	}
+	if postRegistry != nil {
+		index.PostRegistry = postRegistry
 	}
 
 	// Start the Image Indexing loop
@@ -228,6 +239,12 @@ func Indexer(cctx *cli.Context) error {
 	imagesShutdown := make(chan struct{})
 	go func() {
 		logger := logger.With("source", "image_indexer")
+		if index.PostRegistry == nil {
+			logger.Info("no post registry, skipping image indexing loop...")
+			close(imagesShutdown)
+			return
+		}
+
 		logger.Info("Starting image indexing loop...")
 		for {
 			ctx := context.Background()
@@ -248,6 +265,12 @@ func Indexer(cctx *cli.Context) error {
 	sentimentsShutdown := make(chan struct{})
 	go func() {
 		logger := logger.With("source", "sentiment_indexer")
+		if index.PostRegistry == nil {
+			logger.Info("no post registry, skipping sentiment indexing loop...")
+			close(sentimentsShutdown)
+			return
+		}
+
 		logger.Info("Starting sentiment indexing loop...")
 		for {
 			ctx := context.Background()
@@ -268,6 +291,11 @@ func Indexer(cctx *cli.Context) error {
 	newSentimentsShutdown := make(chan struct{})
 	go func() {
 		logger := logger.With("source", "new_sentiment_indexer")
+		if index.Store == nil {
+			logger.Info("no store, skipping new sentiment indexing loop...")
+			close(newSentimentsShutdown)
+			return
+		}
 		logger.Info("Starting new sentiment indexing loop...")
 		for {
 			ctx := context.Background()
@@ -290,6 +318,11 @@ func Indexer(cctx *cli.Context) error {
 	profilePicturesShutdown := make(chan struct{})
 	go func() {
 		logger := logger.With("source", "profile_picture_indexer")
+		if index.Store == nil {
+			logger.Info("no store, skipping profile picture indexing loop...")
+			close(profilePicturesShutdown)
+			return
+		}
 		logger.Info("Starting profile picture indexing loop...")
 		for {
 			ctx := context.Background()
