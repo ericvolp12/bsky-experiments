@@ -235,9 +235,7 @@ func Pubsky(cctx *cli.Context) error {
 
 	// Serve static files from the public folder
 	router.StaticFile("/", "./public/index.html")
-	router.GET("/profile/:handle_or_did/post/:rkey", func(c *gin.Context) {
-		c.File("./public/index.html")
-	})
+	router.GET("/profile/:handle_or_did/post/:rkey", psky.HandleIndex)
 	router.Static("/assets", "./public/assets")
 
 	srv := &http.Server{

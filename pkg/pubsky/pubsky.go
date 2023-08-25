@@ -2,6 +2,8 @@ package pubsky
 
 import (
 	"context"
+	"log"
+	"text/template"
 	"time"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
@@ -16,6 +18,8 @@ type Pubsky struct {
 	redisClient     *redis.Client
 	postCacheTTL    time.Duration
 	profileCacheTTL time.Duration
+
+	indexTemplate *template.Template
 }
 
 type PubskyOptions struct {
@@ -37,11 +41,19 @@ func NewPubsky(ctx context.Context, store *store.Store, redisClient *redis.Clien
 		opts = DefaultPubskyOptions()
 	}
 
+	// Open the Index File and replace the {{placeholders}}
+	indexFile := "./public/index.html"
+	indexTemplate, err := template.New("index.html").ParseFiles(indexFile)
+	if err != nil {
+		log.Fatalf("failed to parse index file: %+v\n", err)
+	}
+
 	return &Pubsky{
 		Store:           store,
 		PLCMirror:       plcMirror,
 		redisClient:     redisClient,
 		postCacheTTL:    opts.PostCacheTTL,
 		profileCacheTTL: opts.ProfileCacheTTL,
+		indexTemplate:   indexTemplate,
 	}
 }

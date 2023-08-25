@@ -37,6 +37,87 @@ type Post struct {
 	Replies            []*Post   `json:"replies,omitempty"`
 }
 
+type TemplateData struct {
+	Author      string
+	Title       string
+	Description string
+	Image       string
+}
+
+func (p *Pubsky) HandleIndex(c *gin.Context) {
+	ctx, span := tracer.Start(c.Request.Context(), "HandleIndex")
+	defer span.End()
+
+	actorDidOrHandle := c.Param("handle_or_did")
+	rkey := c.Param("rkey")
+
+	if actorDidOrHandle == "" {
+		c.JSON(400, gin.H{"error": "missing actor did or handle"})
+		return
+	}
+
+	if rkey == "" {
+		c.JSON(400, gin.H{"error": "missing rkey"})
+		return
+	}
+
+	did, handle, err := ResolveHandleOrDid(ctx, p.PLCMirror, actorDidOrHandle)
+	if err != nil {
+		if err == ActorNotFound {
+			c.JSON(404, gin.H{"error": "actor not found"})
+			return
+		}
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	dbPosts, err := p.Store.Queries.GetPostWithReplies(ctx, store_queries.GetPostWithRepliesParams{
+		ActorDid: did,
+		Rkey:     rkey,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(404, gin.H{"error": "post not found"})
+			return
+		}
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(dbPosts) == 0 {
+		c.JSON(404, gin.H{"error": "post not found"})
+		return
+	}
+
+	rootDBPost := dbPosts[0]
+	dbPosts = dbPosts[1:]
+
+	var actorPropicURL string
+	if rootDBPost.ProPicCid.Valid {
+		actorPropicURL = fmt.Sprintf("https://av-cdn.bsky.app/img/avatar/plain/%s/%s@jpeg", did, rootDBPost.ProPicCid.String)
+	}
+
+	// Render the template with Author, Title, Description, and Image replaced as needed
+	templateData := TemplateData{
+		Author:      "@" + handle,
+		Title:       fmt.Sprintf("Post by @%s", handle),
+		Description: dbPosts[0].Content.String,
+	}
+
+	if len(rootDBPost.ImageCids) > 0 && rootDBPost.ImageCids[0] != "" {
+		templateData.Image = fmt.Sprintf("https://av-cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", did, rootDBPost.ImageCids[0])
+	} else if actorPropicURL != "" {
+		templateData.Image = actorPropicURL
+	}
+
+	c.Status(200)
+	err = p.indexTemplate.Execute(c.Writer, templateData)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+}
+
 func (p *Pubsky) HandleGetPost(c *gin.Context) {
 	ctx, span := tracer.Start(c.Request.Context(), "HandleGetPost")
 	defer span.End()
