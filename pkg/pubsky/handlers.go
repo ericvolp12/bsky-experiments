@@ -90,24 +90,16 @@ func (p *Pubsky) HandleIndex(c *gin.Context) {
 	}
 
 	rootDBPost := dbPosts[0]
-	dbPosts = dbPosts[1:]
-
-	var actorPropicURL string
-	if rootDBPost.ProPicCid.Valid {
-		actorPropicURL = fmt.Sprintf("https://av-cdn.bsky.app/img/avatar/plain/%s/%s@jpeg", did, rootDBPost.ProPicCid.String)
-	}
 
 	// Render the template with Author, Title, Description, and Image replaced as needed
 	templateData := TemplateData{
 		Author:      "@" + handle,
 		Title:       fmt.Sprintf("Post by @%s", handle),
-		Description: dbPosts[0].Content.String,
+		Description: rootDBPost.Content.String,
 	}
 
 	if len(rootDBPost.ImageCids) > 0 && rootDBPost.ImageCids[0] != "" {
 		templateData.Image = fmt.Sprintf("https://av-cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", did, rootDBPost.ImageCids[0])
-	} else if actorPropicURL != "" {
-		templateData.Image = actorPropicURL
 	}
 
 	c.Status(200)

@@ -25,6 +25,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var tracer = otel.Tracer("search-api")
+
 func main() {
 	ctx := context.Background()
 	var logger *zap.Logger
@@ -228,10 +230,8 @@ func main() {
 
 	// Create a routine to refresh site stats every 5 minutes
 	go func() {
-		ctx := context.Background()
-		tracer := otel.Tracer("search-api")
 		for {
-			ctx, span := tracer.Start(ctx, "refreshSiteStats")
+			ctx, span := tracer.Start(context.Background(), "refreshSiteStats")
 			log.Printf("Refreshing site stats")
 			err := api.RefreshSiteStats(ctx)
 			if err != nil {

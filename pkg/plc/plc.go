@@ -95,7 +95,7 @@ func NewDirectory(endpoint string, redisClient *redis.Client, store *store.Store
 		Endpoint:       endpoint,
 		Logger:         logger,
 		PLCRateLimiter: rate.NewLimiter(rate.Limit(2), 1),
-		PDSRateLimiter: rate.NewLimiter(rate.Limit(60), 1),
+		PDSRateLimiter: rate.NewLimiter(rate.Limit(40), 1),
 		CheckPeriod:    30 * time.Second,
 		AfterCursor:    lastCursor,
 
