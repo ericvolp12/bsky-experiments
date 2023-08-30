@@ -16,6 +16,7 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/bluesky-social/indigo/events"
+	"github.com/bluesky-social/indigo/events/schedulers/autoscaling"
 	intEvents "github.com/ericvolp12/bsky-experiments/pkg/events"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	"github.com/gorilla/websocket"
@@ -244,7 +245,8 @@ func handleRepoStreamWithRetry(
 			}
 		}()
 
-		pool := events.NewConsumerPool(16, 32, func(ctx context.Context, xe *events.XRPCStreamEvent) error {
+		schedSettings := autoscaling.DefaultAutoscaleSettings()
+		scheduler := autoscaling.NewScheduler(schedSettings, "prod-firehose", func(ctx context.Context, xe *events.XRPCStreamEvent) error {
 			switch {
 			case xe.RepoCommit != nil:
 				callbacks.RepoCommit(ctx, xe.RepoCommit)
@@ -256,7 +258,7 @@ func handleRepoStreamWithRetry(
 			return nil
 		})
 
-		err = events.HandleRepoStream(streamCtx, c, pool)
+		err = events.HandleRepoStream(streamCtx, c, scheduler)
 		log.Info("HandleRepoStream returned unexpectedly: %w...", err)
 		if err != nil {
 			log.Infof("Error in event handler routine: %v", err)

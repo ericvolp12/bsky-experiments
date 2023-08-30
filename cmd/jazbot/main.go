@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bluesky-social/indigo/events"
+	"github.com/bluesky-social/indigo/events/schedulers/autoscaling"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/jazbot"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
@@ -189,7 +190,8 @@ func Jazbot(cctx *cli.Context) error {
 		log.Fatalf("failed to create jazbot: %+v\n", err)
 	}
 
-	pool := events.NewConsumerPool(cctx.Int("worker-count"), 10, c.HandleStreamEvent)
+	schedSettings := autoscaling.DefaultAutoscaleSettings()
+	scheduler := autoscaling.NewScheduler(schedSettings, "prod-firehose", c.HandleStreamEvent)
 
 	// Start a goroutine to manage the cursor, saving the current cursor every 5 seconds.
 	shutdownCursorManager := make(chan struct{})
@@ -303,7 +305,7 @@ func Jazbot(cctx *cli.Context) error {
 		ctx := context.Background()
 		ctx, cancel := context.WithCancel(ctx)
 		go func() {
-			err = events.HandleRepoStream(ctx, con, pool)
+			err = events.HandleRepoStream(ctx, con, scheduler)
 			if !errors.Is(err, context.Canceled) {
 				log.Infof("HandleRepoStream returned unexpectedly, killing the consumer: %+v...", err)
 				close(kill)
