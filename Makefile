@@ -148,6 +148,11 @@ empty-plc:
 	@echo "Emptying PLC Mirror in Redis..."
 	redis-cli --scan --pattern "plc_directory:*" | xargs -L 100 redis-cli DEL
 
+.PHONY: empty-fanout
+empty-fanout:
+	@echo "Emptying Fanout keys in Redis..."
+	redis-cli --scan --pattern "wfo:*" | xargs -L 100 redis-cli DEL
+
 .PHONY: build-pubsky
 build-pubsky:
 	@echo "Building Pubsky Go binary..."
