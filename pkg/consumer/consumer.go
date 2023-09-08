@@ -17,6 +17,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	"github.com/goccy/go-json"
+	"github.com/ipfs/go-cid"
 	"github.com/labstack/gommon/log"
 	"github.com/redis/go-redis/v9"
 	typegen "github.com/whyrusleeping/cbor-gen"
@@ -358,7 +359,59 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				lastRecordCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(processedAt.Sub(*recCreatedAt).Seconds()))
 			}
 		case repomgr.EvtKindUpdateRecord:
-			// Don't do anything for updates for now
+			if op.Cid == nil {
+				log.Error("update record op missing cid")
+				break
+			}
+			// Grab the record from the merkel tree
+			blk, err := rr.Blockstore().Get(ctx, cid.Cid(*op.Cid))
+			if err != nil {
+				e := fmt.Errorf("getting block %s within seq %d for %s: %w", *op.Cid, evt.Seq, evt.Repo, err)
+				log.Errorf("failed to get a block from the event: %+v", e)
+				break
+			}
+
+			rec, err := lexutil.CborDecodeValue(blk.RawData())
+			if err != nil {
+				log.Errorf("failed to decode cbor: %+v", err)
+				break
+			}
+
+			// Unpack the record and process it
+			switch rec := rec.(type) {
+			case *bsky.ActorProfile:
+				// Process profile updates
+				span.SetAttributes(attribute.String("record_type", "actor_profile"))
+				recordsProcessedCounter.WithLabelValues("actor_profile", c.SocketURL).Inc()
+
+				upsertParams := store_queries.UpsertActorFromFirehoseParams{
+					Did:       evt.Repo,
+					Handle:    "",
+					UpdatedAt: sql.NullTime{Time: time.Now(), Valid: true},
+					CreatedAt: sql.NullTime{Time: time.Now(), Valid: true},
+				}
+
+				if rec.DisplayName != nil && *rec.DisplayName != "" {
+					upsertParams.DisplayName = sql.NullString{String: *rec.DisplayName, Valid: true}
+				}
+
+				if rec.Description != nil && *rec.Description != "" {
+					upsertParams.Bio = sql.NullString{String: *rec.Description, Valid: true}
+				}
+
+				if rec.Avatar != nil {
+					upsertParams.ProPicCid = sql.NullString{String: rec.Avatar.Ref.String(), Valid: true}
+				}
+
+				if rec.Banner != nil {
+					upsertParams.BannerCid = sql.NullString{String: rec.Banner.Ref.String(), Valid: true}
+				}
+
+				err := c.Store.Queries.UpsertActorFromFirehose(ctx, upsertParams)
+				if err != nil {
+					log.Errorf("failed to upsert actor from firehose: %+v", err)
+				}
+			}
 		case repomgr.EvtKindDeleteRecord:
 			// Buffer the delete if a backfill is in progress
 			backfill.lk.Lock()
