@@ -13,7 +13,7 @@ import (
 )
 
 const findActorsByHandle = `-- name: FindActorsByHandle :many
-SELECT did, handle, handle_valid, last_validated, pro_pic_cid, created_at, updated_at, inserted_at
+SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at
 FROM actors
 WHERE handle ILIKE concat('%', $1, '%')
 `
@@ -30,9 +30,12 @@ func (q *Queries) FindActorsByHandle(ctx context.Context, concat interface{}) ([
 		if err := rows.Scan(
 			&i.Did,
 			&i.Handle,
+			&i.DisplayName,
+			&i.Bio,
 			&i.HandleValid,
 			&i.LastValidated,
 			&i.ProPicCid,
+			&i.BannerCid,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.InsertedAt,
@@ -51,7 +54,7 @@ func (q *Queries) FindActorsByHandle(ctx context.Context, concat interface{}) ([
 }
 
 const getActorByDID = `-- name: GetActorByDID :one
-SELECT did, handle, handle_valid, last_validated, pro_pic_cid, created_at, updated_at, inserted_at
+SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at
 FROM actors
 WHERE did = $1
 `
@@ -62,9 +65,12 @@ func (q *Queries) GetActorByDID(ctx context.Context, did string) (Actor, error) 
 	err := row.Scan(
 		&i.Did,
 		&i.Handle,
+		&i.DisplayName,
+		&i.Bio,
 		&i.HandleValid,
 		&i.LastValidated,
 		&i.ProPicCid,
+		&i.BannerCid,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.InsertedAt,
@@ -73,7 +79,7 @@ func (q *Queries) GetActorByDID(ctx context.Context, did string) (Actor, error) 
 }
 
 const getActorByHandle = `-- name: GetActorByHandle :one
-SELECT did, handle, handle_valid, last_validated, pro_pic_cid, created_at, updated_at, inserted_at
+SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at
 FROM actors
 WHERE handle = $1
 `
@@ -84,9 +90,12 @@ func (q *Queries) GetActorByHandle(ctx context.Context, handle string) (Actor, e
 	err := row.Scan(
 		&i.Did,
 		&i.Handle,
+		&i.DisplayName,
+		&i.Bio,
 		&i.HandleValid,
 		&i.LastValidated,
 		&i.ProPicCid,
+		&i.BannerCid,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.InsertedAt,
@@ -177,7 +186,7 @@ func (q *Queries) GetActorTypeAhead(ctx context.Context, arg GetActorTypeAheadPa
 }
 
 const getActorsForValidation = `-- name: GetActorsForValidation :many
-SELECT did, handle, handle_valid, last_validated, pro_pic_cid, created_at, updated_at, inserted_at
+SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at
 from actors
 WHERE last_validated is NULL
     OR last_validated < $1
@@ -202,9 +211,12 @@ func (q *Queries) GetActorsForValidation(ctx context.Context, arg GetActorsForVa
 		if err := rows.Scan(
 			&i.Did,
 			&i.Handle,
+			&i.DisplayName,
+			&i.Bio,
 			&i.HandleValid,
 			&i.LastValidated,
 			&i.ProPicCid,
+			&i.BannerCid,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.InsertedAt,
@@ -223,7 +235,7 @@ func (q *Queries) GetActorsForValidation(ctx context.Context, arg GetActorsForVa
 }
 
 const getActorsWithoutPropic = `-- name: GetActorsWithoutPropic :many
-SELECT did, handle, handle_valid, last_validated, pro_pic_cid, created_at, updated_at, inserted_at
+SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at
 FROM actors
 WHERE pro_pic_cid IS NULL
 LIMIT $1
@@ -241,9 +253,12 @@ func (q *Queries) GetActorsWithoutPropic(ctx context.Context, limit int32) ([]Ac
 		if err := rows.Scan(
 			&i.Did,
 			&i.Handle,
+			&i.DisplayName,
+			&i.Bio,
 			&i.HandleValid,
 			&i.LastValidated,
 			&i.ProPicCid,
+			&i.BannerCid,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.InsertedAt,
@@ -319,5 +334,51 @@ type UpsertActorParams struct {
 
 func (q *Queries) UpsertActor(ctx context.Context, arg UpsertActorParams) error {
 	_, err := q.exec(ctx, q.upsertActorStmt, upsertActor, arg.Did, arg.Handle, arg.CreatedAt)
+	return err
+}
+
+const upsertActorFromFirehose = `-- name: UpsertActorFromFirehose :exec
+INSERT INTO actors (
+        did,
+        handle,
+        display_name,
+        bio,
+        pro_pic_cid,
+        banner_cid,
+        created_at,
+        updated_at
+    )
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (did) DO
+UPDATE
+SET display_name = EXCLUDED.display_name,
+    bio = EXCLUDED.bio,
+    pro_pic_cid = EXCLUDED.pro_pic_cid,
+    banner_cid = EXCLUDED.banner_cid,
+    updated_at = EXCLUDED.updated_at
+WHERE actors.did = EXCLUDED.did
+`
+
+type UpsertActorFromFirehoseParams struct {
+	Did         string         `json:"did"`
+	Handle      string         `json:"handle"`
+	DisplayName sql.NullString `json:"display_name"`
+	Bio         sql.NullString `json:"bio"`
+	ProPicCid   sql.NullString `json:"pro_pic_cid"`
+	BannerCid   sql.NullString `json:"banner_cid"`
+	CreatedAt   sql.NullTime   `json:"created_at"`
+	UpdatedAt   sql.NullTime   `json:"updated_at"`
+}
+
+func (q *Queries) UpsertActorFromFirehose(ctx context.Context, arg UpsertActorFromFirehoseParams) error {
+	_, err := q.exec(ctx, q.upsertActorFromFirehoseStmt, upsertActorFromFirehose,
+		arg.Did,
+		arg.Handle,
+		arg.DisplayName,
+		arg.Bio,
+		arg.ProPicCid,
+		arg.BannerCid,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
 	return err
 }

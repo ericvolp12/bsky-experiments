@@ -198,6 +198,14 @@ func (c *Consumer) HandleStreamEvent(ctx context.Context, xe *events.XRPCStreamE
 			log.Errorf("error parsing time: %+v", err)
 			return nil
 		}
+		err = c.Store.Queries.UpsertActor(ctx, store_queries.UpsertActorParams{
+			Did:       xe.RepoHandle.Did,
+			Handle:    xe.RepoHandle.Handle,
+			CreatedAt: sql.NullTime{Time: t, Valid: true},
+		})
+		if err != nil {
+			log.Errorf("failed to upsert actor: %+v", err)
+		}
 		lastEvtCreatedAtGauge.WithLabelValues(c.SocketURL).Set(float64(t.UnixNano()))
 		lastEvtProcessedAtGauge.WithLabelValues(c.SocketURL).Set(float64(now.UnixNano()))
 		lastEvtCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(now.Sub(t).Seconds()))
@@ -867,6 +875,34 @@ func (c *Consumer) HandleCreateRecord(
 	case *bsky.ActorProfile:
 		span.SetAttributes(attribute.String("record_type", "actor_profile"))
 		recordsProcessedCounter.WithLabelValues("actor_profile", c.SocketURL).Inc()
+
+		upsertParams := store_queries.UpsertActorFromFirehoseParams{
+			Did:       repo,
+			Handle:    "",
+			UpdatedAt: sql.NullTime{Time: time.Now(), Valid: true},
+			CreatedAt: sql.NullTime{Time: time.Now(), Valid: true},
+		}
+
+		if rec.DisplayName != nil && *rec.DisplayName != "" {
+			upsertParams.DisplayName = sql.NullString{String: *rec.DisplayName, Valid: true}
+		}
+
+		if rec.Description != nil && *rec.Description != "" {
+			upsertParams.Bio = sql.NullString{String: *rec.Description, Valid: true}
+		}
+
+		if rec.Avatar != nil {
+			upsertParams.ProPicCid = sql.NullString{String: rec.Avatar.Ref.String(), Valid: true}
+		}
+
+		if rec.Banner != nil {
+			upsertParams.BannerCid = sql.NullString{String: rec.Banner.Ref.String(), Valid: true}
+		}
+
+		err := c.Store.Queries.UpsertActorFromFirehose(ctx, upsertParams)
+		if err != nil {
+			log.Errorf("failed to upsert actor from firehose: %+v", err)
+		}
 	case *bsky.FeedGenerator:
 		span.SetAttributes(attribute.String("record_type", "feed_generator"))
 		recordsProcessedCounter.WithLabelValues("feed_generator", c.SocketURL).Inc()

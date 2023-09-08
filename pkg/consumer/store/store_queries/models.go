@@ -14,9 +14,12 @@ import (
 type Actor struct {
 	Did           string         `json:"did"`
 	Handle        string         `json:"handle"`
+	DisplayName   sql.NullString `json:"display_name"`
+	Bio           sql.NullString `json:"bio"`
 	HandleValid   bool           `json:"handle_valid"`
 	LastValidated sql.NullTime   `json:"last_validated"`
 	ProPicCid     sql.NullString `json:"pro_pic_cid"`
+	BannerCid     sql.NullString `json:"banner_cid"`
 	CreatedAt     sql.NullTime   `json:"created_at"`
 	UpdatedAt     sql.NullTime   `json:"updated_at"`
 	InsertedAt    time.Time      `json:"inserted_at"`

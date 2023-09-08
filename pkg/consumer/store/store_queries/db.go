@@ -345,6 +345,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.upsertActorStmt, err = db.PrepareContext(ctx, upsertActor); err != nil {
 		return nil, fmt.Errorf("error preparing query UpsertActor: %w", err)
 	}
+	if q.upsertActorFromFirehoseStmt, err = db.PrepareContext(ctx, upsertActorFromFirehose); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertActorFromFirehose: %w", err)
+	}
 	return &q, nil
 }
 
@@ -885,6 +888,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing upsertActorStmt: %w", cerr)
 		}
 	}
+	if q.upsertActorFromFirehoseStmt != nil {
+		if cerr := q.upsertActorFromFirehoseStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertActorFromFirehoseStmt: %w", cerr)
+		}
+	}
 	return err
 }
 
@@ -1031,6 +1039,7 @@ type Queries struct {
 	updateActorsValidationStmt           *sql.Stmt
 	updateRepoBackfillRecordStmt         *sql.Stmt
 	upsertActorStmt                      *sql.Stmt
+	upsertActorFromFirehoseStmt          *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -1144,5 +1153,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		updateActorsValidationStmt:           q.updateActorsValidationStmt,
 		updateRepoBackfillRecordStmt:         q.updateRepoBackfillRecordStmt,
 		upsertActorStmt:                      q.upsertActorStmt,
+		upsertActorFromFirehoseStmt:          q.upsertActorFromFirehoseStmt,
 	}
 }

@@ -10,6 +10,25 @@ UPDATE
 SET handle = EXCLUDED.handle,
     updated_at = EXCLUDED.updated_at
 WHERE actors.did = EXCLUDED.did;
+-- name: UpsertActorFromFirehose :exec
+INSERT INTO actors (
+        did,
+        handle,
+        display_name,
+        bio,
+        pro_pic_cid,
+        banner_cid,
+        created_at,
+        updated_at
+    )
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (did) DO
+UPDATE
+SET display_name = EXCLUDED.display_name,
+    bio = EXCLUDED.bio,
+    pro_pic_cid = EXCLUDED.pro_pic_cid,
+    banner_cid = EXCLUDED.banner_cid,
+    updated_at = EXCLUDED.updated_at
+WHERE actors.did = EXCLUDED.did;
 -- name: GetActorByDID :one
 SELECT *
 FROM actors

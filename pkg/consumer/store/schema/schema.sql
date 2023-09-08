@@ -2,9 +2,12 @@
 CREATE TABLE actors (
     did TEXT NOT NULL,
     handle TEXT NOT NULL,
+    display_name TEXT,
+    bio TEXT,
     handle_valid BOOLEAN DEFAULT FALSE NOT NULL,
     last_validated TIMESTAMPTZ,
     pro_pic_cid TEXT,
+    banner_cid TEXT,
     created_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ,
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
