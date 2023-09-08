@@ -334,18 +334,21 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 		span.SetAttributes(attribute.String("event_kind", op.Action))
 		switch ek {
 		case repomgr.EvtKindCreateRecord:
+			if op.Cid == nil {
+				log.Error("update record op missing cid")
+				break
+			}
 			// Grab the record from the merkel tree
-			rc, rec, err := rr.GetRecord(ctx, op.Path)
+			blk, err := rr.Blockstore().Get(ctx, cid.Cid(*op.Cid))
 			if err != nil {
-				e := fmt.Errorf("getting record %s (%s) within seq %d for %s: %w", op.Path, *op.Cid, evt.Seq, evt.Repo, err)
-				log.Errorf("failed to get a record from the event: %+v", e)
+				e := fmt.Errorf("getting block %s within seq %d for %s: %w", *op.Cid, evt.Seq, evt.Repo, err)
+				log.Errorf("failed to get a block from the event: %+v", e)
 				break
 			}
 
-			// Verify that the record cid matches the cid in the event
-			if lexutil.LexLink(rc) != *op.Cid {
-				e := fmt.Errorf("mismatch in record and op cid: %s != %s", rc, *op.Cid)
-				log.Errorf("failed to LexLink the record in the event: %+v", e)
+			rec, err := lexutil.CborDecodeValue(blk.RawData())
+			if err != nil {
+				log.Errorf("failed to decode cbor: %+v", err)
 				break
 			}
 			recCreatedAt, err := c.HandleCreateRecord(ctx, evt.Repo, op.Path, rec)
