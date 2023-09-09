@@ -35,7 +35,6 @@ import (
 type Consumer struct {
 	SocketURL string
 	Progress  *Progress
-	ProgMux   sync.Mutex
 	Logger    *zap.SugaredLogger
 
 	RedisClient *redis.Client
@@ -55,6 +54,20 @@ type Consumer struct {
 type Progress struct {
 	LastSeq            int64     `json:"last_seq"`
 	LastSeqProcessedAt time.Time `json:"last_seq_processed_at"`
+	lk                 sync.RWMutex
+}
+
+func (p *Progress) Update(seq int64, processedAt time.Time) {
+	p.lk.Lock()
+	defer p.lk.Unlock()
+	p.LastSeq = seq
+	p.LastSeqProcessedAt = processedAt
+}
+
+func (p *Progress) Get() (int64, time.Time) {
+	p.lk.RLock()
+	defer p.lk.RUnlock()
+	return p.LastSeq, p.LastSeqProcessedAt
 }
 
 type Delete struct {
@@ -70,9 +83,12 @@ func (c *Consumer) WriteCursor(ctx context.Context) error {
 	defer span.End()
 
 	// Marshal the cursor JSON
-	c.ProgMux.Lock()
-	data, err := json.Marshal(c.Progress)
-	c.ProgMux.Unlock()
+	seq, processedAt := c.Progress.Get()
+	p := Progress{
+		LastSeq:            seq,
+		LastSeqProcessedAt: processedAt,
+	}
+	data, err := json.Marshal(&p)
 	if err != nil {
 		return fmt.Errorf("failed to marshal cursor JSON: %+v", err)
 	}
@@ -98,9 +114,7 @@ func (c *Consumer) ReadCursor(ctx context.Context) error {
 	}
 
 	// Unmarshal the cursor JSON
-	c.ProgMux.Lock()
 	err = json.Unmarshal(data, c.Progress)
-	c.ProgMux.Unlock()
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal cursor JSON: %+v", err)
 	}
@@ -125,7 +139,6 @@ func NewConsumer(
 			LastSeq: -1,
 		},
 		Logger:      logger,
-		ProgMux:     sync.Mutex{},
 		RedisClient: redisClient,
 		ProgressKey: fmt.Sprintf("%s:progress", redisPrefix),
 		Store:       store,
@@ -189,10 +202,7 @@ func (c *Consumer) HandleStreamEvent(ctx context.Context, xe *events.XRPCStreamE
 	case xe.RepoHandle != nil:
 		eventsProcessedCounter.WithLabelValues("repo_handle", c.SocketURL).Inc()
 		now := time.Now()
-		c.ProgMux.Lock()
-		c.Progress.LastSeq = xe.RepoHandle.Seq
-		c.Progress.LastSeqProcessedAt = now
-		c.ProgMux.Unlock()
+		c.Progress.Update(xe.RepoHandle.Seq, now)
 		// Parse time from the event time string
 		t, err := time.Parse(time.RFC3339, xe.RepoHandle.Time)
 		if err != nil {
@@ -216,10 +226,7 @@ func (c *Consumer) HandleStreamEvent(ctx context.Context, xe *events.XRPCStreamE
 	case xe.RepoMigrate != nil:
 		eventsProcessedCounter.WithLabelValues("repo_migrate", c.SocketURL).Inc()
 		now := time.Now()
-		c.ProgMux.Lock()
-		c.Progress.LastSeq = xe.RepoMigrate.Seq
-		c.Progress.LastSeqProcessedAt = time.Now()
-		c.ProgMux.Unlock()
+		c.Progress.Update(xe.RepoHandle.Seq, now)
 		// Parse time from the event time string
 		t, err := time.Parse(time.RFC3339, xe.RepoMigrate.Time)
 		if err != nil {
@@ -249,10 +256,7 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 
 	processedAt := time.Now()
 
-	c.ProgMux.Lock()
-	c.Progress.LastSeq = evt.Seq
-	c.Progress.LastSeqProcessedAt = processedAt
-	c.ProgMux.Unlock()
+	c.Progress.Update(evt.Seq, processedAt)
 
 	lastSeqGauge.WithLabelValues(c.SocketURL).Set(float64(evt.Seq))
 

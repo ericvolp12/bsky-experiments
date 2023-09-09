@@ -247,9 +247,7 @@ func Consumer(cctx *cli.Context) error {
 				close(livenessCheckerShutdown)
 				return
 			case <-ticker.C:
-				c.ProgMux.Lock()
-				seq := c.Progress.LastSeq
-				c.ProgMux.Unlock()
+				seq, _ := c.Progress.Get()
 				if seq == lastSeq {
 					log.Errorf("no new events in last 15 seconds, shutting down for docker to restart me (last seq: %d)", seq)
 					close(kill)
