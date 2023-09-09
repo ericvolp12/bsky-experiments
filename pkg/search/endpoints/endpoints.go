@@ -64,16 +64,22 @@ type DailyDatapoint struct {
 	DailyActiveBlockers     int64  `json:"num_blockers"`
 }
 
+type StatPercentile struct {
+	Percentile float64 `json:"percentile"`
+	Value      float64 `json:"value"`
+}
+
 type AuthorStatsResponse struct {
-	TotalUsers    int                               `json:"total_users"`
-	TotalAuthors  int64                             `json:"total_authors"`
-	TotalPosts    int64                             `json:"total_posts"`
-	MeanPostCount float64                           `json:"mean_post_count"`
-	Percentiles   []search.Percentile               `json:"percentiles"`
-	Brackets      []search.Bracket                  `json:"brackets"`
-	UpdatedAt     time.Time                         `json:"updated_at"`
-	TopPosters    []search_queries.GetTopPostersRow `json:"top_posters"`
-	DailyData     []DailyDatapoint                  `json:"daily_data"`
+	TotalUsers          int                               `json:"total_users"`
+	TotalAuthors        int64                             `json:"total_authors"`
+	TotalPosts          int64                             `json:"total_posts"`
+	MeanPostCount       float64                           `json:"mean_post_count"`
+	Percentiles         []search.Percentile               `json:"percentiles"`
+	FollowerPercentiles []StatPercentile                  `json:"follower_percentiles"`
+	Brackets            []search.Bracket                  `json:"brackets"`
+	UpdatedAt           time.Time                         `json:"updated_at"`
+	TopPosters          []search_queries.GetTopPostersRow `json:"top_posters"`
+	DailyData           []DailyDatapoint                  `json:"daily_data"`
 }
 
 type API struct {
@@ -289,6 +295,23 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 		})
 	}
 
+	// Get Follower percentiles
+	followerPercentilesRaw, err := api.Store.Queries.GetFollowerPercentiles(ctx)
+	if err != nil {
+		log.Printf("Error getting follower percentiles: %v", err)
+		return fmt.Errorf("error getting follower percentiles: %w", err)
+	}
+
+	followerPercentiles := []StatPercentile{
+		{Percentile: 0.5, Value: followerPercentilesRaw.P50},
+		{Percentile: 0.75, Value: followerPercentilesRaw.P75},
+		{Percentile: 0.9, Value: followerPercentilesRaw.P90},
+		{Percentile: 0.95, Value: followerPercentilesRaw.P95},
+		{Percentile: 0.99, Value: followerPercentilesRaw.P99},
+		{Percentile: 0.999, Value: followerPercentilesRaw.P999},
+		{Percentile: 0.9999, Value: followerPercentilesRaw.P9999},
+	}
+
 	// Update the metrics
 	totalUsers.Set(float64(userCount))
 	totalAuthors.Set(float64(authorStats.TotalAuthors))
@@ -302,15 +325,16 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 	// Update the plain old struct cache
 	api.StatsCache = &StatsCacheEntry{
 		Stats: AuthorStatsResponse{
-			TotalUsers:    userCount,
-			TotalAuthors:  authorStats.TotalAuthors,
-			TotalPosts:    authorStats.TotalPosts,
-			MeanPostCount: authorStats.MeanPostCount,
-			Percentiles:   authorStats.Percentiles,
-			Brackets:      authorStats.Brackets,
-			UpdatedAt:     authorStats.UpdatedAt,
-			TopPosters:    topPosters,
-			DailyData:     dailyDatapoints,
+			TotalUsers:          userCount,
+			TotalAuthors:        authorStats.TotalAuthors,
+			TotalPosts:          authorStats.TotalPosts,
+			MeanPostCount:       authorStats.MeanPostCount,
+			Percentiles:         authorStats.Percentiles,
+			FollowerPercentiles: followerPercentiles,
+			Brackets:            authorStats.Brackets,
+			UpdatedAt:           authorStats.UpdatedAt,
+			TopPosters:          topPosters,
+			DailyData:           dailyDatapoints,
 		},
 		Expiration: time.Now().Add(api.StatsCacheTTL),
 	}

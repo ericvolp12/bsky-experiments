@@ -198,6 +198,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getFollowerCountStmt, err = db.PrepareContext(ctx, getFollowerCount); err != nil {
 		return nil, fmt.Errorf("error preparing query GetFollowerCount: %w", err)
 	}
+	if q.getFollowerPercentilesStmt, err = db.PrepareContext(ctx, getFollowerPercentiles); err != nil {
+		return nil, fmt.Errorf("error preparing query GetFollowerPercentiles: %w", err)
+	}
 	if q.getFollowingCountStmt, err = db.PrepareContext(ctx, getFollowingCount); err != nil {
 		return nil, fmt.Errorf("error preparing query GetFollowingCount: %w", err)
 	}
@@ -643,6 +646,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getFollowerCountStmt: %w", cerr)
 		}
 	}
+	if q.getFollowerPercentilesStmt != nil {
+		if cerr := q.getFollowerPercentilesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getFollowerPercentilesStmt: %w", cerr)
+		}
+	}
 	if q.getFollowingCountStmt != nil {
 		if cerr := q.getFollowingCountStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getFollowingCountStmt: %w", cerr)
@@ -990,6 +998,7 @@ type Queries struct {
 	getEventsToConcludeStmt              *sql.Stmt
 	getFollowStmt                        *sql.Stmt
 	getFollowerCountStmt                 *sql.Stmt
+	getFollowerPercentilesStmt           *sql.Stmt
 	getFollowingCountStmt                *sql.Stmt
 	getFollowsByActorStmt                *sql.Stmt
 	getFollowsByActorAndTargetStmt       *sql.Stmt
@@ -1104,6 +1113,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getEventsToConcludeStmt:              q.getEventsToConcludeStmt,
 		getFollowStmt:                        q.getFollowStmt,
 		getFollowerCountStmt:                 q.getFollowerCountStmt,
+		getFollowerPercentilesStmt:           q.getFollowerPercentilesStmt,
 		getFollowingCountStmt:                q.getFollowingCountStmt,
 		getFollowsByActorStmt:                q.getFollowsByActorStmt,
 		getFollowsByActorAndTargetStmt:       q.getFollowsByActorAndTargetStmt,

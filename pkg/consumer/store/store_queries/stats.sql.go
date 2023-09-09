@@ -50,3 +50,53 @@ func (q *Queries) GetDailySummaries(ctx context.Context) ([]DailySummary, error)
 	}
 	return items, nil
 }
+
+const getFollowerPercentiles = `-- name: GetFollowerPercentiles :one
+WITH all_counts AS (
+    SELECT a.did,
+        COALESCE(fc.num_followers, 0) AS followers
+    FROM actors a
+        LEFT JOIN follower_counts fc ON a.did = fc.actor_did
+),
+percentiles AS (
+    SELECT percentile_cont(
+            ARRAY [0.50, 0.75, 0.90, 0.95, 0.99, 0.999, 0.9999]
+        ) WITHIN GROUP (
+            ORDER BY followers
+        ) AS pct
+    FROM all_counts
+)
+SELECT pct [1]::float AS p50,
+    pct [2]::float AS p75,
+    pct [3]::float AS p90,
+    pct [4]::float AS p95,
+    pct [5]::float AS p99,
+    pct [6]::float AS p99_9,
+    pct [7]::float AS p99_99
+FROM percentiles
+`
+
+type GetFollowerPercentilesRow struct {
+	P50   float64 `json:"p50"`
+	P75   float64 `json:"p75"`
+	P90   float64 `json:"p90"`
+	P95   float64 `json:"p95"`
+	P99   float64 `json:"p99"`
+	P999  float64 `json:"p99_9"`
+	P9999 float64 `json:"p99_99"`
+}
+
+func (q *Queries) GetFollowerPercentiles(ctx context.Context) (GetFollowerPercentilesRow, error) {
+	row := q.queryRow(ctx, q.getFollowerPercentilesStmt, getFollowerPercentiles)
+	var i GetFollowerPercentilesRow
+	err := row.Scan(
+		&i.P50,
+		&i.P75,
+		&i.P90,
+		&i.P95,
+		&i.P99,
+		&i.P999,
+		&i.P9999,
+	)
+	return i, err
+}
