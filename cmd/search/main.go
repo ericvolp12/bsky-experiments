@@ -138,7 +138,7 @@ func main() {
 		layoutServiceHost,
 		10*time.Minute, // Thread View Cache TTL
 		10*time.Minute, // Layout Cache TTL
-		5*time.Minute,  // Stats Cache TTL
+		30*time.Second, // Stats Cache TTL
 	)
 
 	router := gin.New()
