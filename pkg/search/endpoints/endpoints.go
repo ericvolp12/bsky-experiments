@@ -303,11 +303,14 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 	}
 
 	followerPercentiles := []StatPercentile{
+		{Percentile: 0.25, Value: followerPercentilesRaw.P25},
 		{Percentile: 0.5, Value: followerPercentilesRaw.P50},
 		{Percentile: 0.75, Value: followerPercentilesRaw.P75},
 		{Percentile: 0.9, Value: followerPercentilesRaw.P90},
 		{Percentile: 0.95, Value: followerPercentilesRaw.P95},
 		{Percentile: 0.99, Value: followerPercentilesRaw.P99},
+		{Percentile: 0.995, Value: followerPercentilesRaw.P995},
+		{Percentile: 0.997, Value: followerPercentilesRaw.P997},
 		{Percentile: 0.999, Value: followerPercentilesRaw.P999},
 		{Percentile: 0.9999, Value: followerPercentilesRaw.P9999},
 	}
