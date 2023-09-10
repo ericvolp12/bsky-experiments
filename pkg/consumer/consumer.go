@@ -600,13 +600,13 @@ func (c *Consumer) FanoutWrite(
 	defer span.End()
 
 	// Get followers of the repo
-	follows, err := c.Store.Queries.GetFollowsByTarget(ctx, store_queries.GetFollowsByTargetParams{
-		TargetDid: repo,
-		Limit:     100_000,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get followers: %+v", err)
-	}
+	// follows, err := c.Store.Queries.GetFollowsByTarget(ctx, store_queries.GetFollowsByTargetParams{
+	// 	TargetDid: repo,
+	// 	Limit:     100_000,
+	// })
+	// if err != nil {
+	// 	return fmt.Errorf("failed to get followers: %+v", err)
+	// }
 
 	// Write to the timelines of all followers
 	// pipeline := c.RedisClient.Pipeline()
@@ -626,9 +626,16 @@ func (c *Consumer) FanoutWrite(
 	// 	return fmt.Errorf("failed to write to timelines: %+v", err)
 	// }
 
+	followCount, err := c.Store.Queries.GetFollowerCount(ctx, repo)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			return fmt.Errorf("failed to get follower count: %+v", err)
+		}
+	}
+
 	// Observe the number of timelines we would have written to
 	postsFannedOut.WithLabelValues(c.SocketURL).Inc()
-	postFanoutHist.WithLabelValues(c.SocketURL).Observe(float64(len(follows)))
+	postFanoutHist.WithLabelValues(c.SocketURL).Observe(float64(followCount.NumFollowers))
 
 	return nil
 }
