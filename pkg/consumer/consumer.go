@@ -749,6 +749,27 @@ func (c *Consumer) HandleCreateRecord(
 			}
 		}
 
+		// Create the post subject
+		subj, err := c.Store.Queries.CreateSubject(ctx, store_queries.CreateSubjectParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+			Col:      1, // Maps to app.bsky.feed.post
+		})
+		if err != nil {
+			log.Errorf("failed to create subject: %+v", err)
+		}
+
+		// Initialize the like count
+		err = c.Store.Queries.CreateLikeCount(ctx, store_queries.CreateLikeCountParams{
+			SubjectID:        subj.ID,
+			NumLikes:         0,
+			UpdatedAt:        time.Now(),
+			SubjectCreatedAt: sql.NullTime{Time: recCreatedAt, Valid: true},
+		})
+		if err != nil {
+			log.Errorf("failed to create like count: %+v", err)
+		}
+
 		// Fanout the post to followers
 		// err = c.FanoutWrite(ctx, repo, path)
 		// if err != nil {

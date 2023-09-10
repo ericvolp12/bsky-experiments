@@ -92,12 +92,16 @@ CREATE TABLE like_counts (
     subject_id BIGINT NOT NULL,
     num_likes BIGINT NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    subject_created_at TIMESTAMPTZ,
     PRIMARY KEY (subject_id)
 );
 CREATE INDEX idx_like_counts_num_likes_gt_10 ON like_counts (subject_id)
 WHERE num_likes > 10;
 CREATE INDEX idx_like_counts_num_likes_gt_100 ON like_counts (subject_id)
 WHERE num_likes > 100;
+CREATE INDEX idx_like_counts_num_likes_gt_100_cat ON like_counts (subject_created_at DESC)
+WHERE num_likes > 100
+    AND subject_created_at IS NOT NULL;
 -- Blocks
 CREATE TABLE blocks (
     actor_did TEXT NOT NULL,

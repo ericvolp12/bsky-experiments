@@ -63,6 +63,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createLikeStmt, err = db.PrepareContext(ctx, createLike); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateLike: %w", err)
 	}
+	if q.createLikeCountStmt, err = db.PrepareContext(ctx, createLikeCount); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateLikeCount: %w", err)
+	}
 	if q.createPointAssignmentStmt, err = db.PrepareContext(ctx, createPointAssignment); err != nil {
 		return nil, fmt.Errorf("error preparing query CreatePointAssignment: %w", err)
 	}
@@ -77,6 +80,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.createSentimentJobStmt, err = db.PrepareContext(ctx, createSentimentJob); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateSentimentJob: %w", err)
+	}
+	if q.createSubjectStmt, err = db.PrepareContext(ctx, createSubject); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateSubject: %w", err)
 	}
 	if q.decrementFollowerCountByNStmt, err = db.PrepareContext(ctx, decrementFollowerCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query DecrementFollowerCountByN: %w", err)
@@ -421,6 +427,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createLikeStmt: %w", cerr)
 		}
 	}
+	if q.createLikeCountStmt != nil {
+		if cerr := q.createLikeCountStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createLikeCountStmt: %w", cerr)
+		}
+	}
 	if q.createPointAssignmentStmt != nil {
 		if cerr := q.createPointAssignmentStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createPointAssignmentStmt: %w", cerr)
@@ -444,6 +455,11 @@ func (q *Queries) Close() error {
 	if q.createSentimentJobStmt != nil {
 		if cerr := q.createSentimentJobStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createSentimentJobStmt: %w", cerr)
+		}
+	}
+	if q.createSubjectStmt != nil {
+		if cerr := q.createSubjectStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createSubjectStmt: %w", cerr)
 		}
 	}
 	if q.decrementFollowerCountByNStmt != nil {
@@ -953,11 +969,13 @@ type Queries struct {
 	createFollowStmt                     *sql.Stmt
 	createImageStmt                      *sql.Stmt
 	createLikeStmt                       *sql.Stmt
+	createLikeCountStmt                  *sql.Stmt
 	createPointAssignmentStmt            *sql.Stmt
 	createPostStmt                       *sql.Stmt
 	createRepoBackfillRecordStmt         *sql.Stmt
 	createRepostStmt                     *sql.Stmt
 	createSentimentJobStmt               *sql.Stmt
+	createSubjectStmt                    *sql.Stmt
 	decrementFollowerCountByNStmt        *sql.Stmt
 	decrementFollowingCountByNStmt       *sql.Stmt
 	decrementLikeCountByNStmt            *sql.Stmt
@@ -1068,11 +1086,13 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createFollowStmt:                     q.createFollowStmt,
 		createImageStmt:                      q.createImageStmt,
 		createLikeStmt:                       q.createLikeStmt,
+		createLikeCountStmt:                  q.createLikeCountStmt,
 		createPointAssignmentStmt:            q.createPointAssignmentStmt,
 		createPostStmt:                       q.createPostStmt,
 		createRepoBackfillRecordStmt:         q.createRepoBackfillRecordStmt,
 		createRepostStmt:                     q.createRepostStmt,
 		createSentimentJobStmt:               q.createSentimentJobStmt,
+		createSubjectStmt:                    q.createSubjectStmt,
 		decrementFollowerCountByNStmt:        q.decrementFollowerCountByNStmt,
 		decrementFollowingCountByNStmt:       q.decrementFollowingCountByNStmt,
 		decrementLikeCountByNStmt:            q.decrementLikeCountByNStmt,

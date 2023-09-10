@@ -7,7 +7,36 @@ package store_queries
 
 import (
 	"context"
+	"database/sql"
+	"time"
 )
+
+const createLikeCount = `-- name: CreateLikeCount :exec
+INSERT INTO like_counts (
+        subject_id,
+        num_likes,
+        updated_at,
+        subject_created_at
+    )
+VALUES ($1, $2, $3, $4)
+`
+
+type CreateLikeCountParams struct {
+	SubjectID        int64        `json:"subject_id"`
+	NumLikes         int64        `json:"num_likes"`
+	UpdatedAt        time.Time    `json:"updated_at"`
+	SubjectCreatedAt sql.NullTime `json:"subject_created_at"`
+}
+
+func (q *Queries) CreateLikeCount(ctx context.Context, arg CreateLikeCountParams) error {
+	_, err := q.exec(ctx, q.createLikeCountStmt, createLikeCount,
+		arg.SubjectID,
+		arg.NumLikes,
+		arg.UpdatedAt,
+		arg.SubjectCreatedAt,
+	)
+	return err
+}
 
 const decrementLikeCountByN = `-- name: DecrementLikeCountByN :exec
 WITH subj AS (
@@ -76,7 +105,7 @@ func (q *Queries) DeleteLikeCount(ctx context.Context, arg DeleteLikeCountParams
 }
 
 const getLikeCount = `-- name: GetLikeCount :one
-SELECT nlc.subject_id, nlc.num_likes, nlc.updated_at
+SELECT nlc.subject_id, nlc.num_likes, nlc.updated_at, nlc.subject_created_at
 FROM like_counts nlc
     JOIN subjects s ON nlc.subject_id = s.id
 WHERE s.actor_did = $1
@@ -98,7 +127,12 @@ type GetLikeCountParams struct {
 func (q *Queries) GetLikeCount(ctx context.Context, arg GetLikeCountParams) (LikeCount, error) {
 	row := q.queryRow(ctx, q.getLikeCountStmt, getLikeCount, arg.ActorDid, arg.Rkey, arg.Collection)
 	var i LikeCount
-	err := row.Scan(&i.SubjectID, &i.NumLikes, &i.UpdatedAt)
+	err := row.Scan(
+		&i.SubjectID,
+		&i.NumLikes,
+		&i.UpdatedAt,
+		&i.SubjectCreatedAt,
+	)
 	return i, err
 }
 

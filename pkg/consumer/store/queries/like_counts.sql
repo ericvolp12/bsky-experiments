@@ -1,3 +1,11 @@
+-- name: CreateLikeCount :exec
+INSERT INTO like_counts (
+        subject_id,
+        num_likes,
+        updated_at,
+        subject_created_at
+    )
+VALUES ($1, $2, $3, $4);
 -- name: IncrementLikeCountByN :exec
 WITH subj AS (
     SELECT id

@@ -120,9 +120,10 @@ type Like struct {
 }
 
 type LikeCount struct {
-	SubjectID int64     `json:"subject_id"`
-	NumLikes  int64     `json:"num_likes"`
-	UpdatedAt time.Time `json:"updated_at"`
+	SubjectID        int64        `json:"subject_id"`
+	NumLikes         int64        `json:"num_likes"`
+	UpdatedAt        time.Time    `json:"updated_at"`
+	SubjectCreatedAt sql.NullTime `json:"subject_created_at"`
 }
 
 type PointAssignment struct {
