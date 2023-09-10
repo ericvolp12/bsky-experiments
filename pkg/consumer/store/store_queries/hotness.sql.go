@@ -8,10 +8,11 @@ package store_queries
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 const getHotPage = `-- name: GetHotPage :many
-SELECT rp.actor_did, subject_id, rkey, created_at, inserted_at, score, fc.actor_did, num_following, updated_at
+SELECT subject_id, rp.actor_did, rkey, subject_created_at, inserted_at, score, fc.actor_did, num_following, updated_at
 FROM recent_posts_with_score rp
     LEFT JOIN following_counts fc ON rp.actor_did = fc.actor_did
 WHERE score < coalesce($2::float, 100000)
@@ -29,15 +30,15 @@ type GetHotPageParams struct {
 }
 
 type GetHotPageRow struct {
-	ActorDid     string         `json:"actor_did"`
-	SubjectID    int64          `json:"subject_id"`
-	Rkey         string         `json:"rkey"`
-	CreatedAt    sql.NullTime   `json:"created_at"`
-	InsertedAt   interface{}    `json:"inserted_at"`
-	Score        float64        `json:"score"`
-	ActorDid_2   sql.NullString `json:"actor_did_2"`
-	NumFollowing sql.NullInt64  `json:"num_following"`
-	UpdatedAt    sql.NullTime   `json:"updated_at"`
+	SubjectID        int64          `json:"subject_id"`
+	ActorDid         string         `json:"actor_did"`
+	Rkey             string         `json:"rkey"`
+	SubjectCreatedAt sql.NullTime   `json:"subject_created_at"`
+	InsertedAt       time.Time      `json:"inserted_at"`
+	Score            float64        `json:"score"`
+	ActorDid_2       sql.NullString `json:"actor_did_2"`
+	NumFollowing     sql.NullInt64  `json:"num_following"`
+	UpdatedAt        sql.NullTime   `json:"updated_at"`
 }
 
 func (q *Queries) GetHotPage(ctx context.Context, arg GetHotPageParams) ([]GetHotPageRow, error) {
@@ -50,10 +51,10 @@ func (q *Queries) GetHotPage(ctx context.Context, arg GetHotPageParams) ([]GetHo
 	for rows.Next() {
 		var i GetHotPageRow
 		if err := rows.Scan(
-			&i.ActorDid,
 			&i.SubjectID,
+			&i.ActorDid,
 			&i.Rkey,
-			&i.CreatedAt,
+			&i.SubjectCreatedAt,
 			&i.InsertedAt,
 			&i.Score,
 			&i.ActorDid_2,

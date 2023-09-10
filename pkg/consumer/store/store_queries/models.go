@@ -161,12 +161,12 @@ type PostSentiment struct {
 }
 
 type RecentPostsWithScore struct {
-	ActorDid   string       `json:"actor_did"`
-	SubjectID  int64        `json:"subject_id"`
-	Rkey       string       `json:"rkey"`
-	CreatedAt  sql.NullTime `json:"created_at"`
-	InsertedAt interface{}  `json:"inserted_at"`
-	Score      float64      `json:"score"`
+	SubjectID        int64        `json:"subject_id"`
+	ActorDid         string       `json:"actor_did"`
+	Rkey             string       `json:"rkey"`
+	SubjectCreatedAt sql.NullTime `json:"subject_created_at"`
+	InsertedAt       time.Time    `json:"inserted_at"`
+	Score            float64      `json:"score"`
 }
 
 type RepoBackfillStatus struct {

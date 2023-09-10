@@ -166,53 +166,52 @@ $$ language 'plpgsql';
 CREATE TRIGGER update_like_count_updated_at BEFORE
 UPDATE ON like_counts FOR EACH ROW EXECUTE PROCEDURE update_updated_at();
 -- Hotness View
-CREATE MATERIALIZED VIEW recent_posts_with_score AS WITH RecentPosts AS (
-    -- First CTE to narrow down the posts based on the given criteria
-    SELECT p.actor_did,
-        p.rkey,
-        p.created_at
-    FROM posts p
-    WHERE p.created_at > (NOW() - INTERVAL '24 hours')
-        AND p.created_at < (NOW() - INTERVAL '5 minutes')
-        AND p.parent_post_rkey IS NULL
-        AND p.root_post_rkey IS NULL
-),
-FilteredSubjects AS (
-    -- Second CTE to determine the subject_ids for the filtered posts
-    SELECT s.id AS subject_id,
-        rp.actor_did,
-        rp.rkey,
-        rp.created_at
-    FROM RecentPosts rp
-        JOIN subjects s ON rp.actor_did = s.actor_did
-        AND rp.rkey = s.rkey
-    WHERE s.col = 1
-),
-FilteredLCs AS (
+CREATE MATERIALIZED VIEW recent_posts_with_score AS WITH RecentHotSubjects AS (
     SELECT lc.subject_id,
-        fs.actor_did,
-        fs.rkey,
-        fs.created_at,
+        lc.subject_created_at,
         lc.num_likes
     FROM like_counts lc
-        JOIN FilteredSubjects fs ON fs.subject_id = lc.subject_id
-    WHERE num_likes > 10
-) -- Main query to compute the scores for the reduced set of posts
-SELECT lc.actor_did,
-    lc.subject_id,
-    lc.rkey,
-    lc.created_at,
-    NOW() AS inserted_at,
-    -- since it was present in the original materialized view
+    WHERE lc.subject_created_at > (NOW() - INTERVAL '24 hours')
+        AND lc.subject_created_at < (NOW() - INTERVAL '5 minutes')
+        AND lc.num_likes > 100
+),
+FilteredSubjects AS (
+    SELECT s.id,
+        s.actor_did,
+        s.rkey,
+        rhs.subject_created_at,
+        rhs.num_likes
+    FROM RecentHotSubjects rhs
+        JOIN subjects s ON rhs.subject_id = s.id
+    WHERE s.col = 1
+),
+FilteredPosts AS (
+    SELECT fs.id,
+        fs.actor_did,
+        fs.rkey,
+        fs.subject_created_at,
+        fs.num_likes,
+        p.inserted_at
+    FROM FilteredSubjects fs
+        JOIN posts p ON fs.actor_did = p.actor_did
+        AND fs.rkey = p.rkey
+    WHERE p.parent_post_rkey IS NULL
+        AND p.root_post_rkey IS NULL
+)
+SELECT fp.id as subject_id,
+    fp.actor_did,
+    fp.rkey,
+    fp.subject_created_at,
+    fp.inserted_at,
     (
-        (COALESCE(lc.num_likes, 0) - 1) / (
+        (COALESCE(fp.num_likes, 0) - 1) / (
             EXTRACT(
                 EPOCH
-                FROM now() - lc.created_at
+                FROM now() - fp.subject_created_at
             ) / 3600 + 2
         ) ^ 1.8
     )::float AS score
-FROM FilteredLCs lc
+FROM FilteredPosts fp
 ORDER BY score DESC;
 CREATE INDEX recent_posts_with_score_score ON recent_posts_with_score (score DESC);
 CREATE UNIQUE INDEX recent_posts_with_score_subject_id_idx ON recent_posts_with_score (subject_id);
