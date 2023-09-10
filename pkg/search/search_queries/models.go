@@ -124,3 +124,9 @@ type PostLike struct {
 	AuthorDid sql.NullString `json:"author_did"`
 	LikeCount int64          `json:"like_count"`
 }
+
+type TopPoster struct {
+	PostCount int64  `json:"post_count"`
+	Handle    string `json:"handle"`
+	AuthorDid string `json:"author_did"`
+}

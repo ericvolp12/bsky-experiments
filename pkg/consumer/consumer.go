@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -603,29 +602,33 @@ func (c *Consumer) FanoutWrite(
 	// Get followers of the repo
 	follows, err := c.Store.Queries.GetFollowsByTarget(ctx, store_queries.GetFollowsByTargetParams{
 		TargetDid: repo,
-		Limit:     10_000,
+		Limit:     100_000,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to get followers: %+v", err)
 	}
 
 	// Write to the timelines of all followers
-	pipeline := c.RedisClient.Pipeline()
-	for _, follow := range follows {
-		pipeline.ZAdd(ctx, fmt.Sprintf("wfo:%s:timeline", follow.ActorDid), redis.Z{
-			Score:  float64(time.Now().UnixNano()),
-			Member: fmt.Sprintf("at://%s/%s", repo, path),
-		})
-		// Randomly trim the timeline to 1000 records every 1/5th of the time
-		if rand.Intn(5) == 0 {
-			pipeline.ZRemRangeByRank(ctx, fmt.Sprintf("wfo:%s:timeline", follow.ActorDid), 0, -1000)
-		}
-	}
+	// pipeline := c.RedisClient.Pipeline()
+	// for _, follow := range follows {
+	// 	pipeline.ZAdd(ctx, fmt.Sprintf("wfo:%s:timeline", follow.ActorDid), redis.Z{
+	// 		Score:  float64(time.Now().UnixNano()),
+	// 		Member: fmt.Sprintf("at://%s/%s", repo, path),
+	// 	})
+	// 	// Randomly trim the timeline to 1000 records every 1/5th of the time
+	// 	if rand.Intn(5) == 0 {
+	// 		pipeline.ZRemRangeByRank(ctx, fmt.Sprintf("wfo:%s:timeline", follow.ActorDid), 0, -1000)
+	// 	}
+	// }
 
-	_, err = pipeline.Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to write to timelines: %+v", err)
-	}
+	// _, err = pipeline.Exec(ctx)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to write to timelines: %+v", err)
+	// }
+
+	// Observe the number of timelines we would have written to
+	postsFannedOut.WithLabelValues(c.SocketURL).Inc()
+	postFanoutHist.WithLabelValues(c.SocketURL).Observe(float64(len(follows)))
 
 	return nil
 }
@@ -771,10 +774,10 @@ func (c *Consumer) HandleCreateRecord(
 		}
 
 		// Fanout the post to followers
-		// err = c.FanoutWrite(ctx, repo, path)
-		// if err != nil {
-		// 	log.Errorf("failed to fanout write: %+v", err)
-		// }
+		err = c.FanoutWrite(ctx, repo, path)
+		if err != nil {
+			log.Errorf("failed to fanout write: %+v", err)
+		}
 	case *bsky.FeedLike:
 		span.SetAttributes(attribute.String("record_type", "feed_like"))
 		recordsProcessedCounter.WithLabelValues("feed_like", c.SocketURL).Inc()

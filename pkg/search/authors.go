@@ -209,7 +209,7 @@ func (pr *PostRegistry) GetAuthorStats(ctx context.Context) (*AuthorStats, error
 	}, nil
 }
 
-func (pr *PostRegistry) GetTopPosters(ctx context.Context, count int32) ([]search_queries.GetTopPostersRow, error) {
+func (pr *PostRegistry) GetTopPosters(ctx context.Context, count int32) ([]search_queries.TopPoster, error) {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetTopPosters")
 	defer span.End()

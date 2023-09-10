@@ -97,3 +97,14 @@ var backfillBytesProcessed = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: "consumer_backfill_bytes_processed_total",
 	Help: "The total number of backfill bytes processed",
 }, []string{"socket_url"})
+
+var postsFannedOut = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "consumer_posts_fanned_out_total",
+	Help: "The total number of posts fanned out",
+}, []string{"socket_url"})
+
+var postFanoutHist = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	Name:    "consumer_post_fanout_counts",
+	Help:    "The number of posts fanned out per event",
+	Buckets: prometheus.ExponentialBuckets(1, 2, 18),
+}, []string{"socket_url"})

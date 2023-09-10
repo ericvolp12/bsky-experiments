@@ -70,16 +70,16 @@ type StatPercentile struct {
 }
 
 type AuthorStatsResponse struct {
-	TotalUsers          int                               `json:"total_users"`
-	TotalAuthors        int64                             `json:"total_authors"`
-	TotalPosts          int64                             `json:"total_posts"`
-	MeanPostCount       float64                           `json:"mean_post_count"`
-	Percentiles         []search.Percentile               `json:"percentiles"`
-	FollowerPercentiles []StatPercentile                  `json:"follower_percentiles"`
-	Brackets            []search.Bracket                  `json:"brackets"`
-	UpdatedAt           time.Time                         `json:"updated_at"`
-	TopPosters          []search_queries.GetTopPostersRow `json:"top_posters"`
-	DailyData           []DailyDatapoint                  `json:"daily_data"`
+	TotalUsers          int                        `json:"total_users"`
+	TotalAuthors        int64                      `json:"total_authors"`
+	TotalPosts          int64                      `json:"total_posts"`
+	MeanPostCount       float64                    `json:"mean_post_count"`
+	Percentiles         []search.Percentile        `json:"percentiles"`
+	FollowerPercentiles []StatPercentile           `json:"follower_percentiles"`
+	Brackets            []search.Bracket           `json:"brackets"`
+	UpdatedAt           time.Time                  `json:"updated_at"`
+	TopPosters          []search_queries.TopPoster `json:"top_posters"`
+	DailyData           []DailyDatapoint           `json:"daily_data"`
 }
 
 type API struct {
