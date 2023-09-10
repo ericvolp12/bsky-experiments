@@ -52,49 +52,13 @@ func (q *Queries) GetDailySummaries(ctx context.Context) ([]DailySummary, error)
 }
 
 const getFollowerPercentiles = `-- name: GetFollowerPercentiles :one
-WITH all_counts AS (
-    SELECT a.did,
-        COALESCE(fc.num_followers, 0) AS followers
-    FROM actors a
-        LEFT JOIN follower_counts fc ON a.did = fc.actor_did
-),
-percentiles AS (
-    SELECT percentile_cont(
-            ARRAY [0.25, 0.50, 0.75, 0.90, 0.95, 0.99, 0.995, 0.997, 0.999, 0.9999]
-        ) WITHIN GROUP (
-            ORDER BY followers
-        ) AS pct
-    FROM all_counts
-)
-SELECT pct [1]::float AS p25,
-    pct [2]::float AS p50,
-    pct [3]::float AS p75,
-    pct [4]::float AS p90,
-    pct [5]::float AS p95,
-    pct [6]::float AS p99,
-    pct [7]::float AS p99_5,
-    pct [8]::float AS p99_7,
-    pct [9]::float AS p99_9,
-    pct [10]::float AS p99_99
-FROM percentiles
+SELECT p25, p50, p75, p90, p95, p99, p99_5, p99_7, p99_9, p99_99
+FROM follower_stats
 `
 
-type GetFollowerPercentilesRow struct {
-	P25   float64 `json:"p25"`
-	P50   float64 `json:"p50"`
-	P75   float64 `json:"p75"`
-	P90   float64 `json:"p90"`
-	P95   float64 `json:"p95"`
-	P99   float64 `json:"p99"`
-	P995  float64 `json:"p99_5"`
-	P997  float64 `json:"p99_7"`
-	P999  float64 `json:"p99_9"`
-	P9999 float64 `json:"p99_99"`
-}
-
-func (q *Queries) GetFollowerPercentiles(ctx context.Context) (GetFollowerPercentilesRow, error) {
+func (q *Queries) GetFollowerPercentiles(ctx context.Context) (FollowerStat, error) {
 	row := q.queryRow(ctx, q.getFollowerPercentilesStmt, getFollowerPercentiles)
-	var i GetFollowerPercentilesRow
+	var i FollowerStat
 	err := row.Scan(
 		&i.P25,
 		&i.P50,

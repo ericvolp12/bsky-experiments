@@ -83,6 +83,19 @@ type FollowerCount struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+type FollowerStat struct {
+	P25   float64 `json:"p25"`
+	P50   float64 `json:"p50"`
+	P75   float64 `json:"p75"`
+	P90   float64 `json:"p90"`
+	P95   float64 `json:"p95"`
+	P99   float64 `json:"p99"`
+	P995  float64 `json:"p99_5"`
+	P997  float64 `json:"p99_7"`
+	P999  float64 `json:"p99_9"`
+	P9999 float64 `json:"p99_99"`
+}
+
 type FollowingCount struct {
 	ActorDid     string    `json:"actor_did"`
 	NumFollowing int64     `json:"num_following"`
