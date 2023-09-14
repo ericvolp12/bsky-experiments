@@ -553,7 +553,18 @@ func (c *Consumer) HandleDeleteRecord(
 		}
 	case "app.bsky.graph.follow":
 		span.SetAttributes(attribute.String("record_type", "graph_follow"))
-		err := c.Store.Queries.DeleteFollow(ctx, store_queries.DeleteFollowParams{
+		follow, err := c.Store.Queries.GetFollow(ctx, store_queries.GetFollowParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("follow not found, so we can't delete it: %+v", err)
+			}
+			return fmt.Errorf("can't delete follow: %+v", err)
+		}
+
+		err = c.Store.Queries.DeleteFollow(ctx, store_queries.DeleteFollowParams{
 			ActorDid: repo,
 			Rkey:     rkey,
 		})
@@ -561,7 +572,7 @@ func (c *Consumer) HandleDeleteRecord(
 			return fmt.Errorf("failed to delete follow: %+v", err)
 		}
 		err = c.Store.Queries.DecrementFollowerCountByN(ctx, store_queries.DecrementFollowerCountByNParams{
-			ActorDid:     repo,
+			ActorDid:     follow.TargetDid,
 			NumFollowers: 1,
 			UpdatedAt:    time.Now(),
 		})
@@ -575,17 +586,51 @@ func (c *Consumer) HandleDeleteRecord(
 			UpdatedAt:    time.Now(),
 		})
 		if err != nil {
-			return fmt.Errorf("failed to decrement following count: %+v", err)
+			log.Errorf("failed to decrement following count: %+v", err)
 		}
+
+		// // Delete the follow from redis following
+		// err = c.RedisClient.SRem(ctx, fmt.Sprintf("cg:%s:following", repo), follow.TargetDid).Err()
+		// if err != nil {
+		// 	log.Errorf("failed to delete follow from redis: %+v", err)
+		// }
+
+		// // Delete the follow from redis followers
+		// err = c.RedisClient.SRem(ctx, fmt.Sprintf("cg:%s:followers", follow.TargetDid), repo).Err()
+		// if err != nil {
+		// 	log.Errorf("failed to delete follow from redis: %+v", err)
+		// }
 	case "app.bsky.graph.block":
 		span.SetAttributes(attribute.String("record_type", "graph_block"))
-		err := c.Store.Queries.DeleteBlock(ctx, store_queries.DeleteBlockParams{
+		block, err := c.Store.Queries.GetBlock(ctx, store_queries.GetBlockParams{
 			ActorDid: repo,
+			Rkey:     rkey,
+		})
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("block not found, so we can't delete it: %+v", err)
+			}
+			return fmt.Errorf("can't delete block: %+v", err)
+		}
+		err = c.Store.Queries.DeleteBlock(ctx, store_queries.DeleteBlockParams{
+			ActorDid: block.ActorDid,
 			Rkey:     rkey,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to delete block: %+v", err)
 		}
+
+		// // Delete the block from redis blocking
+		// err = c.RedisClient.SRem(ctx, fmt.Sprintf("cg:%s:blocking", repo), block.TargetDid).Err()
+		// if err != nil {
+		// 	log.Errorf("failed to delete block from redis: %+v", err)
+		// }
+
+		// // Delete the block from redis blockers
+		// err = c.RedisClient.SRem(ctx, fmt.Sprintf("cg:%s:blockers", block.TargetDid), repo).Err()
+		// if err != nil {
+		// 	log.Errorf("failed to delete block from redis: %+v", err)
+		// }
 	}
 
 	return nil
@@ -919,6 +964,18 @@ func (c *Consumer) HandleCreateRecord(
 		if err != nil {
 			log.Errorf("failed to create block: %+v", err)
 		}
+
+		// // Add block to Redis
+		// err = c.RedisClient.SAdd(ctx, fmt.Sprintf("cg:%s:blocking", repo), rec.Subject).Err()
+		// if err != nil {
+		// 	log.Errorf("failed to add blocking to Redis: %+v", err)
+		// }
+
+		// // Add blockers to Redis
+		// err = c.RedisClient.SAdd(ctx, fmt.Sprintf("cg:%s:blockers", rec.Subject), repo).Err()
+		// if err != nil {
+		// 	log.Errorf("failed to add blockers to Redis: %+v", err)
+		// }
 	case *bsky.GraphFollow:
 		span.SetAttributes(attribute.String("record_type", "graph_follow"))
 		recordsProcessedCounter.WithLabelValues("graph_follow", c.SocketURL).Inc()
@@ -963,6 +1020,18 @@ func (c *Consumer) HandleCreateRecord(
 		if err != nil {
 			log.Errorf("failed to increment following count: %+v", err)
 		}
+
+		// // Store follow in Redis
+		// err = c.RedisClient.SAdd(ctx, fmt.Sprintf("cg:%s:following", repo), rec.Subject).Err()
+		// if err != nil {
+		// 	log.Errorf("failed to add following to Redis: %+v", err)
+		// }
+
+		// // Store follower in Redis
+		// err = c.RedisClient.SAdd(ctx, fmt.Sprintf("cg:%s:followers", rec.Subject), repo).Err()
+		// if err != nil {
+		// 	log.Errorf("failed to add follower to Redis: %+v", err)
+		// }
 	case *bsky.ActorProfile:
 		span.SetAttributes(attribute.String("record_type", "actor_profile"))
 		recordsProcessedCounter.WithLabelValues("actor_profile", c.SocketURL).Inc()

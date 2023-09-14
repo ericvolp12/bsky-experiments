@@ -10,6 +10,12 @@ VALUES ($1, $2, $3, $4);
 DELETE FROM follows
 WHERE actor_did = $1
     AND rkey = $2;
+-- name: GetFollowPage :many
+SELECT *
+FROM follows
+WHERE inserted_at > $1
+ORDER BY inserted_at
+LIMIT $2;
 -- name: GetFollow :one
 SELECT *
 FROM follows

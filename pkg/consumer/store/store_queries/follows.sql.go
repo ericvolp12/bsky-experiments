@@ -8,6 +8,7 @@ package store_queries
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 const countFollowersByTarget = `-- name: CountFollowersByTarget :one
@@ -141,6 +142,48 @@ func (q *Queries) GetFollow(ctx context.Context, arg GetFollowParams) (Follow, e
 		&i.InsertedAt,
 	)
 	return i, err
+}
+
+const getFollowPage = `-- name: GetFollowPage :many
+SELECT actor_did, rkey, target_did, created_at, inserted_at
+FROM follows
+WHERE inserted_at > $1
+ORDER BY inserted_at
+LIMIT $2
+`
+
+type GetFollowPageParams struct {
+	InsertedAt time.Time `json:"inserted_at"`
+	Limit      int32     `json:"limit"`
+}
+
+func (q *Queries) GetFollowPage(ctx context.Context, arg GetFollowPageParams) ([]Follow, error) {
+	rows, err := q.query(ctx, q.getFollowPageStmt, getFollowPage, arg.InsertedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Follow
+	for rows.Next() {
+		var i Follow
+		if err := rows.Scan(
+			&i.ActorDid,
+			&i.Rkey,
+			&i.TargetDid,
+			&i.CreatedAt,
+			&i.InsertedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getFollowsByActor = `-- name: GetFollowsByActor :many
