@@ -2,165 +2,17 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
+	"net/http"
+	_ "net/http/pprof"
+
 	"github.com/labstack/echo/v4"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/exp/slog"
 )
-
-type Graph struct {
-	follows   sync.Map
-	following sync.Map
-
-	utd   map[uint64]string
-	utdLk sync.RWMutex
-
-	dtu   map[string]uint64
-	dtuLk sync.RWMutex
-}
-
-type FollowMap struct {
-	data map[uint64]uint64
-	lk   sync.RWMutex
-}
-
-func (g *Graph) GetUid(did string) (uint64, bool) {
-	g.dtuLk.RLock()
-	defer g.dtuLk.RUnlock()
-	uid, ok := g.dtu[did]
-	return uid, ok
-}
-
-func (g *Graph) SetUid(did string, uid uint64) {
-	g.dtuLk.Lock()
-	defer g.dtuLk.Unlock()
-	g.dtu[did] = uid
-}
-
-func (g *Graph) GetDid(uid uint64) (string, bool) {
-	g.utdLk.RLock()
-	defer g.utdLk.RUnlock()
-	did, ok := g.utd[uid]
-	return did, ok
-}
-
-func (g *Graph) GetDids(uids []uint64) ([]string, error) {
-	g.utdLk.RLock()
-	defer g.utdLk.RUnlock()
-	dids := make([]string, len(uids))
-	for i, uid := range uids {
-		did, ok := g.utd[uid]
-		if !ok {
-			return nil, fmt.Errorf("uid %d not found", uid)
-		}
-		dids[i] = did
-	}
-	return dids, nil
-}
-
-func (g *Graph) SetDid(uid uint64, did string) {
-	g.utdLk.Lock()
-	defer g.utdLk.Unlock()
-	g.utd[uid] = did
-}
-
-func (g *Graph) AddFollow(actorUID, targetUID uint64) {
-	followMap, ok := g.follows.Load(actorUID)
-	if !ok {
-		followMap = &FollowMap{
-			data: map[uint64]uint64{},
-		}
-		g.follows.Store(actorUID, followMap)
-	}
-	followMap.(*FollowMap).lk.Lock()
-	followMap.(*FollowMap).data[targetUID] = targetUID
-	followMap.(*FollowMap).lk.Unlock()
-
-	// Add the follow to the graph
-	followMap, ok = g.following.Load(targetUID)
-	if !ok {
-		followMap = &FollowMap{
-			data: map[uint64]uint64{},
-		}
-		g.following.Store(targetUID, followMap)
-	}
-	followMap.(*FollowMap).lk.Lock()
-	followMap.(*FollowMap).data[actorUID] = actorUID
-	followMap.(*FollowMap).lk.Unlock()
-}
-
-func (g *Graph) RemoveFollow(actorUID, targetUID uint64) error {
-	followMap, ok := g.follows.Load(actorUID)
-	if !ok {
-		return fmt.Errorf("actor uid %d not found", actorUID)
-	}
-	followMap.(*FollowMap).lk.Lock()
-	delete(followMap.(*FollowMap).data, targetUID)
-	followMap.(*FollowMap).lk.Unlock()
-
-	// Remove the follow from the graph
-	followMap, ok = g.following.Load(targetUID)
-	if !ok {
-		return fmt.Errorf("target uid %d not found", targetUID)
-	}
-	followMap.(*FollowMap).lk.Lock()
-	delete(followMap.(*FollowMap).data, actorUID)
-	followMap.(*FollowMap).lk.Unlock()
-
-	return nil
-}
-
-func (g *Graph) GetFollowers(uid uint64) ([]uint64, error) {
-	followMap, ok := g.following.Load(uid)
-	if !ok {
-		return nil, fmt.Errorf("uid %d not found", uid)
-	}
-	followMap.(*FollowMap).lk.RLock()
-	defer followMap.(*FollowMap).lk.RUnlock()
-
-	followers := make([]uint64, len(followMap.(*FollowMap).data))
-	i := 0
-	for follower := range followMap.(*FollowMap).data {
-		followers[i] = follower
-		i++
-	}
-
-	return followers, nil
-}
-
-func (g *Graph) GetFollowing(uid uint64) ([]uint64, error) {
-	followMap, ok := g.follows.Load(uid)
-	if !ok {
-		return nil, fmt.Errorf("uid %d not found", uid)
-	}
-	followMap.(*FollowMap).lk.RLock()
-	defer followMap.(*FollowMap).lk.RUnlock()
-
-	following := make([]uint64, len(followMap.(*FollowMap).data))
-	i := 0
-	for follower := range followMap.(*FollowMap).data {
-		following[i] = follower
-		i++
-	}
-
-	return following, nil
-}
-
-func (g *Graph) DoesFollow(actorUID, targetUID uint64) (bool, error) {
-	followMap, ok := g.follows.Load(actorUID)
-	if !ok {
-		return false, fmt.Errorf("actor uid %d not found", actorUID)
-	}
-	followMap.(*FollowMap).lk.RLock()
-	defer followMap.(*FollowMap).lk.RUnlock()
-
-	_, ok = followMap.(*FollowMap).data[targetUID]
-	return ok, nil
-}
 
 func main() {
 	//ctx := context.Background()
@@ -223,6 +75,9 @@ func main() {
 	// "did:plc:z72i7hdynmk6r22z27h6tvur"
 
 	e := echo.New()
+	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()))
+	e.GET("/debug/*", echo.WrapHandler(http.DefaultServeMux))
+
 	e.GET("/followers", func(c echo.Context) error {
 		did := c.QueryParam("did")
 		queryStart := time.Now()
@@ -247,7 +102,7 @@ func main() {
 		}
 
 		didsDone := time.Now()
-		slog.Info("got followers",
+		slog.Debug("got followers",
 			"followers", len(followers),
 			"uid", uid,
 			"uidDuration", uidDone.Sub(queryStart),
@@ -283,7 +138,7 @@ func main() {
 		}
 
 		didsDone := time.Now()
-		slog.Info("got following",
+		slog.Debug("got following",
 			"following", len(following),
 			"uid", uid,
 			"uidDuration", uidDone.Sub(queryStart),
