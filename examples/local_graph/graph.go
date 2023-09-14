@@ -17,7 +17,7 @@ type Graph struct {
 }
 
 type FollowMap struct {
-	data map[uint64]uint64
+	data map[uint64]struct{}
 	lk   sync.RWMutex
 }
 
@@ -79,24 +79,24 @@ func (g *Graph) AddFollow(actorUID, targetUID uint64) {
 	followMap, ok := g.follows.Load(actorUID)
 	if !ok {
 		followMap = &FollowMap{
-			data: map[uint64]uint64{},
+			data: map[uint64]struct{}{},
 		}
 		g.follows.Store(actorUID, followMap)
 	}
 	followMap.(*FollowMap).lk.Lock()
-	followMap.(*FollowMap).data[targetUID] = targetUID
+	followMap.(*FollowMap).data[targetUID] = struct{}{}
 	followMap.(*FollowMap).lk.Unlock()
 
 	// Add the follow to the graph
 	followMap, ok = g.following.Load(targetUID)
 	if !ok {
 		followMap = &FollowMap{
-			data: map[uint64]uint64{},
+			data: map[uint64]struct{}{},
 		}
 		g.following.Store(targetUID, followMap)
 	}
 	followMap.(*FollowMap).lk.Lock()
-	followMap.(*FollowMap).data[actorUID] = actorUID
+	followMap.(*FollowMap).data[actorUID] = struct{}{}
 	followMap.(*FollowMap).lk.Unlock()
 }
 
