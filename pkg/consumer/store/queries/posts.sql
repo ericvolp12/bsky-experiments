@@ -63,6 +63,28 @@ ORDER BY p.created_at DESC,
     p.actor_did DESC,
     p.rkey DESC
 LIMIT $2;
+-- name: GetPostsFromNonSpamUsers :many
+WITH non_spam AS (
+    SELECT nm.actor_did
+    FROM unnest(sqlc.arg('dids')::TEXT[]) nm(actor_did)
+        LEFT JOIN following_counts fc ON nm.actor_did = fc.actor_did
+    WHERE fc.num_following < 4000
+)
+SELECT p.*
+FROM posts p
+    JOIN non_spam f ON f.actor_did = p.actor_did
+WHERE (p.created_at, p.actor_did, p.rkey) < (
+        sqlc.arg('cursor_created_at')::TIMESTAMPTZ,
+        sqlc.arg('cursor_actor_did')::TEXT,
+        sqlc.arg('cursor_rkey')::TEXT
+    )
+    AND p.root_post_rkey IS NULL
+    AND p.parent_post_rkey IS NULL
+    AND p.created_at > NOW() - make_interval(hours := 24)
+ORDER BY p.created_at DESC,
+    p.actor_did DESC,
+    p.rkey DESC
+LIMIT $1;
 -- name: GetPostsFromNonMoots :many
 WITH my_follows AS (
     SELECT target_did

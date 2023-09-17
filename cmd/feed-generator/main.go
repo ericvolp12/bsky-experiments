@@ -20,6 +20,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/followers"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/hot"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/postlabel"
+	"github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	ginprometheus "github.com/ericvolp12/go-gin-prometheus"
@@ -30,6 +31,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/urfave/cli/v2"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
 )
 
@@ -102,6 +104,12 @@ func main() {
 			Usage:    "DID of the feed actor",
 			Required: true,
 			EnvVars:  []string{"FEED_ACTOR_DID"},
+		},
+		&cli.StringFlag{
+			Name:    "graphd-root",
+			Usage:   "root of the graphd service",
+			Value:   "http://localhost:1323",
+			EnvVars: []string{"GRAPHD_ROOT"},
 		},
 	}
 
@@ -177,6 +185,11 @@ func FeedGenerator(cctx *cli.Context) error {
 		log.Fatalf("failed to connect to redis: %+v\n", err)
 	}
 
+	h := http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	}
+	graphdClient := client.NewClient(cctx.String("graphd-root"), &h)
+
 	feedActorDID := cctx.String("feed-actor-did")
 
 	// Set the acceptable DIDs for the feed generator to respond to
@@ -245,7 +258,7 @@ func FeedGenerator(cctx *cli.Context) error {
 	feedGenerator.AddFeed(hotFeedAliases, hotFeed)
 
 	// Create a My Followers feed
-	followersFeed, followersFeedAliases, err := followers.NewFollowersFeed(ctx, feedActorDID, store)
+	followersFeed, followersFeedAliases, err := followers.NewFollowersFeed(ctx, feedActorDID, store, graphdClient)
 	if err != nil {
 		log.Fatalf("Failed to create FollowersFeed: %v", err)
 	}

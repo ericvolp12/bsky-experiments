@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
+	graphdclient "github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
 	"github.com/goccy/go-json"
 	"github.com/ipfs/go-cid"
 	"github.com/labstack/gommon/log"
@@ -25,6 +27,7 @@ import (
 	"github.com/bluesky-social/indigo/events"
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/repomgr"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
@@ -47,6 +50,8 @@ type Consumer struct {
 
 	magicHeaderKey string
 	magicHeaderVal string
+
+	graphdClient *graphdclient.Client
 }
 
 // Progress is the cursor for the consumer
@@ -131,7 +136,12 @@ func NewConsumer(
 	socketURL string,
 	magicHeaderKey string,
 	magicHeaderVal string,
+	graphdRoot string,
 ) (*Consumer, error) {
+	h := http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	}
+
 	c := Consumer{
 		SocketURL: socketURL,
 		Progress: &Progress{
@@ -147,6 +157,8 @@ func NewConsumer(
 
 		magicHeaderKey: magicHeaderKey,
 		magicHeaderVal: magicHeaderVal,
+
+		graphdClient: graphdclient.NewClient(graphdRoot, &h),
 	}
 
 	if magicHeaderKey != "" && magicHeaderVal != "" {
@@ -564,6 +576,11 @@ func (c *Consumer) HandleDeleteRecord(
 			return fmt.Errorf("can't delete follow: %+v", err)
 		}
 
+		err = c.graphdClient.Unfollow(ctx, repo, follow.TargetDid)
+		if err != nil {
+			log.Errorf("failed to propagate follow to GraphD: %+v", err)
+		}
+
 		err = c.Store.Queries.DeleteFollow(ctx, store_queries.DeleteFollowParams{
 			ActorDid: repo,
 			Rkey:     rkey,
@@ -589,17 +606,6 @@ func (c *Consumer) HandleDeleteRecord(
 			log.Errorf("failed to decrement following count: %+v", err)
 		}
 
-		// // Delete the follow from redis following
-		// err = c.RedisClient.SRem(ctx, fmt.Sprintf("cg:%s:following", repo), follow.TargetDid).Err()
-		// if err != nil {
-		// 	log.Errorf("failed to delete follow from redis: %+v", err)
-		// }
-
-		// // Delete the follow from redis followers
-		// err = c.RedisClient.SRem(ctx, fmt.Sprintf("cg:%s:followers", follow.TargetDid), repo).Err()
-		// if err != nil {
-		// 	log.Errorf("failed to delete follow from redis: %+v", err)
-		// }
 	case "app.bsky.graph.block":
 		span.SetAttributes(attribute.String("record_type", "graph_block"))
 		block, err := c.Store.Queries.GetBlock(ctx, store_queries.GetBlockParams{
@@ -620,17 +626,6 @@ func (c *Consumer) HandleDeleteRecord(
 			return fmt.Errorf("failed to delete block: %+v", err)
 		}
 
-		// // Delete the block from redis blocking
-		// err = c.RedisClient.SRem(ctx, fmt.Sprintf("cg:%s:blocking", repo), block.TargetDid).Err()
-		// if err != nil {
-		// 	log.Errorf("failed to delete block from redis: %+v", err)
-		// }
-
-		// // Delete the block from redis blockers
-		// err = c.RedisClient.SRem(ctx, fmt.Sprintf("cg:%s:blockers", block.TargetDid), repo).Err()
-		// if err != nil {
-		// 	log.Errorf("failed to delete block from redis: %+v", err)
-		// }
 	}
 
 	return nil
@@ -964,18 +959,6 @@ func (c *Consumer) HandleCreateRecord(
 		if err != nil {
 			log.Errorf("failed to create block: %+v", err)
 		}
-
-		// // Add block to Redis
-		// err = c.RedisClient.SAdd(ctx, fmt.Sprintf("cg:%s:blocking", repo), rec.Subject).Err()
-		// if err != nil {
-		// 	log.Errorf("failed to add blocking to Redis: %+v", err)
-		// }
-
-		// // Add blockers to Redis
-		// err = c.RedisClient.SAdd(ctx, fmt.Sprintf("cg:%s:blockers", rec.Subject), repo).Err()
-		// if err != nil {
-		// 	log.Errorf("failed to add blockers to Redis: %+v", err)
-		// }
 	case *bsky.GraphFollow:
 		span.SetAttributes(attribute.String("record_type", "graph_follow"))
 		recordsProcessedCounter.WithLabelValues("graph_follow", c.SocketURL).Inc()
@@ -1021,17 +1004,10 @@ func (c *Consumer) HandleCreateRecord(
 			log.Errorf("failed to increment following count: %+v", err)
 		}
 
-		// // Store follow in Redis
-		// err = c.RedisClient.SAdd(ctx, fmt.Sprintf("cg:%s:following", repo), rec.Subject).Err()
-		// if err != nil {
-		// 	log.Errorf("failed to add following to Redis: %+v", err)
-		// }
-
-		// // Store follower in Redis
-		// err = c.RedisClient.SAdd(ctx, fmt.Sprintf("cg:%s:followers", rec.Subject), repo).Err()
-		// if err != nil {
-		// 	log.Errorf("failed to add follower to Redis: %+v", err)
-		// }
+		err = c.graphdClient.Follow(ctx, repo, rec.Subject)
+		if err != nil {
+			log.Errorf("failed to propagate follow to GraphD: %+v", err)
+		}
 	case *bsky.ActorProfile:
 		span.SetAttributes(attribute.String("record_type", "actor_profile"))
 		recordsProcessedCounter.WithLabelValues("actor_profile", c.SocketURL).Inc()

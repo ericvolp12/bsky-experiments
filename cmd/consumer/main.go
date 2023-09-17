@@ -89,6 +89,12 @@ func main() {
 			Value:   "",
 			EnvVars: []string{"MAGIC_HEADER_VAL"},
 		},
+		&cli.StringFlag{
+			Name:    "graphd-root",
+			Usage:   "graphd root url",
+			Value:   "http://localhost:1323",
+			EnvVars: []string{"GRAPHD_ROOT"},
+		},
 	}
 
 	app.Action = Consumer
@@ -188,6 +194,7 @@ func Consumer(cctx *cli.Context) error {
 		u.String(),
 		cctx.String("magic-header-key"),
 		cctx.String("magic-header-val"),
+		cctx.String("graphd-root"),
 	)
 	if err != nil {
 		log.Fatalf("failed to create consumer: %+v\n", err)

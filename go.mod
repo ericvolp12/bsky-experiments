@@ -1,12 +1,12 @@
 module github.com/ericvolp12/bsky-experiments
 
-go 1.20
+go 1.21
 
 require (
 	github.com/XSAM/otelsql v0.23.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/bits-and-blooms/bloom/v3 v3.5.0
-	github.com/bluesky-social/indigo v0.0.0-20230828224954-ebc21133a67a
+	github.com/bluesky-social/indigo v0.0.0-20230915222840-118c9c0e252c
 	github.com/ericvolp12/go-gin-prometheus v0.0.0-20221219081010-fc0e0436c283
 	github.com/ericvolp12/jwt-go-secp256k1 v0.0.2
 	github.com/gin-contrib/cors v1.4.0
@@ -15,9 +15,11 @@ require (
 	github.com/goccy/go-json v0.10.2
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/gorilla/websocket v1.5.0
-	github.com/hashicorp/golang-lru/arc/v2 v2.0.3
+	github.com/hashicorp/golang-lru/arc/v2 v2.0.6
 	github.com/ipfs/go-cid v0.4.1
-	github.com/labstack/echo/v4 v4.10.2
+	github.com/joho/godotenv v1.5.1
+	github.com/labstack/echo-contrib v0.15.0
+	github.com/labstack/echo/v4 v4.11.1
 	github.com/labstack/gommon v0.4.0
 	github.com/lib/pq v1.10.9
 	github.com/pemistahl/lingua-go v1.3.4
@@ -72,7 +74,7 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.2 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
-	github.com/hashicorp/golang-lru/v2 v2.0.3 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.6 // indirect
 	github.com/ipfs/bbloom v0.0.4 // indirect
 	github.com/ipfs/go-block-format v0.1.2 // indirect
 	github.com/ipfs/go-blockservice v0.5.0 // indirect
@@ -146,7 +148,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.3.0 // indirect
 	golang.org/x/crypto v0.12.0 // indirect
-	golang.org/x/net v0.10.0 // indirect
+	golang.org/x/net v0.14.0 // indirect
 	golang.org/x/sys v0.11.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/genproto v0.0.0-20230526015343-6ee61e4f9d5f // indirect

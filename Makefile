@@ -151,7 +151,7 @@ empty-plc:
 .PHONY: empty-fanout
 empty-fanout:
 	@echo "Emptying Fanout keys in Redis..."
-	redis-cli --scan --pattern "wfo:*" | xargs -L 100 redis-cli DEL
+	redis-cli --scan --pattern "cg:*" | xargs -L 1000 redis-cli DEL
 
 .PHONY: build-pubsky
 build-pubsky:
@@ -162,3 +162,23 @@ build-pubsky:
 pubsky-up:
 	@echo "Starting Pubsky..."
 	docker compose -f build/pubsky/docker-compose.yml up --build -d
+
+.PHONY: build-graphd
+build-graphd:
+	@echo "Building GraphD Go binary..."
+	$(GO_CMD_W_CGO) build -o graphd cmd/graphd/*.go
+	
+.PHONY: graphd-up
+graphd-up: # Runs graphd docker container
+	@echo "Starting Graphd..."
+	docker compose -f build/graphd/docker-compose.yml up --build -d
+
+.PHONY: graphd-down
+graphd-down: # Stops graphd docker container
+	@echo "Stopping Graphd..."
+	docker compose -f build/graphd/docker-compose.yml down
+
+.PHONY: run-dev-graphd
+run-dev-graphd: .env ## Runs graphd for local dev
+	@echo "Running Graphd..."
+	go run ./cmd/graphd

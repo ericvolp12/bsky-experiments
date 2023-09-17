@@ -8,6 +8,7 @@ import (
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
+	graphdclient "github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -15,6 +16,7 @@ import (
 type FollowersFeed struct {
 	FeedActorDID string
 	Store        *store.Store
+	GraphD       *graphdclient.Client
 }
 
 type NotFoundError struct {
@@ -25,10 +27,11 @@ var supportedFeeds = []string{"my-followers"}
 
 var tracer = otel.Tracer("my-followers")
 
-func NewFollowersFeed(ctx context.Context, feedActorDID string, store *store.Store) (*FollowersFeed, []string, error) {
+func NewFollowersFeed(ctx context.Context, feedActorDID string, store *store.Store, client *graphdclient.Client) (*FollowersFeed, []string, error) {
 	return &FollowersFeed{
 		FeedActorDID: feedActorDID,
 		Store:        store,
+		GraphD:       client,
 	}, supportedFeeds, nil
 }
 
@@ -56,8 +59,13 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 	span.SetAttributes(attribute.String("authorDID", authorDID))
 	span.SetAttributes(attribute.String("rkey", rkey))
 
-	rawPosts, err := f.Store.Queries.GetPostsFromNonMoots(ctx, store_queries.GetPostsFromNonMootsParams{
-		ActorDid:        userDID,
+	nonMoots, err := f.GraphD.GetFollowersNotFollowing(ctx, userDID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error getting non-moots: %w", err)
+	}
+
+	rawPosts, err := f.Store.Queries.GetPostsFromNonSpamUsers(ctx, store_queries.GetPostsFromNonSpamUsersParams{
+		Dids:            nonMoots,
 		Limit:           int32(limit),
 		CursorCreatedAt: createdAt,
 		CursorActorDid:  authorDID,
