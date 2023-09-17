@@ -3,6 +3,7 @@ package followers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
@@ -59,20 +60,34 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 	span.SetAttributes(attribute.String("authorDID", authorDID))
 	span.SetAttributes(attribute.String("rkey", rkey))
 
-	nonMoots, err := f.GraphD.GetFollowersNotFollowing(ctx, userDID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error getting non-moots: %w", err)
-	}
+	var rawPosts []store_queries.Post
 
-	rawPosts, err := f.Store.Queries.GetPostsFromNonSpamUsers(ctx, store_queries.GetPostsFromNonSpamUsersParams{
-		Dids:            nonMoots,
-		Limit:           int32(limit),
-		CursorCreatedAt: createdAt,
-		CursorActorDid:  authorDID,
-		CursorRkey:      rkey,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("error getting posts: %w", err)
+	nonMoots, err := f.GraphD.GetFollowersNotFollowing(ctx, userDID)
+	if err == nil {
+		rawPosts, err = f.Store.Queries.GetPostsFromNonSpamUsers(ctx, store_queries.GetPostsFromNonSpamUsersParams{
+			Dids:            nonMoots,
+			Limit:           int32(limit),
+			CursorCreatedAt: createdAt,
+			CursorActorDid:  authorDID,
+			CursorRkey:      rkey,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("error getting posts: %w", err)
+		}
+	} else {
+		span.SetAttributes(attribute.Bool("fallback", true))
+		// Fallback to old query
+		slog.Error("error getting non-moots, falling back to old query", "error", err)
+		rawPosts, err = f.Store.Queries.GetPostsFromNonMoots(ctx, store_queries.GetPostsFromNonMootsParams{
+			ActorDid:        userDID,
+			Limit:           int32(limit),
+			CursorCreatedAt: createdAt,
+			CursorActorDid:  authorDID,
+			CursorRkey:      rkey,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("error getting posts: %w", err)
+		}
 	}
 
 	// Convert to appbsky.FeedDefs_SkeletonFeedPost
