@@ -225,6 +225,29 @@ func (h *Handlers) GetIntersectFollowing(c echo.Context) error {
 	return c.JSON(200, dids)
 }
 
+func (h *Handlers) GetMoots(c echo.Context) error {
+	did := c.QueryParam("did")
+
+	uid, ok := h.graph.GetUID(did)
+	if !ok {
+		return c.JSON(404, "uid not found")
+	}
+
+	moots, err := h.graph.GetMoots(uid)
+	if err != nil {
+		slog.Error("failed to get moots", "err", err)
+		return c.JSON(500, fmt.Errorf("failed to get moots"))
+	}
+
+	dids, err := h.graph.GetDIDs(moots)
+	if err != nil {
+		slog.Error("failed to get dids", "err", err)
+		return c.JSON(500, fmt.Errorf("failed to get dids"))
+	}
+
+	return c.JSON(200, dids)
+}
+
 type Follow struct {
 	ActorDid  string `json:"actorDid"`
 	TargetDid string `json:"targetDid"`

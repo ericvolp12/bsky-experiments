@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/exp/maps"
 )
 
 type Graph struct {
@@ -109,6 +111,9 @@ func (g *Graph) SaveToFile() error {
 	writer := bufio.NewWriter(f)
 
 	g.utdLk.RLock()
+	utd := maps.Clone(g.utd)
+	g.utdLk.RUnlock()
+
 	// Write all the follows to the graph CSV
 	g.follows.Range(func(key, value interface{}) bool {
 		actorUID := key.(uint64)
@@ -117,12 +122,12 @@ func (g *Graph) SaveToFile() error {
 
 		followMap.lk.RLock()
 		for targetUID := range followMap.data {
-			didA, ok := g.utd[actorUID]
+			didA, ok := utd[actorUID]
 			if !ok {
 				log.Error("failed to find did for uid", "uid", actorUID)
 				continue
 			}
-			didB, ok := g.utd[targetUID]
+			didB, ok := utd[targetUID]
 			if !ok {
 				log.Error("failed to find did for uid", "uid", targetUID)
 				continue
@@ -137,7 +142,6 @@ func (g *Graph) SaveToFile() error {
 
 		return true
 	})
-	g.utdLk.RUnlock()
 
 	// Flush the buffer to ensure all data is written to disk
 	writer.Flush()
@@ -316,6 +320,30 @@ func (g *Graph) GetFollowers(uid uint64) ([]uint64, error) {
 	}
 
 	return followers, nil
+}
+
+func (g *Graph) GetMoots(uid uint64) ([]uint64, error) {
+	followers, err := g.GetFollowers(uid)
+	if err != nil {
+		return nil, err
+	}
+
+	following, err := g.GetFollowing(uid)
+	if err != nil {
+		return nil, err
+	}
+
+	moots := make([]uint64, 0)
+	for _, follower := range followers {
+		for _, followee := range following {
+			if follower == followee {
+				moots = append(moots, follower)
+				break
+			}
+		}
+	}
+
+	return moots, nil
 }
 
 func (g *Graph) IntersectFollowers(uids []uint64) ([]uint64, error) {
