@@ -109,8 +109,6 @@ func (g *Graph) SaveToFile() error {
 	writer := bufio.NewWriter(f)
 
 	g.utdLk.RLock()
-	defer g.utdLk.RUnlock()
-
 	// Write all the follows to the graph CSV
 	g.follows.Range(func(key, value interface{}) bool {
 		actorUID := key.(uint64)
@@ -139,6 +137,7 @@ func (g *Graph) SaveToFile() error {
 
 		return true
 	})
+	g.utdLk.RUnlock()
 
 	// Flush the buffer to ensure all data is written to disk
 	writer.Flush()
