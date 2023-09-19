@@ -47,6 +47,7 @@ func NewGraph(filePath string) *Graph {
 	}
 }
 
+// LoadFromFile loads the graph CSV into memory, is not thread-safe
 func (g *Graph) LoadFromFile() error {
 	log := slog.With("source", "graph_load")
 	start := time.Now()
@@ -69,14 +70,17 @@ func (g *Graph) LoadFromFile() error {
 	fileScanner := bufio.NewScanner(f)
 	fileScanner.Split(bufio.ScanLines)
 
-	// Use this buffer to pre-allocate slice capacities when possible
-	buffer := make([]string, 2)
+	follows := make([][]uint64, 0, 43_000_000) // Preallocate for efficiency
+	g.utd = make(map[uint64]string, 1_000_000)
+	g.dtu = make(map[string]uint64, 1_000_000)
 
+	pairs := 0
+
+	// Remap follows to UID-UID pairs
 	for fileScanner.Scan() {
-		if totalFollows%1_000_000 == 0 {
-			log.Info("loaded follows", "total", totalFollows, "duration", time.Since(start))
+		if pairs%1_000_000 == 0 {
+			log.Info("remapped follows", "pairs", pairs, "duration", time.Since(start))
 		}
-
 		followTxt := fileScanner.Text()
 		parts := strings.SplitN(followTxt, ",", 2) // Use SplitN for efficiency
 		if len(parts) < 2 {
@@ -84,13 +88,55 @@ func (g *Graph) LoadFromFile() error {
 			continue
 		}
 
-		copy(buffer, parts)
-		actorUID := g.AcquireDID(buffer[0])
-		targetUID := g.AcquireDID(buffer[1])
+		actorUID, ok := g.dtu[parts[0]]
+		if !ok {
+			actorUID = g.uidNext
+			g.dtu[parts[0]] = actorUID
+			g.utd[actorUID] = parts[0]
+			g.uidNext++
+		}
 
-		g.AddFollow(actorUID, targetUID)
+		targetUID, ok := g.dtu[parts[1]]
+		if !ok {
+			targetUID = g.uidNext
+			g.dtu[parts[1]] = targetUID
+			g.utd[targetUID] = parts[1]
+			g.uidNext++
+		}
+		follows = append(follows, []uint64{actorUID, targetUID})
+		pairs++
+	}
 
+	followers := make(map[uint64]map[uint64]struct{}, 1_000_000)
+	following := make(map[uint64]map[uint64]struct{}, 1_000_000)
+
+	for uid := range g.utd {
+		followers[uid] = make(map[uint64]struct{})
+		following[uid] = make(map[uint64]struct{})
+	}
+
+	for _, follow := range follows {
+		if totalFollows%1_000_000 == 0 {
+			log.Info("loaded follows", "total", totalFollows, "duration", time.Since(start))
+		}
+
+		followers[follow[1]][follow[0]] = struct{}{}
+		following[follow[0]][follow[1]] = struct{}{}
+
+		g.followCount++
 		totalFollows++
+	}
+
+	for uid, followerMap := range followers {
+		g.followers.Store(uid, &FollowMap{
+			data: followerMap,
+		})
+	}
+
+	for uid, followingMap := range following {
+		g.follows.Store(uid, &FollowMap{
+			data: followingMap,
+		})
 	}
 
 	log.Info("total follows", "total", totalFollows, "duration", time.Since(start))
