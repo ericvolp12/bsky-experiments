@@ -2,7 +2,9 @@ package graphd
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -31,7 +33,8 @@ type Graph struct {
 	userCount   uint64
 	userCountLk sync.RWMutex
 
-	graphFilePath string
+	graphFilePath  string
+	binaryFilePath string
 }
 
 type FollowMap struct {
@@ -39,11 +42,12 @@ type FollowMap struct {
 	lk   sync.RWMutex
 }
 
-func NewGraph(filePath string) *Graph {
+func NewGraph(filePath string, binaryFilePath string) *Graph {
 	return &Graph{
-		utd:           map[uint64]string{},
-		dtu:           map[string]uint64{},
-		graphFilePath: filePath,
+		utd:            map[uint64]string{},
+		dtu:            map[string]uint64{},
+		graphFilePath:  filePath,
+		binaryFilePath: binaryFilePath,
 	}
 }
 
@@ -157,6 +161,188 @@ func (g *Graph) SaveToFile() error {
 	if err != nil {
 		return err
 	}
+
+	return nil
+}
+
+func (g *Graph) SaveToBinaryFile() error {
+	log := slog.With("source", "graph_save")
+
+	log.Info("saving graph to binary file", "path", g.binaryFilePath)
+
+	start := time.Now()
+
+	f, err := os.Create(g.binaryFilePath + ".new")
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	writer := bufio.NewWriter(f)
+
+	// Clone the UID to DID map
+	g.utdLk.RLock()
+	utd := maps.Clone(g.utd)
+
+	// Convert follows to a map[uint64][]uint64
+	followsCopy := make(map[uint64][]uint64)
+	g.follows.Range(func(key, value interface{}) bool {
+		actorUID := key.(uint64)
+		followMap := value.(*FollowMap)
+		followMap.lk.RLock()
+		for targetUID := range followMap.data {
+			followsCopy[actorUID] = append(followsCopy[actorUID], targetUID)
+		}
+		followMap.lk.RUnlock()
+		return true
+	})
+	g.utdLk.RUnlock()
+
+	err = binary.Write(writer, binary.LittleEndian, uint64(len(utd)))
+	if err != nil {
+		return err
+	}
+
+	for uid, did := range utd {
+		err = binary.Write(writer, binary.LittleEndian, uid)
+		if err != nil {
+			return err
+		}
+
+		err = binary.Write(writer, binary.LittleEndian, uint64(len(did)))
+		if err != nil {
+			return err
+		}
+		writer.WriteString(did)
+	}
+
+	// Write total actors
+	err = binary.Write(writer, binary.LittleEndian, uint64(len(followsCopy)))
+	if err != nil {
+		return err
+	}
+
+	// Write each actor and their follows
+	for actorUID, targets := range followsCopy {
+		err = binary.Write(writer, binary.LittleEndian, actorUID)
+		if err != nil {
+			return err
+		}
+		err = binary.Write(writer, binary.LittleEndian, uint64(len(targets)))
+		if err != nil {
+			return err
+		}
+		for _, targetUID := range targets {
+			err = binary.Write(writer, binary.LittleEndian, targetUID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	writer.Flush()
+
+	log.Info("saved graph to binary file", "path", g.binaryFilePath, "duration", time.Since(start))
+
+	// Delete the old graph file
+	err = os.Remove(g.binaryFilePath)
+	if err != nil {
+		return err
+	}
+
+	// Rename the new graph file to the old graph file
+	err = os.Rename(g.binaryFilePath+".new", g.binaryFilePath)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (g *Graph) LoadGraphFromBinaryFile() error {
+	log := slog.With("source", "graph_load")
+
+	_, err := os.Stat(g.binaryFilePath)
+	if os.IsNotExist(err) {
+		log.Info("graph binary file does not exist, skipping load", "path", g.binaryFilePath)
+		return nil
+	}
+
+	f, err := os.Open(g.binaryFilePath)
+	if err != nil {
+		log.Error("failed to open graph binary file", "path", g.binaryFilePath, "error", err)
+		return err
+	}
+	defer f.Close()
+
+	reader := bufio.NewReader(f)
+
+	// Read and load UID mappings
+	var totalUIDs uint64
+	err = binary.Read(reader, binary.LittleEndian, &totalUIDs)
+	if err != nil {
+		return err
+	}
+
+	for i := uint64(0); i < totalUIDs; i++ {
+		var uid uint64
+		err = binary.Read(reader, binary.LittleEndian, &uid)
+		if err != nil {
+			return err
+		}
+
+		var didLength uint64
+		err = binary.Read(reader, binary.LittleEndian, &didLength)
+		if err != nil {
+			return err
+		}
+
+		didBytes := make([]byte, didLength)
+		_, err = io.ReadFull(reader, didBytes)
+		if err != nil {
+			return err
+		}
+
+		g.utd[uid] = string(didBytes)
+		g.dtu[string(didBytes)] = uid
+	}
+
+	// Read total actors
+	var totalActors uint64
+	err = binary.Read(reader, binary.LittleEndian, &totalActors)
+	if err != nil {
+		return err
+	}
+
+	totalFollows := 0
+
+	// Read each actor and their follows
+	for i := uint64(0); i < totalActors; i++ {
+		var actorUID uint64
+		err = binary.Read(reader, binary.LittleEndian, &actorUID)
+		if err != nil {
+			return err
+		}
+
+		var numTargets uint64
+		err = binary.Read(reader, binary.LittleEndian, &numTargets)
+		if err != nil {
+			return err
+		}
+
+		for j := uint64(0); j < numTargets; j++ {
+			var targetUID uint64
+			err = binary.Read(reader, binary.LittleEndian, &targetUID)
+			if err != nil {
+				return err
+			}
+
+			g.AddFollow(actorUID, targetUID)
+			totalFollows++
+		}
+	}
+
+	log.Info("loaded graph from binary file", "path", g.binaryFilePath, "total_actors", totalActors, "total_follows", totalFollows)
 
 	return nil
 }

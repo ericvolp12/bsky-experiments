@@ -46,6 +46,12 @@ func main() {
 			EnvVars: []string{"GRAPH_CSV"},
 			Value:   "data/follows.csv",
 		},
+		&cli.StringFlag{
+			Name:    "graph-binary",
+			Usage:   "path to graph binary file",
+			EnvVars: []string{"GRAPH_BINARY"},
+			Value:   "data/graphd_graph.bin",
+		},
 	}
 
 	app.Action = GraphD
@@ -67,7 +73,7 @@ func GraphD(cctx *cli.Context) error {
 		Level: logLevel,
 	})))
 
-	graph := graphd.NewGraph(cctx.String("graph-csv"))
+	graph := graphd.NewGraph(cctx.String("graph-csv"), cctx.String("graph-binary"))
 
 	err := graph.LoadFromFile()
 	if err != nil {
@@ -88,14 +94,14 @@ func GraphD(cctx *cli.Context) error {
 		for {
 			select {
 			case <-shutdownGraphSave:
-				err := graph.SaveToFile()
+				err := graph.SaveToBinaryFile()
 				if err != nil {
 					log.Error("failed to save graph to file", "error", err)
 				}
 				return
 			case <-t.C:
 				start := time.Now()
-				err := graph.SaveToFile()
+				err := graph.SaveToBinaryFile()
 				if err != nil {
 					log.Error("failed to save graph to file", "error", err)
 				}

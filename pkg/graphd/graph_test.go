@@ -9,7 +9,7 @@ import (
 )
 
 func BenchmarkAcquireDID(b *testing.B) {
-	graph := graphd.NewGraph("")
+	graph := graphd.NewGraph("", "")
 
 	dids := make([]string, b.N)
 
@@ -26,7 +26,7 @@ func BenchmarkAcquireDID(b *testing.B) {
 }
 
 func BenchmarkAddFollow(b *testing.B) {
-	graph := graphd.NewGraph("")
+	graph := graphd.NewGraph("", "")
 
 	dids := make([]string, b.N)
 
@@ -58,7 +58,7 @@ func BenchmarkAddFollow(b *testing.B) {
 }
 
 func BenchmarkGetFollowers(b *testing.B) {
-	graph := graphd.NewGraph("")
+	graph := graphd.NewGraph("", "")
 
 	dids := make([]string, b.N)
 
@@ -94,7 +94,7 @@ func BenchmarkGetFollowers(b *testing.B) {
 }
 
 func BenchmarkDoesFollow(b *testing.B) {
-	graph := graphd.NewGraph("")
+	graph := graphd.NewGraph("", "")
 
 	dids := make([]string, b.N)
 
@@ -130,7 +130,7 @@ func BenchmarkDoesFollow(b *testing.B) {
 }
 
 func TestIntersectNFollowers(t *testing.T) {
-	graph := graphd.NewGraph("")
+	graph := graphd.NewGraph("", "")
 
 	dids := make([]string, 100)
 
