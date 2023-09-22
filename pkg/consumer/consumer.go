@@ -174,26 +174,42 @@ func NewConsumer(
 		logger.Warn("cursor not found in redis, starting from live")
 	}
 
+	pageSize := 500_000
+	totalRecords := 0
+
 	// Populate the backfill status from the database
-	backfillRecords, err := c.Store.Queries.GetRepoBackfillRecords(context.Background(), store_queries.GetRepoBackfillRecordsParams{
-		Limit:  1000000,
-		Offset: 0,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list backfill records: %+v", err)
+	for {
+		records, err := c.Store.Queries.GetRepoBackfillRecords(ctx, store_queries.GetRepoBackfillRecordsParams{
+			Limit:  int32(pageSize),
+			Offset: int32(totalRecords),
+		})
+		if err != nil {
+			if err == sql.ErrNoRows {
+				break
+			}
+			return nil, fmt.Errorf("failed to list repo backfill status: %+v", err)
+		}
+
+		for _, backfillRecord := range records {
+			c.BackfillStatus[backfillRecord.Repo] = &BackfillRepoStatus{
+				RepoDid:      backfillRecord.Repo,
+				Seq:          backfillRecord.SeqStarted,
+				State:        backfillRecord.State,
+				DeleteBuffer: []*Delete{},
+			}
+			if backfillRecord.State == "enqueued" {
+				backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
+			}
+		}
+
+		totalRecords += len(records)
+
+		if len(records) < pageSize {
+			break
+		}
 	}
 
-	for _, backfillRecord := range backfillRecords {
-		c.BackfillStatus[backfillRecord.Repo] = &BackfillRepoStatus{
-			RepoDid:      backfillRecord.Repo,
-			Seq:          backfillRecord.SeqStarted,
-			State:        backfillRecord.State,
-			DeleteBuffer: []*Delete{},
-		}
-		if backfillRecord.State == "enqueued" {
-			backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
-		}
-	}
+	logger.Infow("backfill records found", "count", totalRecords)
 
 	// Start the backfill processor
 	go c.BackfillProcessor(ctx)
