@@ -403,3 +403,25 @@ func (q *Queries) GetTotalLikesReceivedByActor(ctx context.Context, actorDid str
 	err := row.Scan(&sum)
 	return sum, err
 }
+
+const insertLike = `-- name: InsertLike :exec
+INSERT INTO likes (actor_did, rkey, subj, created_at)
+VALUES ($1, $2, $3, $4)
+`
+
+type InsertLikeParams struct {
+	ActorDid  string       `json:"actor_did"`
+	Rkey      string       `json:"rkey"`
+	Subj      int64        `json:"subj"`
+	CreatedAt sql.NullTime `json:"created_at"`
+}
+
+func (q *Queries) InsertLike(ctx context.Context, arg InsertLikeParams) error {
+	_, err := q.exec(ctx, q.insertLikeStmt, insertLike,
+		arg.ActorDid,
+		arg.Rkey,
+		arg.Subj,
+		arg.CreatedAt,
+	)
+	return err
+}

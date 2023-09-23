@@ -872,27 +872,69 @@ func (c *Consumer) HandleCreateRecord(
 			return nil, nil
 		}
 
-		err = c.Store.Queries.CreateLike(ctx, store_queries.CreateLikeParams{
-			ActorDid:        repo,
-			Rkey:            rkey,
-			SubjectActorDid: subjectURI.Did,
-			Collection:      subjectURI.Collection,
-			SubjectRkey:     subjectURI.RKey,
-			CreatedAt:       sql.NullTime{Time: recCreatedAt, Valid: true},
+		tx, err := c.Store.DB.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to begin transaction: %w", err)
+		}
+
+		txQ := c.Store.Queries.WithTx(tx)
+
+		var collection store_queries.Collection
+		collection, err = txQ.GetCollection(ctx, subjectURI.Collection)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				collection, err = txQ.CreateCollection(ctx, subjectURI.Collection)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create collection: %w", err)
+				}
+			} else {
+				return nil, fmt.Errorf("failed to get collection: %w", err)
+			}
+		}
+
+		var subject store_queries.Subject
+		subject, err = txQ.GetSubject(ctx, store_queries.GetSubjectParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+			Col:      collection.ID,
+		})
+		if err != nil {
+			if err == sql.ErrNoRows {
+				subject, err = txQ.CreateSubject(ctx, store_queries.CreateSubjectParams{
+					ActorDid: repo,
+					Rkey:     rkey,
+					Col:      collection.ID,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("failed to create subject: %w", err)
+				}
+			} else {
+				return nil, fmt.Errorf("failed to get subject: %w", err)
+			}
+		}
+
+		err = txQ.InsertLike(ctx, store_queries.InsertLikeParams{
+			ActorDid:  repo,
+			Rkey:      rkey,
+			Subj:      subject.ID,
+			CreatedAt: sql.NullTime{Time: recCreatedAt, Valid: true},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create like: %w", err)
 		}
 
 		// Increment the like count
-		err = c.Store.Queries.IncrementLikeCountByN(ctx, store_queries.IncrementLikeCountByNParams{
-			ActorDid:   subjectURI.Did,
-			Collection: subjectURI.Collection,
-			Rkey:       subjectURI.RKey,
-			NumLikes:   1,
+		err = txQ.IncrementLikeCountByNWithSubject(ctx, store_queries.IncrementLikeCountByNWithSubjectParams{
+			SubjectID: subject.ID,
+			NumLikes:  1,
 		})
 		if err != nil {
 			log.Errorf("failed to increment like count: %+v", err)
+		}
+
+		err = tx.Commit()
+		if err != nil {
+			return nil, fmt.Errorf("failed to commit like accounting transaction: %w", err)
 		}
 	case *bsky.FeedRepost:
 		span.SetAttributes(attribute.String("record_type", "feed_repost"))

@@ -31,6 +31,9 @@ SELECT sqlc.arg('actor_did'),
     subject_ins.id,
     sqlc.arg('created_at')
 FROM subject_ins;
+-- name: InsertLike :exec
+INSERT INTO likes (actor_did, rkey, subj, created_at)
+VALUES ($1, $2, $3, $4);
 -- name: DeleteLike :exec
 DELETE FROM likes
 WHERE actor_did = $1

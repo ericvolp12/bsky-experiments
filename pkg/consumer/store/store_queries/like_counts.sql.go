@@ -172,3 +172,21 @@ func (q *Queries) IncrementLikeCountByN(ctx context.Context, arg IncrementLikeCo
 	)
 	return err
 }
+
+const incrementLikeCountByNWithSubject = `-- name: IncrementLikeCountByNWithSubject :exec
+INSERT INTO like_counts (subject_id, num_likes)
+VALUES ($1, $2)
+ON CONFLICT (subject_id) DO
+UPDATE
+SET num_likes = like_counts.num_likes + EXCLUDED.num_likes
+`
+
+type IncrementLikeCountByNWithSubjectParams struct {
+	SubjectID int64 `json:"subject_id"`
+	NumLikes  int64 `json:"num_likes"`
+}
+
+func (q *Queries) IncrementLikeCountByNWithSubject(ctx context.Context, arg IncrementLikeCountByNWithSubjectParams) error {
+	_, err := q.exec(ctx, q.incrementLikeCountByNWithSubjectStmt, incrementLikeCountByNWithSubject, arg.SubjectID, arg.NumLikes)
+	return err
+}

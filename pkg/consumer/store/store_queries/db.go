@@ -51,6 +51,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createBlockStmt, err = db.PrepareContext(ctx, createBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateBlock: %w", err)
 	}
+	if q.createCollectionStmt, err = db.PrepareContext(ctx, createCollection); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateCollection: %w", err)
+	}
 	if q.createEventStmt, err = db.PrepareContext(ctx, createEvent); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateEvent: %w", err)
 	}
@@ -99,6 +102,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteBlockStmt, err = db.PrepareContext(ctx, deleteBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteBlock: %w", err)
 	}
+	if q.deleteCollectionStmt, err = db.PrepareContext(ctx, deleteCollection); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteCollection: %w", err)
+	}
 	if q.deleteEventStmt, err = db.PrepareContext(ctx, deleteEvent); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteEvent: %w", err)
 	}
@@ -144,6 +150,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteSentimentJobStmt, err = db.PrepareContext(ctx, deleteSentimentJob); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSentimentJob: %w", err)
 	}
+	if q.deleteSubjectStmt, err = db.PrepareContext(ctx, deleteSubject); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteSubject: %w", err)
+	}
 	if q.findActorsByHandleStmt, err = db.PrepareContext(ctx, findActorsByHandle); err != nil {
 		return nil, fmt.Errorf("error preparing query FindActorsByHandle: %w", err)
 	}
@@ -182,6 +191,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getBlocksByTargetStmt, err = db.PrepareContext(ctx, getBlocksByTarget); err != nil {
 		return nil, fmt.Errorf("error preparing query GetBlocksByTarget: %w", err)
+	}
+	if q.getCollectionStmt, err = db.PrepareContext(ctx, getCollection); err != nil {
+		return nil, fmt.Errorf("error preparing query GetCollection: %w", err)
 	}
 	if q.getDailySummariesStmt, err = db.PrepareContext(ctx, getDailySummaries); err != nil {
 		return nil, fmt.Errorf("error preparing query GetDailySummaries: %w", err)
@@ -303,6 +315,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getSentimentForPostStmt, err = db.PrepareContext(ctx, getSentimentForPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSentimentForPost: %w", err)
 	}
+	if q.getSubjectStmt, err = db.PrepareContext(ctx, getSubject); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSubject: %w", err)
+	}
+	if q.getSubjectByIdStmt, err = db.PrepareContext(ctx, getSubjectById); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSubjectById: %w", err)
+	}
 	if q.getTopPostsStmt, err = db.PrepareContext(ctx, getTopPosts); err != nil {
 		return nil, fmt.Errorf("error preparing query GetTopPosts: %w", err)
 	}
@@ -339,8 +357,14 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.incrementLikeCountByNStmt, err = db.PrepareContext(ctx, incrementLikeCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query IncrementLikeCountByN: %w", err)
 	}
+	if q.incrementLikeCountByNWithSubjectStmt, err = db.PrepareContext(ctx, incrementLikeCountByNWithSubject); err != nil {
+		return nil, fmt.Errorf("error preparing query IncrementLikeCountByNWithSubject: %w", err)
+	}
 	if q.incrementRepostCountByNStmt, err = db.PrepareContext(ctx, incrementRepostCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query IncrementRepostCountByN: %w", err)
+	}
+	if q.insertLikeStmt, err = db.PrepareContext(ctx, insertLike); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertLike: %w", err)
 	}
 	if q.setSentimentForPostStmt, err = db.PrepareContext(ctx, setSentimentForPost); err != nil {
 		return nil, fmt.Errorf("error preparing query SetSentimentForPost: %w", err)
@@ -411,6 +435,11 @@ func (q *Queries) Close() error {
 	if q.createBlockStmt != nil {
 		if cerr := q.createBlockStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createBlockStmt: %w", cerr)
+		}
+	}
+	if q.createCollectionStmt != nil {
+		if cerr := q.createCollectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createCollectionStmt: %w", cerr)
 		}
 	}
 	if q.createEventStmt != nil {
@@ -493,6 +522,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteBlockStmt: %w", cerr)
 		}
 	}
+	if q.deleteCollectionStmt != nil {
+		if cerr := q.deleteCollectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteCollectionStmt: %w", cerr)
+		}
+	}
 	if q.deleteEventStmt != nil {
 		if cerr := q.deleteEventStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteEventStmt: %w", cerr)
@@ -568,6 +602,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteSentimentJobStmt: %w", cerr)
 		}
 	}
+	if q.deleteSubjectStmt != nil {
+		if cerr := q.deleteSubjectStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteSubjectStmt: %w", cerr)
+		}
+	}
 	if q.findActorsByHandleStmt != nil {
 		if cerr := q.findActorsByHandleStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing findActorsByHandleStmt: %w", cerr)
@@ -631,6 +670,11 @@ func (q *Queries) Close() error {
 	if q.getBlocksByTargetStmt != nil {
 		if cerr := q.getBlocksByTargetStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getBlocksByTargetStmt: %w", cerr)
+		}
+	}
+	if q.getCollectionStmt != nil {
+		if cerr := q.getCollectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getCollectionStmt: %w", cerr)
 		}
 	}
 	if q.getDailySummariesStmt != nil {
@@ -833,6 +877,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getSentimentForPostStmt: %w", cerr)
 		}
 	}
+	if q.getSubjectStmt != nil {
+		if cerr := q.getSubjectStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getSubjectStmt: %w", cerr)
+		}
+	}
+	if q.getSubjectByIdStmt != nil {
+		if cerr := q.getSubjectByIdStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getSubjectByIdStmt: %w", cerr)
+		}
+	}
 	if q.getTopPostsStmt != nil {
 		if cerr := q.getTopPostsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getTopPostsStmt: %w", cerr)
@@ -893,9 +947,19 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing incrementLikeCountByNStmt: %w", cerr)
 		}
 	}
+	if q.incrementLikeCountByNWithSubjectStmt != nil {
+		if cerr := q.incrementLikeCountByNWithSubjectStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing incrementLikeCountByNWithSubjectStmt: %w", cerr)
+		}
+	}
 	if q.incrementRepostCountByNStmt != nil {
 		if cerr := q.incrementRepostCountByNStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing incrementRepostCountByNStmt: %w", cerr)
+		}
+	}
+	if q.insertLikeStmt != nil {
+		if cerr := q.insertLikeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertLikeStmt: %w", cerr)
 		}
 	}
 	if q.setSentimentForPostStmt != nil {
@@ -981,6 +1045,7 @@ type Queries struct {
 	countFollowsByActorStmt              *sql.Stmt
 	countFollowsByActorAndTargetStmt     *sql.Stmt
 	createBlockStmt                      *sql.Stmt
+	createCollectionStmt                 *sql.Stmt
 	createEventStmt                      *sql.Stmt
 	createFollowStmt                     *sql.Stmt
 	createImageStmt                      *sql.Stmt
@@ -997,6 +1062,7 @@ type Queries struct {
 	decrementLikeCountByNStmt            *sql.Stmt
 	decrementRepostCountByNStmt          *sql.Stmt
 	deleteBlockStmt                      *sql.Stmt
+	deleteCollectionStmt                 *sql.Stmt
 	deleteEventStmt                      *sql.Stmt
 	deleteFollowStmt                     *sql.Stmt
 	deleteFollowerCountStmt              *sql.Stmt
@@ -1012,6 +1078,7 @@ type Queries struct {
 	deleteRepostStmt                     *sql.Stmt
 	deleteRepostCountStmt                *sql.Stmt
 	deleteSentimentJobStmt               *sql.Stmt
+	deleteSubjectStmt                    *sql.Stmt
 	findActorsByHandleStmt               *sql.Stmt
 	findPotentialFriendsStmt             *sql.Stmt
 	getActiveEventsForInitiatorStmt      *sql.Stmt
@@ -1025,6 +1092,7 @@ type Queries struct {
 	getBlocksByActorStmt                 *sql.Stmt
 	getBlocksByActorAndTargetStmt        *sql.Stmt
 	getBlocksByTargetStmt                *sql.Stmt
+	getCollectionStmt                    *sql.Stmt
 	getDailySummariesStmt                *sql.Stmt
 	getEventStmt                         *sql.Stmt
 	getEventsForInitiatorStmt            *sql.Stmt
@@ -1065,6 +1133,8 @@ type Queries struct {
 	getRepostsByActorStmt                *sql.Stmt
 	getRepostsBySubjectStmt              *sql.Stmt
 	getSentimentForPostStmt              *sql.Stmt
+	getSubjectStmt                       *sql.Stmt
+	getSubjectByIdStmt                   *sql.Stmt
 	getTopPostsStmt                      *sql.Stmt
 	getTopPostsForActorStmt              *sql.Stmt
 	getTopUsersByPointsStmt              *sql.Stmt
@@ -1077,7 +1147,9 @@ type Queries struct {
 	incrementFollowerCountByNStmt        *sql.Stmt
 	incrementFollowingCountByNStmt       *sql.Stmt
 	incrementLikeCountByNStmt            *sql.Stmt
+	incrementLikeCountByNWithSubjectStmt *sql.Stmt
 	incrementRepostCountByNStmt          *sql.Stmt
+	insertLikeStmt                       *sql.Stmt
 	setSentimentForPostStmt              *sql.Stmt
 	upatePointAssignmentStmt             *sql.Stmt
 	updateActorPropicStmt                *sql.Stmt
@@ -1100,6 +1172,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		countFollowsByActorStmt:              q.countFollowsByActorStmt,
 		countFollowsByActorAndTargetStmt:     q.countFollowsByActorAndTargetStmt,
 		createBlockStmt:                      q.createBlockStmt,
+		createCollectionStmt:                 q.createCollectionStmt,
 		createEventStmt:                      q.createEventStmt,
 		createFollowStmt:                     q.createFollowStmt,
 		createImageStmt:                      q.createImageStmt,
@@ -1116,6 +1189,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		decrementLikeCountByNStmt:            q.decrementLikeCountByNStmt,
 		decrementRepostCountByNStmt:          q.decrementRepostCountByNStmt,
 		deleteBlockStmt:                      q.deleteBlockStmt,
+		deleteCollectionStmt:                 q.deleteCollectionStmt,
 		deleteEventStmt:                      q.deleteEventStmt,
 		deleteFollowStmt:                     q.deleteFollowStmt,
 		deleteFollowerCountStmt:              q.deleteFollowerCountStmt,
@@ -1131,6 +1205,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteRepostStmt:                     q.deleteRepostStmt,
 		deleteRepostCountStmt:                q.deleteRepostCountStmt,
 		deleteSentimentJobStmt:               q.deleteSentimentJobStmt,
+		deleteSubjectStmt:                    q.deleteSubjectStmt,
 		findActorsByHandleStmt:               q.findActorsByHandleStmt,
 		findPotentialFriendsStmt:             q.findPotentialFriendsStmt,
 		getActiveEventsForInitiatorStmt:      q.getActiveEventsForInitiatorStmt,
@@ -1144,6 +1219,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getBlocksByActorStmt:                 q.getBlocksByActorStmt,
 		getBlocksByActorAndTargetStmt:        q.getBlocksByActorAndTargetStmt,
 		getBlocksByTargetStmt:                q.getBlocksByTargetStmt,
+		getCollectionStmt:                    q.getCollectionStmt,
 		getDailySummariesStmt:                q.getDailySummariesStmt,
 		getEventStmt:                         q.getEventStmt,
 		getEventsForInitiatorStmt:            q.getEventsForInitiatorStmt,
@@ -1184,6 +1260,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getRepostsByActorStmt:                q.getRepostsByActorStmt,
 		getRepostsBySubjectStmt:              q.getRepostsBySubjectStmt,
 		getSentimentForPostStmt:              q.getSentimentForPostStmt,
+		getSubjectStmt:                       q.getSubjectStmt,
+		getSubjectByIdStmt:                   q.getSubjectByIdStmt,
 		getTopPostsStmt:                      q.getTopPostsStmt,
 		getTopPostsForActorStmt:              q.getTopPostsForActorStmt,
 		getTopUsersByPointsStmt:              q.getTopUsersByPointsStmt,
@@ -1196,7 +1274,9 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		incrementFollowerCountByNStmt:        q.incrementFollowerCountByNStmt,
 		incrementFollowingCountByNStmt:       q.incrementFollowingCountByNStmt,
 		incrementLikeCountByNStmt:            q.incrementLikeCountByNStmt,
+		incrementLikeCountByNWithSubjectStmt: q.incrementLikeCountByNWithSubjectStmt,
 		incrementRepostCountByNStmt:          q.incrementRepostCountByNStmt,
+		insertLikeStmt:                       q.insertLikeStmt,
 		setSentimentForPostStmt:              q.setSentimentForPostStmt,
 		upatePointAssignmentStmt:             q.upatePointAssignmentStmt,
 		updateActorPropicStmt:                q.updateActorPropicStmt,

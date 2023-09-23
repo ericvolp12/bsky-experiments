@@ -34,3 +34,56 @@ func (q *Queries) CreateSubject(ctx context.Context, arg CreateSubjectParams) (S
 	)
 	return i, err
 }
+
+const deleteSubject = `-- name: DeleteSubject :exec
+DELETE FROM subjects WHERE actor_did = $1 AND rkey = $2 AND col = $3
+`
+
+type DeleteSubjectParams struct {
+	ActorDid string `json:"actor_did"`
+	Rkey     string `json:"rkey"`
+	Col      int32  `json:"col"`
+}
+
+func (q *Queries) DeleteSubject(ctx context.Context, arg DeleteSubjectParams) error {
+	_, err := q.exec(ctx, q.deleteSubjectStmt, deleteSubject, arg.ActorDid, arg.Rkey, arg.Col)
+	return err
+}
+
+const getSubject = `-- name: GetSubject :one
+SELECT id, actor_did, rkey, col FROM subjects WHERE actor_did = $1 AND rkey = $2 AND col = $3
+`
+
+type GetSubjectParams struct {
+	ActorDid string `json:"actor_did"`
+	Rkey     string `json:"rkey"`
+	Col      int32  `json:"col"`
+}
+
+func (q *Queries) GetSubject(ctx context.Context, arg GetSubjectParams) (Subject, error) {
+	row := q.queryRow(ctx, q.getSubjectStmt, getSubject, arg.ActorDid, arg.Rkey, arg.Col)
+	var i Subject
+	err := row.Scan(
+		&i.ID,
+		&i.ActorDid,
+		&i.Rkey,
+		&i.Col,
+	)
+	return i, err
+}
+
+const getSubjectById = `-- name: GetSubjectById :one
+SELECT id, actor_did, rkey, col FROM subjects WHERE id = $1
+`
+
+func (q *Queries) GetSubjectById(ctx context.Context, id int64) (Subject, error) {
+	row := q.queryRow(ctx, q.getSubjectByIdStmt, getSubjectById, id)
+	var i Subject
+	err := row.Scan(
+		&i.ID,
+		&i.ActorDid,
+		&i.Rkey,
+		&i.Col,
+	)
+	return i, err
+}

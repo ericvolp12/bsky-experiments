@@ -24,6 +24,12 @@ SELECT id,
 FROM subj ON CONFLICT (subject_id) DO
 UPDATE
 SET num_likes = like_counts.num_likes + EXCLUDED.num_likes;
+-- name: IncrementLikeCountByNWithSubject :exec
+INSERT INTO like_counts (subject_id, num_likes)
+VALUES ($1, $2)
+ON CONFLICT (subject_id) DO
+UPDATE
+SET num_likes = like_counts.num_likes + EXCLUDED.num_likes;
 -- name: DecrementLikeCountByN :exec
 WITH subj AS (
     SELECT id
