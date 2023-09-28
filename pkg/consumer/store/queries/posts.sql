@@ -10,6 +10,9 @@ INSERT INTO posts (
         root_post_actor_did,
         root_post_rkey,
         has_embedded_media,
+        facets,
+        embed,
+        tags,
         created_at
     )
 VALUES (
@@ -23,7 +26,10 @@ VALUES (
         $8,
         $9,
         $10,
-        $11
+        $11,
+        $12,
+        $13,
+        $14
     );
 -- name: DeletePost :exec
 DELETE FROM posts

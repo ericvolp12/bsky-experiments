@@ -150,12 +150,12 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 	log := c.Logger.With("source", "backfill", "repo", repoDID)
 	log.Infof("processing backfill for %s", repoDID)
 
-	var url = "https://bsky.social/xrpc/com.atproto.sync.getCheckout?did=" + repoDID
+	var url = "https://bgs.bsky.social/xrpc/com.atproto.sync.getRepo?did=" + repoDID
 
 	// GET and CAR decode the body
 	client := &http.Client{
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
-		Timeout:   120 * time.Second,
+		Timeout:   15 * time.Minute,
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {

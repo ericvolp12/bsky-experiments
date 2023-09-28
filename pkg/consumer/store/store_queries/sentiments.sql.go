@@ -9,6 +9,9 @@ import (
 	"context"
 	"database/sql"
 	"time"
+
+	"github.com/lib/pq"
+	"github.com/sqlc-dev/pqtype"
 )
 
 const createSentimentJob = `-- name: CreateSentimentJob :exec
@@ -44,7 +47,7 @@ func (q *Queries) DeleteSentimentJob(ctx context.Context, arg DeleteSentimentJob
 }
 
 const getPostWithSentiment = `-- name: GetPostWithSentiment :one
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at,
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.tags, p.has_embedded_media, p.created_at, p.inserted_at,
     s.sentiment,
     s.confidence,
     s.processed_at
@@ -62,21 +65,24 @@ type GetPostWithSentimentParams struct {
 }
 
 type GetPostWithSentimentRow struct {
-	ActorDid           string          `json:"actor_did"`
-	Rkey               string          `json:"rkey"`
-	Content            sql.NullString  `json:"content"`
-	ParentPostActorDid sql.NullString  `json:"parent_post_actor_did"`
-	QuotePostActorDid  sql.NullString  `json:"quote_post_actor_did"`
-	QuotePostRkey      sql.NullString  `json:"quote_post_rkey"`
-	ParentPostRkey     sql.NullString  `json:"parent_post_rkey"`
-	RootPostActorDid   sql.NullString  `json:"root_post_actor_did"`
-	RootPostRkey       sql.NullString  `json:"root_post_rkey"`
-	HasEmbeddedMedia   bool            `json:"has_embedded_media"`
-	CreatedAt          sql.NullTime    `json:"created_at"`
-	InsertedAt         time.Time       `json:"inserted_at"`
-	Sentiment          sql.NullString  `json:"sentiment"`
-	Confidence         sql.NullFloat64 `json:"confidence"`
-	ProcessedAt        sql.NullTime    `json:"processed_at"`
+	ActorDid           string                `json:"actor_did"`
+	Rkey               string                `json:"rkey"`
+	Content            sql.NullString        `json:"content"`
+	ParentPostActorDid sql.NullString        `json:"parent_post_actor_did"`
+	QuotePostActorDid  sql.NullString        `json:"quote_post_actor_did"`
+	QuotePostRkey      sql.NullString        `json:"quote_post_rkey"`
+	ParentPostRkey     sql.NullString        `json:"parent_post_rkey"`
+	RootPostActorDid   sql.NullString        `json:"root_post_actor_did"`
+	RootPostRkey       sql.NullString        `json:"root_post_rkey"`
+	Facets             pqtype.NullRawMessage `json:"facets"`
+	Embed              pqtype.NullRawMessage `json:"embed"`
+	Tags               []string              `json:"tags"`
+	HasEmbeddedMedia   bool                  `json:"has_embedded_media"`
+	CreatedAt          sql.NullTime          `json:"created_at"`
+	InsertedAt         time.Time             `json:"inserted_at"`
+	Sentiment          sql.NullString        `json:"sentiment"`
+	Confidence         sql.NullFloat64       `json:"confidence"`
+	ProcessedAt        sql.NullTime          `json:"processed_at"`
 }
 
 func (q *Queries) GetPostWithSentiment(ctx context.Context, arg GetPostWithSentimentParams) (GetPostWithSentimentRow, error) {
@@ -92,6 +98,9 @@ func (q *Queries) GetPostWithSentiment(ctx context.Context, arg GetPostWithSenti
 		&i.ParentPostRkey,
 		&i.RootPostActorDid,
 		&i.RootPostRkey,
+		&i.Facets,
+		&i.Embed,
+		pq.Array(&i.Tags),
 		&i.HasEmbeddedMedia,
 		&i.CreatedAt,
 		&i.InsertedAt,
@@ -138,7 +147,7 @@ WITH unprocessed_posts AS (
     ORDER BY s.created_at
     LIMIT $1
 )
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.tags, p.has_embedded_media, p.created_at, p.inserted_at
 FROM posts p
     JOIN unprocessed_posts s ON p.actor_did = s.actor_did
     AND p.rkey = s.rkey
@@ -164,6 +173,9 @@ func (q *Queries) GetUnprocessedSentimentJobs(ctx context.Context, limit int32) 
 			&i.ParentPostRkey,
 			&i.RootPostActorDid,
 			&i.RootPostRkey,
+			&i.Facets,
+			&i.Embed,
+			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
 			&i.InsertedAt,

@@ -21,6 +21,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/labstack/gommon/log"
 	"github.com/redis/go-redis/v9"
+	"github.com/sqlc-dev/pqtype"
 	typegen "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/time/rate"
 
@@ -769,7 +770,7 @@ func (c *Consumer) HandleCreateRecord(
 
 		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 
-		err = c.Store.Queries.CreatePost(ctx, store_queries.CreatePostParams{
+		createParams := store_queries.CreatePostParams{
 			ActorDid:           repo,
 			Rkey:               rkey,
 			Content:            sql.NullString{String: rec.Text, Valid: true},
@@ -781,7 +782,33 @@ func (c *Consumer) HandleCreateRecord(
 			RootPostRkey:       sql.NullString{String: rootActorRkey, Valid: rootActorRkey != ""},
 			HasEmbeddedMedia:   rec.Embed != nil && rec.Embed.EmbedImages != nil,
 			CreatedAt:          sql.NullTime{Time: recCreatedAt, Valid: true},
-		})
+		}
+
+		if rec.Facets != nil {
+			facetsJSON := []byte{}
+			facetsJSON, err = json.Marshal(rec.Facets)
+			if err != nil {
+				log.Errorf("failed to marshal facets: %+v", err)
+			} else if len(facetsJSON) > 0 {
+				createParams.Facets = pqtype.NullRawMessage{RawMessage: facetsJSON, Valid: true}
+			}
+		}
+
+		if rec.Embed != nil && rec.Embed.EmbedExternal != nil {
+			embedJSON := []byte{}
+			embedJSON, err = json.Marshal(rec.Embed.EmbedExternal)
+			if err != nil {
+				log.Errorf("failed to marshal embed external: %+v", err)
+			} else if len(embedJSON) > 0 {
+				createParams.Embed = pqtype.NullRawMessage{RawMessage: embedJSON, Valid: true}
+			}
+		}
+
+		if len(rec.Tags) > 0 {
+			createParams.Tags = rec.Tags
+		}
+
+		err = c.Store.Queries.CreatePost(ctx, createParams)
 		if err != nil {
 			log.Errorf("failed to create post: %+v", err)
 		}

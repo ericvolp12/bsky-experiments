@@ -244,12 +244,6 @@ func (g *Graph) SaveToBinaryFile() error {
 
 	log.Info("saved graph to binary file", "path", g.binaryFilePath, "duration", time.Since(start))
 
-	// Delete the old graph file
-	err = os.Remove(g.binaryFilePath)
-	if err != nil {
-		return err
-	}
-
 	// Rename the new graph file to the old graph file
 	err = os.Rename(g.binaryFilePath+".new", g.binaryFilePath)
 	if err != nil {
@@ -508,23 +502,60 @@ func (g *Graph) GetFollowers(uid uint64) ([]uint64, error) {
 	return followers, nil
 }
 
+func (g *Graph) GetFollowersMap(uid uint64) (map[uint64]struct{}, error) {
+	followMap, ok := g.followers.Load(uid)
+	if !ok {
+		return nil, fmt.Errorf("uid %d not found", uid)
+	}
+	followMap.(*FollowMap).lk.RLock()
+	defer followMap.(*FollowMap).lk.RUnlock()
+
+	mapCopy := make(map[uint64]struct{}, len(followMap.(*FollowMap).data))
+	for follower := range followMap.(*FollowMap).data {
+		mapCopy[follower] = struct{}{}
+	}
+
+	return mapCopy, nil
+}
+
+func (g *Graph) GetFollowingMap(uid uint64) (map[uint64]struct{}, error) {
+	followMap, ok := g.follows.Load(uid)
+	if !ok {
+		return nil, fmt.Errorf("uid %d not found", uid)
+	}
+	followMap.(*FollowMap).lk.RLock()
+	defer followMap.(*FollowMap).lk.RUnlock()
+
+	mapCopy := make(map[uint64]struct{}, len(followMap.(*FollowMap).data))
+	for follower := range followMap.(*FollowMap).data {
+		mapCopy[follower] = struct{}{}
+	}
+
+	return mapCopy, nil
+}
+
 func (g *Graph) GetMoots(uid uint64) ([]uint64, error) {
-	followers, err := g.GetFollowers(uid)
+	followers, err := g.GetFollowersMap(uid)
 	if err != nil {
 		return nil, err
 	}
 
-	following, err := g.GetFollowing(uid)
+	following, err := g.GetFollowingMap(uid)
 	if err != nil {
 		return nil, err
 	}
 
 	moots := make([]uint64, 0)
-	for _, follower := range followers {
-		for _, followee := range following {
-			if follower == followee {
+	if len(followers) < len(following) {
+		for follower := range followers {
+			if _, ok := following[follower]; ok {
 				moots = append(moots, follower)
-				break
+			}
+		}
+	} else {
+		for follower := range following {
+			if _, ok := followers[follower]; ok {
+				moots = append(moots, follower)
 			}
 		}
 	}
@@ -649,26 +680,19 @@ func (g *Graph) GetFollowing(uid uint64) ([]uint64, error) {
 // GetFollowersNotFollowing returns a list of followers of the given UID that
 // the given UID is not following
 func (g *Graph) GetFollowersNotFollowing(uid uint64) ([]uint64, error) {
-	followers, err := g.GetFollowers(uid)
+	followers, err := g.GetFollowersMap(uid)
 	if err != nil {
 		return nil, err
 	}
 
-	following, err := g.GetFollowing(uid)
+	following, err := g.GetFollowingMap(uid)
 	if err != nil {
 		return nil, err
 	}
 
 	notFollowing := make([]uint64, 0)
-	for _, follower := range followers {
-		found := false
-		for _, followee := range following {
-			if follower == followee {
-				found = true
-				break
-			}
-		}
-		if !found {
+	for follower := range followers {
+		if _, ok := following[follower]; !ok {
 			notFollowing = append(notFollowing, follower)
 		}
 	}

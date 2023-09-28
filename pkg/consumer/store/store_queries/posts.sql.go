@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/sqlc-dev/pqtype"
 )
 
 const createPost = `-- name: CreatePost :exec
@@ -25,6 +26,9 @@ INSERT INTO posts (
         root_post_actor_did,
         root_post_rkey,
         has_embedded_media,
+        facets,
+        embed,
+        tags,
         created_at
     )
 VALUES (
@@ -38,22 +42,28 @@ VALUES (
         $8,
         $9,
         $10,
-        $11
+        $11,
+        $12,
+        $13,
+        $14
     )
 `
 
 type CreatePostParams struct {
-	ActorDid           string         `json:"actor_did"`
-	Rkey               string         `json:"rkey"`
-	Content            sql.NullString `json:"content"`
-	ParentPostActorDid sql.NullString `json:"parent_post_actor_did"`
-	ParentPostRkey     sql.NullString `json:"parent_post_rkey"`
-	QuotePostActorDid  sql.NullString `json:"quote_post_actor_did"`
-	QuotePostRkey      sql.NullString `json:"quote_post_rkey"`
-	RootPostActorDid   sql.NullString `json:"root_post_actor_did"`
-	RootPostRkey       sql.NullString `json:"root_post_rkey"`
-	HasEmbeddedMedia   bool           `json:"has_embedded_media"`
-	CreatedAt          sql.NullTime   `json:"created_at"`
+	ActorDid           string                `json:"actor_did"`
+	Rkey               string                `json:"rkey"`
+	Content            sql.NullString        `json:"content"`
+	ParentPostActorDid sql.NullString        `json:"parent_post_actor_did"`
+	ParentPostRkey     sql.NullString        `json:"parent_post_rkey"`
+	QuotePostActorDid  sql.NullString        `json:"quote_post_actor_did"`
+	QuotePostRkey      sql.NullString        `json:"quote_post_rkey"`
+	RootPostActorDid   sql.NullString        `json:"root_post_actor_did"`
+	RootPostRkey       sql.NullString        `json:"root_post_rkey"`
+	HasEmbeddedMedia   bool                  `json:"has_embedded_media"`
+	Facets             pqtype.NullRawMessage `json:"facets"`
+	Embed              pqtype.NullRawMessage `json:"embed"`
+	Tags               []string              `json:"tags"`
+	CreatedAt          sql.NullTime          `json:"created_at"`
 }
 
 func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) error {
@@ -68,6 +78,9 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) error {
 		arg.RootPostActorDid,
 		arg.RootPostRkey,
 		arg.HasEmbeddedMedia,
+		arg.Facets,
+		arg.Embed,
+		pq.Array(arg.Tags),
 		arg.CreatedAt,
 	)
 	return err
@@ -90,7 +103,7 @@ func (q *Queries) DeletePost(ctx context.Context, arg DeletePostParams) error {
 }
 
 const getMyPostsByFuzzyContent = `-- name: GetMyPostsByFuzzyContent :many
-SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, has_embedded_media, created_at, inserted_at
+SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, facets, embed, tags, has_embedded_media, created_at, inserted_at
 FROM posts
 WHERE actor_did = $1
     AND content ILIKE concat('%', $4::text, '%')::text
@@ -130,6 +143,9 @@ func (q *Queries) GetMyPostsByFuzzyContent(ctx context.Context, arg GetMyPostsBy
 			&i.ParentPostRkey,
 			&i.RootPostActorDid,
 			&i.RootPostRkey,
+			&i.Facets,
+			&i.Embed,
+			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
 			&i.InsertedAt,
@@ -148,7 +164,7 @@ func (q *Queries) GetMyPostsByFuzzyContent(ctx context.Context, arg GetMyPostsBy
 }
 
 const getPost = `-- name: GetPost :one
-SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, has_embedded_media, created_at, inserted_at
+SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, facets, embed, tags, has_embedded_media, created_at, inserted_at
 FROM posts
 WHERE actor_did = $1
     AND rkey = $2
@@ -172,6 +188,9 @@ func (q *Queries) GetPost(ctx context.Context, arg GetPostParams) (Post, error) 
 		&i.ParentPostRkey,
 		&i.RootPostActorDid,
 		&i.RootPostRkey,
+		&i.Facets,
+		&i.Embed,
+		pq.Array(&i.Tags),
 		&i.HasEmbeddedMedia,
 		&i.CreatedAt,
 		&i.InsertedAt,
@@ -181,7 +200,7 @@ func (q *Queries) GetPost(ctx context.Context, arg GetPostParams) (Post, error) 
 
 const getPostWithReplies = `-- name: GetPostWithReplies :many
 WITH RootPost AS (
-    SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at,
+    SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.tags, p.has_embedded_media, p.created_at, p.inserted_at,
         a.handle,
         a.pro_pic_cid,
         array_agg(COALESCE(i.cid, ''))::TEXT [] as image_cids,
@@ -198,7 +217,7 @@ WITH RootPost AS (
         a.pro_pic_cid
 ),
 Replies AS (
-    SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at,
+    SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.tags, p.has_embedded_media, p.created_at, p.inserted_at,
         a.handle,
         a.pro_pic_cid,
         array_agg(COALESCE(i.cid, ''))::TEXT [] as image_cids,
@@ -249,7 +268,7 @@ ReplyLikeCounts AS (
             FROM Replies
         )
 )
-SELECT rp.actor_did, rp.rkey, rp.content, rp.parent_post_actor_did, rp.quote_post_actor_did, rp.quote_post_rkey, rp.parent_post_rkey, rp.root_post_actor_did, rp.root_post_rkey, rp.has_embedded_media, rp.created_at, rp.inserted_at, rp.handle, rp.pro_pic_cid, rp.image_cids, rp.image_alts,
+SELECT rp.actor_did, rp.rkey, rp.content, rp.parent_post_actor_did, rp.quote_post_actor_did, rp.quote_post_rkey, rp.parent_post_rkey, rp.root_post_actor_did, rp.root_post_rkey, rp.facets, rp.embed, rp.tags, rp.has_embedded_media, rp.created_at, rp.inserted_at, rp.handle, rp.pro_pic_cid, rp.image_cids, rp.image_alts,
     rlc.num_likes AS like_count
 FROM RootPost rp
     LEFT JOIN RootLikeCount rlc ON rlc.subject_id = (
@@ -259,7 +278,7 @@ FROM RootPost rp
             AND rkey = rp.rkey
     )
 UNION ALL
-SELECT r.actor_did, r.rkey, r.content, r.parent_post_actor_did, r.quote_post_actor_did, r.quote_post_rkey, r.parent_post_rkey, r.root_post_actor_did, r.root_post_rkey, r.has_embedded_media, r.created_at, r.inserted_at, r.handle, r.pro_pic_cid, r.image_cids, r.image_alts,
+SELECT r.actor_did, r.rkey, r.content, r.parent_post_actor_did, r.quote_post_actor_did, r.quote_post_rkey, r.parent_post_rkey, r.root_post_actor_did, r.root_post_rkey, r.facets, r.embed, r.tags, r.has_embedded_media, r.created_at, r.inserted_at, r.handle, r.pro_pic_cid, r.image_cids, r.image_alts,
     rlc.num_likes AS like_count
 FROM Replies r
     LEFT JOIN ReplyLikeCounts rlc ON r.actor_did = rlc.actor_did
@@ -272,23 +291,26 @@ type GetPostWithRepliesParams struct {
 }
 
 type GetPostWithRepliesRow struct {
-	ActorDid           string         `json:"actor_did"`
-	Rkey               string         `json:"rkey"`
-	Content            sql.NullString `json:"content"`
-	ParentPostActorDid sql.NullString `json:"parent_post_actor_did"`
-	QuotePostActorDid  sql.NullString `json:"quote_post_actor_did"`
-	QuotePostRkey      sql.NullString `json:"quote_post_rkey"`
-	ParentPostRkey     sql.NullString `json:"parent_post_rkey"`
-	RootPostActorDid   sql.NullString `json:"root_post_actor_did"`
-	RootPostRkey       sql.NullString `json:"root_post_rkey"`
-	HasEmbeddedMedia   bool           `json:"has_embedded_media"`
-	CreatedAt          sql.NullTime   `json:"created_at"`
-	InsertedAt         time.Time      `json:"inserted_at"`
-	Handle             sql.NullString `json:"handle"`
-	ProPicCid          sql.NullString `json:"pro_pic_cid"`
-	ImageCids          []string       `json:"image_cids"`
-	ImageAlts          []string       `json:"image_alts"`
-	LikeCount          sql.NullInt64  `json:"like_count"`
+	ActorDid           string                `json:"actor_did"`
+	Rkey               string                `json:"rkey"`
+	Content            sql.NullString        `json:"content"`
+	ParentPostActorDid sql.NullString        `json:"parent_post_actor_did"`
+	QuotePostActorDid  sql.NullString        `json:"quote_post_actor_did"`
+	QuotePostRkey      sql.NullString        `json:"quote_post_rkey"`
+	ParentPostRkey     sql.NullString        `json:"parent_post_rkey"`
+	RootPostActorDid   sql.NullString        `json:"root_post_actor_did"`
+	RootPostRkey       sql.NullString        `json:"root_post_rkey"`
+	Facets             pqtype.NullRawMessage `json:"facets"`
+	Embed              pqtype.NullRawMessage `json:"embed"`
+	Tags               []string              `json:"tags"`
+	HasEmbeddedMedia   bool                  `json:"has_embedded_media"`
+	CreatedAt          sql.NullTime          `json:"created_at"`
+	InsertedAt         time.Time             `json:"inserted_at"`
+	Handle             sql.NullString        `json:"handle"`
+	ProPicCid          sql.NullString        `json:"pro_pic_cid"`
+	ImageCids          []string              `json:"image_cids"`
+	ImageAlts          []string              `json:"image_alts"`
+	LikeCount          sql.NullInt64         `json:"like_count"`
 }
 
 func (q *Queries) GetPostWithReplies(ctx context.Context, arg GetPostWithRepliesParams) ([]GetPostWithRepliesRow, error) {
@@ -310,6 +332,9 @@ func (q *Queries) GetPostWithReplies(ctx context.Context, arg GetPostWithReplies
 			&i.ParentPostRkey,
 			&i.RootPostActorDid,
 			&i.RootPostRkey,
+			&i.Facets,
+			&i.Embed,
+			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
 			&i.InsertedAt,
@@ -333,7 +358,7 @@ func (q *Queries) GetPostWithReplies(ctx context.Context, arg GetPostWithReplies
 }
 
 const getPostsByActor = `-- name: GetPostsByActor :many
-SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, has_embedded_media, created_at, inserted_at
+SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, facets, embed, tags, has_embedded_media, created_at, inserted_at
 FROM posts
 WHERE actor_did = $1
 ORDER BY created_at DESC
@@ -364,6 +389,9 @@ func (q *Queries) GetPostsByActor(ctx context.Context, arg GetPostsByActorParams
 			&i.ParentPostRkey,
 			&i.RootPostActorDid,
 			&i.RootPostRkey,
+			&i.Facets,
+			&i.Embed,
+			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
 			&i.InsertedAt,
@@ -387,7 +415,7 @@ WITH followers AS (
     FROM follows
     WHERE target_did = $1
 )
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.tags, p.has_embedded_media, p.created_at, p.inserted_at
 FROM posts p
     JOIN followers f ON f.actor_did = p.actor_did
 WHERE (p.created_at, p.actor_did, p.rkey) < (
@@ -439,6 +467,9 @@ func (q *Queries) GetPostsByActorsFollowingTarget(ctx context.Context, arg GetPo
 			&i.ParentPostRkey,
 			&i.RootPostActorDid,
 			&i.RootPostRkey,
+			&i.Facets,
+			&i.Embed,
+			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
 			&i.InsertedAt,
@@ -475,7 +506,7 @@ non_moots_and_non_spam AS (
         LEFT JOIN following_counts fc ON nm.actor_did = fc.actor_did
     WHERE fc.num_following < 4000
 )
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.tags, p.has_embedded_media, p.created_at, p.inserted_at
 FROM posts p
     JOIN non_moots_and_non_spam f ON f.actor_did = p.actor_did
 WHERE (p.created_at, p.actor_did, p.rkey) < (
@@ -525,6 +556,9 @@ func (q *Queries) GetPostsFromNonMoots(ctx context.Context, arg GetPostsFromNonM
 			&i.ParentPostRkey,
 			&i.RootPostActorDid,
 			&i.RootPostRkey,
+			&i.Facets,
+			&i.Embed,
+			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
 			&i.InsertedAt,
@@ -549,7 +583,7 @@ WITH non_spam AS (
         LEFT JOIN following_counts fc ON nm.actor_did = fc.actor_did
     WHERE fc.num_following < 4000
 )
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.tags, p.has_embedded_media, p.created_at, p.inserted_at
 FROM posts p
     JOIN non_spam f ON f.actor_did = p.actor_did
 WHERE (p.created_at, p.actor_did, p.rkey) < (
@@ -599,6 +633,9 @@ func (q *Queries) GetPostsFromNonSpamUsers(ctx context.Context, arg GetPostsFrom
 			&i.ParentPostRkey,
 			&i.RootPostActorDid,
 			&i.RootPostRkey,
+			&i.Facets,
+			&i.Embed,
+			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
 			&i.InsertedAt,
@@ -627,7 +664,7 @@ WITH TopSubjects AS (
     ORDER BY lc.num_likes DESC
     LIMIT $1 + 30 OFFSET $2
 )
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.tags, p.has_embedded_media, p.created_at, p.inserted_at
 FROM posts p
     JOIN TopSubjects s ON p.actor_did = s.actor_did
     AND p.rkey = s.rkey
@@ -659,6 +696,9 @@ func (q *Queries) GetTopPosts(ctx context.Context, arg GetTopPostsParams) ([]Pos
 			&i.ParentPostRkey,
 			&i.RootPostActorDid,
 			&i.RootPostRkey,
+			&i.Facets,
+			&i.Embed,
+			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
 			&i.InsertedAt,
@@ -688,7 +728,7 @@ WITH TopSubjects AS (
     ORDER BY lc.num_likes DESC
     LIMIT $2 OFFSET $3
 )
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.has_embedded_media, p.created_at, p.inserted_at
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.tags, p.has_embedded_media, p.created_at, p.inserted_at
 FROM posts p
     JOIN TopSubjects s ON p.actor_did = s.actor_did
     AND p.rkey = s.rkey
@@ -720,6 +760,9 @@ func (q *Queries) GetTopPostsForActor(ctx context.Context, arg GetTopPostsForAct
 			&i.ParentPostRkey,
 			&i.RootPostActorDid,
 			&i.RootPostRkey,
+			&i.Facets,
+			&i.Embed,
+			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
 			&i.InsertedAt,
