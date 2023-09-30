@@ -230,7 +230,9 @@ func handleRepoStreamWithRetry(
 		}
 
 		log.Info("connecting to BSky WebSocket...")
-		c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+		c, _, err := websocket.DefaultDialer.Dial(u.String(), http.Header{
+			"User-Agent": []string{"jaz-graph-builder/0.0.1"},
+		})
 		if err != nil {
 			log.Infof("failed to connect to websocket: %v", err)
 			continue
