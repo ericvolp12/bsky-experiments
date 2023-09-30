@@ -38,7 +38,7 @@ func main() {
 		&cli.StringFlag{
 			Name:    "ws-url",
 			Usage:   "full websocket path to the ATProto SubscribeRepos XRPC endpoint",
-			Value:   "wss://bsky.social/xrpc/com.atproto.sync.subscribeRepos",
+			Value:   "wss://bgs.bsky.social/xrpc/com.atproto.sync.subscribeRepos",
 			EnvVars: []string{"WS_URL"},
 		},
 		&cli.IntFlag{
@@ -292,7 +292,9 @@ func Jazbot(cctx *cli.Context) error {
 	}
 
 	log.Infof("connecting to WebSocket at: %s", u.String())
-	con, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	con, _, err := websocket.DefaultDialer.Dial(u.String(), http.Header{
+		"User-Agent": []string{"jazbot/0.0.1"},
+	})
 	if err != nil {
 		log.Infof("failed to connect to websocket: %v", err)
 		return err
