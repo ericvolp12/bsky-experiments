@@ -150,7 +150,7 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 	log := c.Logger.With("source", "backfill", "repo", repoDID)
 	log.Infof("processing backfill for %s", repoDID)
 
-	var url = "https://bgs.bsky.social/xrpc/com.atproto.sync.getRepo?did=" + repoDID
+	var url = "https://bsky.network/xrpc/com.atproto.sync.getRepo?did=" + repoDID
 
 	// GET and CAR decode the body
 	client := &http.Client{

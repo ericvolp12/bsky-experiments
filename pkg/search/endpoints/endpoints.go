@@ -812,7 +812,7 @@ func (api *API) GetRepoAsJSON(c *gin.Context) {
 		return
 	}
 
-	var url = "https://bgs.bsky.social/xrpc/com.atproto.sync.getRepo?did=" + repoDID
+	var url = "https://bsky.network/xrpc/com.atproto.sync.getRepo?did=" + repoDID
 
 	// GET and CAR decode the body
 	client := &http.Client{

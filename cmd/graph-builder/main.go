@@ -84,7 +84,7 @@ func main() {
 	}
 
 	// Replace with the WebSocket URL you want to connect to.
-	u := url.URL{Scheme: "wss", Host: "bgs.bsky.social", Path: "/xrpc/com.atproto.sync.subscribeRepos"}
+	u := url.URL{Scheme: "wss", Host: "bsky.network", Path: "/xrpc/com.atproto.sync.subscribeRepos"}
 
 	includeLinks := os.Getenv("INCLUDE_LINKS") == "true"
 

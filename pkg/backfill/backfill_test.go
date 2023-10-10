@@ -51,7 +51,7 @@ func TestBackfill(t *testing.T) {
 		"app.bsky.feed.follow/",
 		logger,
 		2,
-		"https://bgs.bsky.social/xrpc/com.atproto.sync.getRepo")
+		"https://bsky.network/xrpc/com.atproto.sync.getRepo")
 
 	logger.Info("starting backfiller")
 

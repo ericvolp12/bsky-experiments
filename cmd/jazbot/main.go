@@ -38,7 +38,7 @@ func main() {
 		&cli.StringFlag{
 			Name:    "ws-url",
 			Usage:   "full websocket path to the ATProto SubscribeRepos XRPC endpoint",
-			Value:   "wss://bgs.bsky.social/xrpc/com.atproto.sync.subscribeRepos",
+			Value:   "wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos",
 			EnvVars: []string{"WS_URL"},
 		},
 		&cli.IntFlag{
