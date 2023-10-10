@@ -171,7 +171,7 @@ func (auth *Auth) GetClaimsFromAuthHeader(ctx context.Context, authHeader string
 			// Get the multibase key from the PLC Entry's verification method with id #atproto
 			var vm *godid.VerificationMethod
 			for _, verificationMethod := range plcEntry.VerificationMethod {
-				if verificationMethod.ID == "#atproto" {
+				if strings.HasSuffix(verificationMethod.ID, "#atproto") {
 					vm = &verificationMethod
 					break
 				}
