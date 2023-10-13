@@ -131,7 +131,7 @@ async def download_image(
                 return image_meta, None
             span.add_event("Read image data")
             imageData = await resp.read()
-            return image_meta, Image.open(io.BytesIO(imageData))
+            return image_meta, Image.open(io.BytesIO(imageData)).convert("RGB")
 
 
 batch_size = 8
