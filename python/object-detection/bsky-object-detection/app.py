@@ -131,10 +131,20 @@ async def download_image(
                 return image_meta, None
             span.add_event("Read image data")
             imageData = await resp.read()
-            return image_meta, Image.open(io.BytesIO(imageData)).convert("RGB")
+            img = Image.open(io.BytesIO(imageData)).convert("RGB")
+            if img.width < 100 or img.height < 100:
+                logging.error(
+                    f"Image from {image_meta.url} is too small ({img.width}x{img.height})"
+                )
+                span.set_attribute("error", True)
+                span.set_attribute("error.message", "Image too small")
+                return image_meta, None
+            return image_meta, img
 
 
 batch_size = 8
+
+
 @app.post("/detect_objects", response_model=List[ImageResult])
 async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     image_results: List[ImageResult] = []
@@ -163,7 +173,10 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
                 try:
                     detection_results = detect_objects(image_pairs=successful)
                 except Exception as e:
-                    logging.error(f"Error detecting objects: {e}", extra={"error": e, "successful": successful})
+                    logging.error(
+                        f"Error detecting objects: {e}",
+                        extra={"error": e, "successful": successful},
+                    )
                     detection_results = []
             else:
                 detection_results = []
