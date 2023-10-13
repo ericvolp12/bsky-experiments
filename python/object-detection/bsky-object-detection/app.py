@@ -134,6 +134,7 @@ async def download_image(
             return image_meta, Image.open(io.BytesIO(imageData))
 
 
+batch_size = 8
 @app.post("/detect_objects", response_model=List[ImageResult])
 async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     image_results: List[ImageResult] = []
@@ -141,8 +142,8 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
 
     async with aiohttp.ClientSession() as session:
         download_tasks = [download_image(session, img) for img in image_metas]
-        for i in range(0, len(image_metas), 10):
-            download_batch = download_tasks[i : i + 10]
+        for i in range(0, len(image_metas), batch_size):
+            download_batch = download_tasks[i : i + batch_size]
             pil_images: List[
                 Tuple[ImageMeta, Image.Image | None]
             ] = await asyncio.gather(*download_batch)
