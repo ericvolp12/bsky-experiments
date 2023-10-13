@@ -163,7 +163,7 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
                 try:
                     detection_results = detect_objects(image_pairs=successful)
                 except Exception as e:
-                    logging.error(f"Error detecting objects: {e}")
+                    logging.error(f"Error detecting objects: {e}", extra={"error": e, "successful": successful})
                     detection_results = []
             else:
                 detection_results = []
