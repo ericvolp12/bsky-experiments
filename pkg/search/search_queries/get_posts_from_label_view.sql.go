@@ -13,7 +13,10 @@ const getOnlyPostsPageByAuthorLabelAliasFromView = `-- name: GetOnlyPostsPageByA
 SELECT h.id, h.text, h.parent_post_id, h.root_post_id, h.author_did, h.created_at, h.has_embedded_media, h.parent_relationship, h.sentiment, h.sentiment_confidence, h.post_labels, h.cluster_label, h.author_labels, h.hotness
 FROM post_hotness h
 WHERE $1 = ANY(h.author_labels)
-    AND h.parent_post_id IS NULL
+    AND (
+        (h.parent_relationship IS NULL)
+        OR (h.parent_relationship <> 'r'::text)
+    )
     AND (
         CASE
             WHEN $2 = '' THEN TRUE

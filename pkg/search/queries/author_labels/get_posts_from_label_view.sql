@@ -15,7 +15,10 @@ LIMIT sqlc.arg('limit');
 SELECT h.*
 FROM post_hotness h
 WHERE sqlc.arg('lookup_alias') = ANY(h.author_labels)
-    AND h.parent_post_id IS NULL
+    AND (
+        (h.parent_relationship IS NULL)
+        OR (h.parent_relationship <> 'r'::text)
+    )
     AND (
         CASE
             WHEN sqlc.arg('cursor') = '' THEN TRUE

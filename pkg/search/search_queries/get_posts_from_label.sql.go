@@ -15,7 +15,10 @@ FROM posts p
 JOIN author_labels ON p.author_did = author_labels.author_did
 JOIN labels ON author_labels.label_id = labels.id
 WHERE labels.lookup_alias = $1 
-AND p.parent_post_id IS NULL
+AND (
+        (p.parent_relationship IS NULL)
+        OR (p.parent_relationship <> 'r'::text)
+    )
 AND (CASE WHEN $2 = '' THEN TRUE ELSE p.id < $2 END) AND
       p.created_at >= NOW() - make_interval(hours := CAST($3 AS INT))
 ORDER BY p.id DESC
