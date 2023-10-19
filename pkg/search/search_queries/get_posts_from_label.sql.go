@@ -7,13 +7,70 @@ package search_queries
 
 import (
 	"context"
-	"database/sql"
-	"time"
 )
 
+const getOnlyPostsPageByAuthorLabelAlias = `-- name: GetOnlyPostsPageByAuthorLabelAlias :many
+SELECT p.id, p.text, p.parent_post_id, p.root_post_id, p.author_did, p.created_at, p.has_embedded_media, p.parent_relationship, p.sentiment, p.sentiment_confidence, p.indexed_at
+FROM posts p
+JOIN author_labels ON p.author_did = author_labels.author_did
+JOIN labels ON author_labels.label_id = labels.id
+WHERE labels.lookup_alias = $1 
+AND p.parent_post_id IS NULL
+AND (CASE WHEN $2 = '' THEN TRUE ELSE p.id < $2 END) AND
+      p.created_at >= NOW() - make_interval(hours := CAST($3 AS INT))
+ORDER BY p.id DESC
+LIMIT $4
+`
+
+type GetOnlyPostsPageByAuthorLabelAliasParams struct {
+	LookupAlias string      `json:"lookup_alias"`
+	Cursor      interface{} `json:"cursor"`
+	HoursAgo    int32       `json:"hours_ago"`
+	Limit       int32       `json:"limit"`
+}
+
+func (q *Queries) GetOnlyPostsPageByAuthorLabelAlias(ctx context.Context, arg GetOnlyPostsPageByAuthorLabelAliasParams) ([]Post, error) {
+	rows, err := q.query(ctx, q.getOnlyPostsPageByAuthorLabelAliasStmt, getOnlyPostsPageByAuthorLabelAlias,
+		arg.LookupAlias,
+		arg.Cursor,
+		arg.HoursAgo,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Post
+	for rows.Next() {
+		var i Post
+		if err := rows.Scan(
+			&i.ID,
+			&i.Text,
+			&i.ParentPostID,
+			&i.RootPostID,
+			&i.AuthorDid,
+			&i.CreatedAt,
+			&i.HasEmbeddedMedia,
+			&i.ParentRelationship,
+			&i.Sentiment,
+			&i.SentimentConfidence,
+			&i.IndexedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPostsPageByAuthorLabelAlias = `-- name: GetPostsPageByAuthorLabelAlias :many
-SELECT p.id, p.text, p.parent_post_id, p.root_post_id, p.author_did, p.created_at, 
-       p.has_embedded_media, p.parent_relationship, p.sentiment, p.sentiment_confidence
+SELECT p.id, p.text, p.parent_post_id, p.root_post_id, p.author_did, p.created_at, p.has_embedded_media, p.parent_relationship, p.sentiment, p.sentiment_confidence, p.indexed_at
 FROM posts p
 JOIN author_labels ON p.author_did = author_labels.author_did
 JOIN labels ON author_labels.label_id = labels.id
@@ -31,20 +88,7 @@ type GetPostsPageByAuthorLabelAliasParams struct {
 	Limit       int32       `json:"limit"`
 }
 
-type GetPostsPageByAuthorLabelAliasRow struct {
-	ID                  string          `json:"id"`
-	Text                string          `json:"text"`
-	ParentPostID        sql.NullString  `json:"parent_post_id"`
-	RootPostID          sql.NullString  `json:"root_post_id"`
-	AuthorDid           string          `json:"author_did"`
-	CreatedAt           time.Time       `json:"created_at"`
-	HasEmbeddedMedia    bool            `json:"has_embedded_media"`
-	ParentRelationship  sql.NullString  `json:"parent_relationship"`
-	Sentiment           sql.NullString  `json:"sentiment"`
-	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
-}
-
-func (q *Queries) GetPostsPageByAuthorLabelAlias(ctx context.Context, arg GetPostsPageByAuthorLabelAliasParams) ([]GetPostsPageByAuthorLabelAliasRow, error) {
+func (q *Queries) GetPostsPageByAuthorLabelAlias(ctx context.Context, arg GetPostsPageByAuthorLabelAliasParams) ([]Post, error) {
 	rows, err := q.query(ctx, q.getPostsPageByAuthorLabelAliasStmt, getPostsPageByAuthorLabelAlias,
 		arg.LookupAlias,
 		arg.Cursor,
@@ -55,9 +99,9 @@ func (q *Queries) GetPostsPageByAuthorLabelAlias(ctx context.Context, arg GetPos
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetPostsPageByAuthorLabelAliasRow
+	var items []Post
 	for rows.Next() {
-		var i GetPostsPageByAuthorLabelAliasRow
+		var i Post
 		if err := rows.Scan(
 			&i.ID,
 			&i.Text,
@@ -69,6 +113,7 @@ func (q *Queries) GetPostsPageByAuthorLabelAlias(ctx context.Context, arg GetPos
 			&i.ParentRelationship,
 			&i.Sentiment,
 			&i.SentimentConfidence,
+			&i.IndexedAt,
 		); err != nil {
 			return nil, err
 		}

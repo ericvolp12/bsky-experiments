@@ -7,21 +7,69 @@ package search_queries
 
 import (
 	"context"
-	"database/sql"
-	"time"
 )
 
+const getOnlyPostsPageByAuthorLabelAliasFromView = `-- name: GetOnlyPostsPageByAuthorLabelAliasFromView :many
+SELECT h.id, h.text, h.parent_post_id, h.root_post_id, h.author_did, h.created_at, h.has_embedded_media, h.parent_relationship, h.sentiment, h.sentiment_confidence, h.post_labels, h.cluster_label, h.author_labels, h.hotness
+FROM post_hotness h
+WHERE $1 = ANY(h.author_labels)
+    AND h.parent_post_id IS NULL
+    AND (
+        CASE
+            WHEN $2 = '' THEN TRUE
+            ELSE h.id < $2
+        END
+    )
+ORDER BY h.id DESC
+LIMIT $3
+`
+
+type GetOnlyPostsPageByAuthorLabelAliasFromViewParams struct {
+	LookupAlias interface{} `json:"lookup_alias"`
+	Cursor      interface{} `json:"cursor"`
+	Limit       int32       `json:"limit"`
+}
+
+func (q *Queries) GetOnlyPostsPageByAuthorLabelAliasFromView(ctx context.Context, arg GetOnlyPostsPageByAuthorLabelAliasFromViewParams) ([]PostHotness, error) {
+	rows, err := q.query(ctx, q.getOnlyPostsPageByAuthorLabelAliasFromViewStmt, getOnlyPostsPageByAuthorLabelAliasFromView, arg.LookupAlias, arg.Cursor, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PostHotness
+	for rows.Next() {
+		var i PostHotness
+		if err := rows.Scan(
+			&i.ID,
+			&i.Text,
+			&i.ParentPostID,
+			&i.RootPostID,
+			&i.AuthorDid,
+			&i.CreatedAt,
+			&i.HasEmbeddedMedia,
+			&i.ParentRelationship,
+			&i.Sentiment,
+			&i.SentimentConfidence,
+			&i.PostLabels,
+			&i.ClusterLabel,
+			&i.AuthorLabels,
+			&i.Hotness,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPostsPageByAuthorLabelAliasFromView = `-- name: GetPostsPageByAuthorLabelAliasFromView :many
-SELECT h.id,
-    h.text,
-    h.parent_post_id,
-    h.root_post_id,
-    h.author_did,
-    h.created_at,
-    h.has_embedded_media,
-    h.parent_relationship,
-    h.sentiment,
-    h.sentiment_confidence
+SELECT h.id, h.text, h.parent_post_id, h.root_post_id, h.author_did, h.created_at, h.has_embedded_media, h.parent_relationship, h.sentiment, h.sentiment_confidence, h.post_labels, h.cluster_label, h.author_labels, h.hotness
 FROM post_hotness h
 WHERE $1 = ANY(h.author_labels)
     AND (
@@ -40,28 +88,15 @@ type GetPostsPageByAuthorLabelAliasFromViewParams struct {
 	Limit       int32       `json:"limit"`
 }
 
-type GetPostsPageByAuthorLabelAliasFromViewRow struct {
-	ID                  string          `json:"id"`
-	Text                string          `json:"text"`
-	ParentPostID        sql.NullString  `json:"parent_post_id"`
-	RootPostID          sql.NullString  `json:"root_post_id"`
-	AuthorDid           string          `json:"author_did"`
-	CreatedAt           time.Time       `json:"created_at"`
-	HasEmbeddedMedia    bool            `json:"has_embedded_media"`
-	ParentRelationship  sql.NullString  `json:"parent_relationship"`
-	Sentiment           sql.NullString  `json:"sentiment"`
-	SentimentConfidence sql.NullFloat64 `json:"sentiment_confidence"`
-}
-
-func (q *Queries) GetPostsPageByAuthorLabelAliasFromView(ctx context.Context, arg GetPostsPageByAuthorLabelAliasFromViewParams) ([]GetPostsPageByAuthorLabelAliasFromViewRow, error) {
+func (q *Queries) GetPostsPageByAuthorLabelAliasFromView(ctx context.Context, arg GetPostsPageByAuthorLabelAliasFromViewParams) ([]PostHotness, error) {
 	rows, err := q.query(ctx, q.getPostsPageByAuthorLabelAliasFromViewStmt, getPostsPageByAuthorLabelAliasFromView, arg.LookupAlias, arg.Cursor, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetPostsPageByAuthorLabelAliasFromViewRow
+	var items []PostHotness
 	for rows.Next() {
-		var i GetPostsPageByAuthorLabelAliasFromViewRow
+		var i PostHotness
 		if err := rows.Scan(
 			&i.ID,
 			&i.Text,
@@ -73,6 +108,10 @@ func (q *Queries) GetPostsPageByAuthorLabelAliasFromView(ctx context.Context, ar
 			&i.ParentRelationship,
 			&i.Sentiment,
 			&i.SentimentConfidence,
+			&i.PostLabels,
+			&i.ClusterLabel,
+			&i.AuthorLabels,
+			&i.Hotness,
 		); err != nil {
 			return nil, err
 		}

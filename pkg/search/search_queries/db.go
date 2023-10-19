@@ -117,6 +117,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getOldestPresentParentStmt, err = db.PrepareContext(ctx, getOldestPresentParent); err != nil {
 		return nil, fmt.Errorf("error preparing query GetOldestPresentParent: %w", err)
 	}
+	if q.getOnlyPostsPageByAuthorLabelAliasStmt, err = db.PrepareContext(ctx, getOnlyPostsPageByAuthorLabelAlias); err != nil {
+		return nil, fmt.Errorf("error preparing query GetOnlyPostsPageByAuthorLabelAlias: %w", err)
+	}
+	if q.getOnlyPostsPageByAuthorLabelAliasFromViewStmt, err = db.PrepareContext(ctx, getOnlyPostsPageByAuthorLabelAliasFromView); err != nil {
+		return nil, fmt.Errorf("error preparing query GetOnlyPostsPageByAuthorLabelAliasFromView: %w", err)
+	}
 	if q.getOptedOutAuthorsStmt, err = db.PrepareContext(ctx, getOptedOutAuthors); err != nil {
 		return nil, fmt.Errorf("error preparing query GetOptedOutAuthors: %w", err)
 	}
@@ -352,6 +358,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getOldestPresentParentStmt: %w", cerr)
 		}
 	}
+	if q.getOnlyPostsPageByAuthorLabelAliasStmt != nil {
+		if cerr := q.getOnlyPostsPageByAuthorLabelAliasStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getOnlyPostsPageByAuthorLabelAliasStmt: %w", cerr)
+		}
+	}
+	if q.getOnlyPostsPageByAuthorLabelAliasFromViewStmt != nil {
+		if cerr := q.getOnlyPostsPageByAuthorLabelAliasFromViewStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getOnlyPostsPageByAuthorLabelAliasFromViewStmt: %w", cerr)
+		}
+	}
 	if q.getOptedOutAuthorsStmt != nil {
 		if cerr := q.getOptedOutAuthorsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getOptedOutAuthorsStmt: %w", cerr)
@@ -547,6 +563,8 @@ type Queries struct {
 	getMembersOfAuthorLabelStmt                     *sql.Stmt
 	getMembersOfClusterStmt                         *sql.Stmt
 	getOldestPresentParentStmt                      *sql.Stmt
+	getOnlyPostsPageByAuthorLabelAliasStmt          *sql.Stmt
+	getOnlyPostsPageByAuthorLabelAliasFromViewStmt  *sql.Stmt
 	getOptedOutAuthorsStmt                          *sql.Stmt
 	getPostStmt                                     *sql.Stmt
 	getPostPageStmt                                 *sql.Stmt
@@ -576,45 +594,47 @@ type Queries struct {
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                                 tx,
-		tx:                                 tx,
-		addAuthorStmt:                      q.addAuthorStmt,
-		addAuthorBlockStmt:                 q.addAuthorBlockStmt,
-		addAuthorToClusterStmt:             q.addAuthorToClusterStmt,
-		addClusterStmt:                     q.addClusterStmt,
-		addImageStmt:                       q.addImageStmt,
-		addLabelStmt:                       q.addLabelStmt,
-		addLabelsToPostsStmt:               q.addLabelsToPostsStmt,
-		addLikeToPostStmt:                  q.addLikeToPostStmt,
-		addPostStmt:                        q.addPostStmt,
-		addPostLabelStmt:                   q.addPostLabelStmt,
-		assignLabelToAuthorStmt:            q.assignLabelToAuthorStmt,
-		getAllLabelsStmt:                   q.getAllLabelsStmt,
-		getAllTimeBangersStmt:              q.getAllTimeBangersStmt,
-		getAllUniquePostLabelsStmt:         q.getAllUniquePostLabelsStmt,
-		getAuthorStmt:                      q.getAuthorStmt,
-		getAuthorBlockStmt:                 q.getAuthorBlockStmt,
-		getAuthorStatsStmt:                 q.getAuthorStatsStmt,
-		getAuthorsByHandleStmt:             q.getAuthorsByHandleStmt,
-		getBangersForAuthorStmt:            q.getBangersForAuthorStmt,
-		getBlockedByCountForTargetStmt:     q.getBlockedByCountForTargetStmt,
-		getBlocksForTargetStmt:             q.getBlocksForTargetStmt,
-		getClustersStmt:                    q.getClustersStmt,
-		getImageStmt:                       q.getImageStmt,
-		getImagesForAuthorDIDStmt:          q.getImagesForAuthorDIDStmt,
-		getImagesForPostStmt:               q.getImagesForPostStmt,
-		getLabelByAliasStmt:                q.getLabelByAliasStmt,
-		getLabelsStmt:                      q.getLabelsStmt,
-		getLabelsForAuthorStmt:             q.getLabelsForAuthorStmt,
-		getMembersOfAuthorLabelStmt:        q.getMembersOfAuthorLabelStmt,
-		getMembersOfClusterStmt:            q.getMembersOfClusterStmt,
-		getOldestPresentParentStmt:         q.getOldestPresentParentStmt,
-		getOptedOutAuthorsStmt:             q.getOptedOutAuthorsStmt,
-		getPostStmt:                        q.getPostStmt,
-		getPostPageStmt:                    q.getPostPageStmt,
-		getPostPageCursorStmt:              q.getPostPageCursorStmt,
-		getPostWithAuthorHandleStmt:        q.getPostWithAuthorHandleStmt,
-		getPostsPageByAuthorLabelAliasStmt: q.getPostsPageByAuthorLabelAliasStmt,
+		db:                                     tx,
+		tx:                                     tx,
+		addAuthorStmt:                          q.addAuthorStmt,
+		addAuthorBlockStmt:                     q.addAuthorBlockStmt,
+		addAuthorToClusterStmt:                 q.addAuthorToClusterStmt,
+		addClusterStmt:                         q.addClusterStmt,
+		addImageStmt:                           q.addImageStmt,
+		addLabelStmt:                           q.addLabelStmt,
+		addLabelsToPostsStmt:                   q.addLabelsToPostsStmt,
+		addLikeToPostStmt:                      q.addLikeToPostStmt,
+		addPostStmt:                            q.addPostStmt,
+		addPostLabelStmt:                       q.addPostLabelStmt,
+		assignLabelToAuthorStmt:                q.assignLabelToAuthorStmt,
+		getAllLabelsStmt:                       q.getAllLabelsStmt,
+		getAllTimeBangersStmt:                  q.getAllTimeBangersStmt,
+		getAllUniquePostLabelsStmt:             q.getAllUniquePostLabelsStmt,
+		getAuthorStmt:                          q.getAuthorStmt,
+		getAuthorBlockStmt:                     q.getAuthorBlockStmt,
+		getAuthorStatsStmt:                     q.getAuthorStatsStmt,
+		getAuthorsByHandleStmt:                 q.getAuthorsByHandleStmt,
+		getBangersForAuthorStmt:                q.getBangersForAuthorStmt,
+		getBlockedByCountForTargetStmt:         q.getBlockedByCountForTargetStmt,
+		getBlocksForTargetStmt:                 q.getBlocksForTargetStmt,
+		getClustersStmt:                        q.getClustersStmt,
+		getImageStmt:                           q.getImageStmt,
+		getImagesForAuthorDIDStmt:              q.getImagesForAuthorDIDStmt,
+		getImagesForPostStmt:                   q.getImagesForPostStmt,
+		getLabelByAliasStmt:                    q.getLabelByAliasStmt,
+		getLabelsStmt:                          q.getLabelsStmt,
+		getLabelsForAuthorStmt:                 q.getLabelsForAuthorStmt,
+		getMembersOfAuthorLabelStmt:            q.getMembersOfAuthorLabelStmt,
+		getMembersOfClusterStmt:                q.getMembersOfClusterStmt,
+		getOldestPresentParentStmt:             q.getOldestPresentParentStmt,
+		getOnlyPostsPageByAuthorLabelAliasStmt: q.getOnlyPostsPageByAuthorLabelAliasStmt,
+		getOnlyPostsPageByAuthorLabelAliasFromViewStmt:  q.getOnlyPostsPageByAuthorLabelAliasFromViewStmt,
+		getOptedOutAuthorsStmt:                          q.getOptedOutAuthorsStmt,
+		getPostStmt:                                     q.getPostStmt,
+		getPostPageStmt:                                 q.getPostPageStmt,
+		getPostPageCursorStmt:                           q.getPostPageCursorStmt,
+		getPostWithAuthorHandleStmt:                     q.getPostWithAuthorHandleStmt,
+		getPostsPageByAuthorLabelAliasStmt:              q.getPostsPageByAuthorLabelAliasStmt,
 		getPostsPageByAuthorLabelAliasFromViewStmt:      q.getPostsPageByAuthorLabelAliasFromViewStmt,
 		getPostsPageByClusterAliasStmt:                  q.getPostsPageByClusterAliasStmt,
 		getPostsPageByClusterAliasFromViewStmt:          q.getPostsPageByClusterAliasFromViewStmt,

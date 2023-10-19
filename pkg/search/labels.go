@@ -538,17 +538,39 @@ func (pr *PostRegistry) GetPostsPageForAuthorLabel(
 	hoursAgo int32,
 	limit int32,
 	cursor string,
+	includeReplies bool,
 ) ([]*Post, error) {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetPostsPageForAuthorLabel")
 	defer span.End()
 
-	posts, err := pr.queries.GetPostsPageByAuthorLabelAlias(ctx, search_queries.GetPostsPageByAuthorLabelAliasParams{
-		LookupAlias: authorLabel,
-		Limit:       limit,
-		HoursAgo:    hoursAgo,
-		Cursor:      cursor,
-	})
+	span.SetAttributes(
+		attribute.Bool("include_replies", includeReplies),
+		attribute.String("author_label", authorLabel),
+		attribute.Int("hours_ago", int(hoursAgo)),
+		attribute.Int("limit", int(limit)),
+		attribute.String("cursor", cursor),
+	)
+
+	var posts []search_queries.Post
+	var err error
+
+	if includeReplies {
+		posts, err = pr.queries.GetPostsPageByAuthorLabelAlias(ctx, search_queries.GetPostsPageByAuthorLabelAliasParams{
+			LookupAlias: authorLabel,
+			Limit:       limit,
+			HoursAgo:    hoursAgo,
+			Cursor:      cursor,
+		})
+	} else {
+		posts, err = pr.queries.GetOnlyPostsPageByAuthorLabelAlias(ctx, search_queries.GetOnlyPostsPageByAuthorLabelAliasParams{
+			LookupAlias: authorLabel,
+			Limit:       limit,
+			HoursAgo:    hoursAgo,
+			Cursor:      cursor,
+		})
+	}
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, NotFoundError{fmt.Errorf("posts not found")}
@@ -607,16 +629,36 @@ func (pr *PostRegistry) GetPostsPageForAuthorLabelFromView(
 	hoursAgo int32,
 	limit int32,
 	cursor string,
+	includeReplies bool,
 ) ([]*Post, error) {
 	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetPostsPageForAuthorLabelFromView")
 	defer span.End()
 
-	posts, err := pr.queries.GetPostsPageByAuthorLabelAliasFromView(ctx, search_queries.GetPostsPageByAuthorLabelAliasFromViewParams{
-		LookupAlias: authorLabel,
-		Limit:       limit,
-		Cursor:      cursor,
-	})
+	span.SetAttributes(
+		attribute.Bool("include_replies", includeReplies),
+		attribute.String("author_label", authorLabel),
+		attribute.Int("hours_ago", int(hoursAgo)),
+		attribute.Int("limit", int(limit)),
+		attribute.String("cursor", cursor),
+	)
+
+	var posts []search_queries.PostHotness
+	var err error
+
+	if includeReplies {
+		posts, err = pr.queries.GetPostsPageByAuthorLabelAliasFromView(ctx, search_queries.GetPostsPageByAuthorLabelAliasFromViewParams{
+			LookupAlias: authorLabel,
+			Limit:       limit,
+			Cursor:      cursor,
+		})
+	} else {
+		posts, err = pr.queries.GetOnlyPostsPageByAuthorLabelAliasFromView(ctx, search_queries.GetOnlyPostsPageByAuthorLabelAliasFromViewParams{
+			LookupAlias: authorLabel,
+			Limit:       limit,
+			Cursor:      cursor,
+		})
+	}
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, NotFoundError{fmt.Errorf("posts not found")}

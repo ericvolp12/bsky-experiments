@@ -91,6 +91,9 @@ func (alf *AuthorLabelFeed) GetPage(ctx context.Context, feed string, userDID st
 	// Get the author label from the feed
 	authorLabel := strings.TrimPrefix(feed, "a:")
 
+	includeReplies := true
+	sort := "hotness"
+
 	// Author Label feeds are private feeds for now, so we need to check that the user is assigned to the label
 	if isPrivate {
 		labels, err := alf.PostRegistry.GetLabelsForAuthor(ctx, userDID)
@@ -112,14 +115,31 @@ func (alf *AuthorLabelFeed) GetPage(ctx context.Context, feed string, userDID st
 			span.SetAttributes(attribute.Bool("feed.author.not_assigned_label", true))
 			return unauthorizedResponse, nil, nil
 		}
+
+		includeReplies = false
+		sort = "revchron"
 	}
 
-	postsFromRegistry, err := alf.PostRegistry.GetPostsPageForAuthorLabelFromView(ctx, authorLabel, alf.DefaultLookbackHours, int32(limit), postID)
-	if err != nil {
-		if errors.As(err, &search.NotFoundError{}) {
-			return nil, nil, NotFoundError{fmt.Errorf("posts not found for feed %s", feed)}
+	span.SetAttributes(attribute.String("sort", sort), attribute.Bool("include_replies", includeReplies))
+
+	var postsFromRegistry []*search.Post
+
+	if sort == "hotness" {
+		postsFromRegistry, err = alf.PostRegistry.GetPostsPageForAuthorLabelFromView(ctx, authorLabel, alf.DefaultLookbackHours, int32(limit), postID, includeReplies)
+		if err != nil {
+			if errors.As(err, &search.NotFoundError{}) {
+				return nil, nil, NotFoundError{fmt.Errorf("posts not found for feed %s", feed)}
+			}
+			return nil, nil, fmt.Errorf("error getting posts from registry for feed (%s): %w", feed, err)
 		}
-		return nil, nil, fmt.Errorf("error getting posts from registry for feed (%s): %w", feed, err)
+	} else if sort == "revchron" {
+		postsFromRegistry, err = alf.PostRegistry.GetPostsPageForAuthorLabel(ctx, authorLabel, alf.DefaultLookbackHours, int32(limit), postID, includeReplies)
+		if err != nil {
+			if errors.As(err, &search.NotFoundError{}) {
+				return nil, nil, NotFoundError{fmt.Errorf("posts not found for feed %s", feed)}
+			}
+			return nil, nil, fmt.Errorf("error getting posts from registry for feed (%s): %w", feed, err)
+		}
 	}
 
 	// Convert to appbsky.FeedDefs_SkeletonFeedPost
