@@ -18,6 +18,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	graphdclient "github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
 	"github.com/goccy/go-json"
+	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	"github.com/labstack/gommon/log"
 	"github.com/redis/go-redis/v9"
@@ -218,7 +219,7 @@ func NewConsumer(
 	return &c, nil
 }
 
-// TrimRecentPosts trims the recent posts from the recent_posts table
+// TrimRecentPosts trims the recent posts from the recent_posts table and the active posters from redis
 func (c *Consumer) TrimRecentPosts(ctx context.Context, maxAge time.Duration) error {
 	ctx, span := tracer.Start(ctx, "TrimRecentPosts")
 	defer span.End()
@@ -227,6 +228,7 @@ func (c *Consumer) TrimRecentPosts(ctx context.Context, maxAge time.Duration) er
 
 	span.SetAttributes(attribute.String("maxAge", maxAge.String()))
 
+	// Trim the Recent Posts table in postgres
 	numDeleted, err := c.Store.Queries.TrimOldRecentPosts(ctx, int32(maxAge.Hours()))
 	if err != nil {
 		return fmt.Errorf("failed to trim recent posts: %+v", err)
@@ -236,7 +238,16 @@ func (c *Consumer) TrimRecentPosts(ctx context.Context, maxAge time.Duration) er
 
 	postsTrimmed.WithLabelValues(c.SocketURL).Add(float64(numDeleted))
 
-	c.Logger.Infow("trimmed recent posts", "num_deleted", numDeleted, "duration", time.Since(start).Seconds())
+	// Trim the Active Posters sorted set in redis
+	upperBound := fmt.Sprintf("(%d", time.Now().Add(-maxAge).UnixNano())
+	numActiveTrimmed, err := c.RedisClient.ZRemRangeByScore(ctx, "active_posters", "-inf", upperBound).Result()
+	if err != nil {
+		return fmt.Errorf("failed to trim active posters: %+v", err)
+	}
+
+	span.SetAttributes(attribute.Int64("num_active_posters_trimmed", numActiveTrimmed))
+
+	c.Logger.Infow("trimmed recent posts", "num_deleted", numDeleted, "duration", time.Since(start).Seconds(), "num_active_posters_trimmed", numActiveTrimmed)
 
 	return nil
 }
@@ -725,6 +736,73 @@ func (c *Consumer) FanoutWrite(
 	return nil
 }
 
+var activePostersKey = "consumer:active_posters"
+
+// MarkPosterActive marks a poster as active in a redis sorted set
+func (c *Consumer) MarkPosterActive(
+	ctx context.Context,
+	repo string,
+	scoredAt time.Time,
+) error {
+	ctx, span := tracer.Start(ctx, "MarkPosterActive")
+	defer span.End()
+
+	// Add the poster to the active posters sorted set
+	// only update scores of existing members if the new score is greater
+	_, err := c.RedisClient.ZAddGT(ctx, activePostersKey, redis.Z{
+		Score:  float64(scoredAt.UnixNano()),
+		Member: repo,
+	}).Result()
+	if err != nil {
+		return fmt.Errorf("failed to add poster to active posters: %+v", err)
+	}
+
+	return nil
+}
+
+// IntersectActivePosters returns the intersection of the active posters sorted set and the given set of posters
+func (c *Consumer) IntersectActivePosters(
+	ctx context.Context,
+	dids []string,
+) ([]string, error) {
+	ctx, span := tracer.Start(ctx, "IntersectActivePosters")
+	defer span.End()
+
+	// Intersect the active posters sorted set and the given set of posters
+	// to find the posters that are both active and in the given set
+
+	zs := make([]redis.Z, len(dids))
+	for i, did := range dids {
+		zs[i] = redis.Z{
+			Score:  1,
+			Member: did,
+		}
+	}
+
+	// Add the posters to a temporary set
+	tempSetKey := fmt.Sprintf("consumer:active_posters:temp:%s", uuid.New().String())
+	_, err := c.RedisClient.ZAdd(ctx, tempSetKey, zs...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to add posters to temp set: %+v", err)
+	}
+
+	// Intersect the temp set with the active posters set
+	intersection, err := c.RedisClient.ZInter(ctx, &redis.ZStore{
+		Keys: []string{tempSetKey, activePostersKey},
+	}).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to intersect temp set with active posters set: %+v", err)
+	}
+
+	// Delete the temp set
+	_, err = c.RedisClient.Del(ctx, tempSetKey).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete temp set: %+v", err)
+	}
+
+	return intersection, nil
+}
+
 // HandleCreateRecord handles a create record event from the firehose
 func (c *Consumer) HandleCreateRecord(
 	ctx context.Context,
@@ -859,6 +937,16 @@ func (c *Consumer) HandleCreateRecord(
 		})
 		if err != nil {
 			log.Errorf("failed to create recent post: %+v", err)
+		}
+
+		earliestTS := time.Now()
+		if recCreatedAt.Before(earliestTS) {
+			earliestTS = recCreatedAt
+		}
+
+		err = c.MarkPosterActive(ctx, repo, earliestTS)
+		if err != nil {
+			log.Errorf("failed to mark poster active: %+v", err)
 		}
 
 		// Create a Sentiment Job for the post
