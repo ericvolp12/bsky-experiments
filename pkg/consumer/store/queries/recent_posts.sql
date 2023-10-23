@@ -128,4 +128,4 @@ LIMIT $2;
 -- name: TrimOldRecentPosts :execrows
 DELETE FROM recent_posts
 WHERE created_at < NOW() - make_interval(hours := $1)
-    AND created_at > NOW() + make_interval(mins := 15);
+    OR created_at > NOW() + make_interval(mins := 15);

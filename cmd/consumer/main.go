@@ -285,6 +285,7 @@ func Consumer(cctx *cli.Context) error {
 				close(recentPostTrimmerShutdown)
 				return
 			case <-ticker.C:
+				// Trim posts older than 3 days
 				err := c.TrimRecentPosts(ctx, time.Hour*24*3)
 				if err != nil {
 					log.Errorf("failed to trim recent posts: %+v", err)

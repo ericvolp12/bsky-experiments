@@ -219,13 +219,15 @@ func NewConsumer(
 }
 
 // TrimRecentPosts trims the recent posts from the recent_posts table
-func (c *Consumer) TrimRecentPosts(ctx context.Context, window time.Duration) error {
+func (c *Consumer) TrimRecentPosts(ctx context.Context, maxAge time.Duration) error {
 	ctx, span := tracer.Start(ctx, "TrimRecentPosts")
 	defer span.End()
 
-	span.SetAttributes(attribute.String("window", window.String()))
+	start := time.Now()
 
-	numDeleted, err := c.Store.Queries.TrimOldRecentPosts(ctx, int32(window.Hours()))
+	span.SetAttributes(attribute.String("maxAge", maxAge.String()))
+
+	numDeleted, err := c.Store.Queries.TrimOldRecentPosts(ctx, int32(maxAge.Hours()))
 	if err != nil {
 		return fmt.Errorf("failed to trim recent posts: %+v", err)
 	}
@@ -234,7 +236,7 @@ func (c *Consumer) TrimRecentPosts(ctx context.Context, window time.Duration) er
 
 	postsTrimmed.WithLabelValues(c.SocketURL).Add(float64(numDeleted))
 
-	c.Logger.Infow("trimmed recent posts", "num_deleted", numDeleted)
+	c.Logger.Infow("trimmed recent posts", "num_deleted", numDeleted, "duration", time.Since(start).Seconds())
 
 	return nil
 }
