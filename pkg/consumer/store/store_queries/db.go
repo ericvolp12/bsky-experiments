@@ -75,6 +75,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createPostStmt, err = db.PrepareContext(ctx, createPost); err != nil {
 		return nil, fmt.Errorf("error preparing query CreatePost: %w", err)
 	}
+	if q.createRecentPostStmt, err = db.PrepareContext(ctx, createRecentPost); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateRecentPost: %w", err)
+	}
 	if q.createRepoBackfillRecordStmt, err = db.PrepareContext(ctx, createRepoBackfillRecord); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateRepoBackfillRecord: %w", err)
 	}
@@ -140,6 +143,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deletePostStmt, err = db.PrepareContext(ctx, deletePost); err != nil {
 		return nil, fmt.Errorf("error preparing query DeletePost: %w", err)
+	}
+	if q.deleteRecentPostStmt, err = db.PrepareContext(ctx, deleteRecentPost); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteRecentPost: %w", err)
 	}
 	if q.deleteRepostStmt, err = db.PrepareContext(ctx, deleteRepost); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteRepost: %w", err)
@@ -294,6 +300,21 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPostsFromNonSpamUsersStmt, err = db.PrepareContext(ctx, getPostsFromNonSpamUsers); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsFromNonSpamUsers: %w", err)
 	}
+	if q.getRecentPostStmt, err = db.PrepareContext(ctx, getRecentPost); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRecentPost: %w", err)
+	}
+	if q.getRecentPostsByActorStmt, err = db.PrepareContext(ctx, getRecentPostsByActor); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRecentPostsByActor: %w", err)
+	}
+	if q.getRecentPostsByActorsFollowingTargetStmt, err = db.PrepareContext(ctx, getRecentPostsByActorsFollowingTarget); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRecentPostsByActorsFollowingTarget: %w", err)
+	}
+	if q.getRecentPostsFromNonMootsStmt, err = db.PrepareContext(ctx, getRecentPostsFromNonMoots); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRecentPostsFromNonMoots: %w", err)
+	}
+	if q.getRecentPostsFromNonSpamUsersStmt, err = db.PrepareContext(ctx, getRecentPostsFromNonSpamUsers); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRecentPostsFromNonSpamUsers: %w", err)
+	}
 	if q.getRepoBackfillRecordStmt, err = db.PrepareContext(ctx, getRepoBackfillRecord); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRepoBackfillRecord: %w", err)
 	}
@@ -368,6 +389,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setSentimentForPostStmt, err = db.PrepareContext(ctx, setSentimentForPost); err != nil {
 		return nil, fmt.Errorf("error preparing query SetSentimentForPost: %w", err)
+	}
+	if q.trimOldRecentPostsStmt, err = db.PrepareContext(ctx, trimOldRecentPosts); err != nil {
+		return nil, fmt.Errorf("error preparing query TrimOldRecentPosts: %w", err)
 	}
 	if q.upatePointAssignmentStmt, err = db.PrepareContext(ctx, upatePointAssignment); err != nil {
 		return nil, fmt.Errorf("error preparing query UpatePointAssignment: %w", err)
@@ -475,6 +499,11 @@ func (q *Queries) Close() error {
 	if q.createPostStmt != nil {
 		if cerr := q.createPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createPostStmt: %w", cerr)
+		}
+	}
+	if q.createRecentPostStmt != nil {
+		if cerr := q.createRecentPostStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createRecentPostStmt: %w", cerr)
 		}
 	}
 	if q.createRepoBackfillRecordStmt != nil {
@@ -585,6 +614,11 @@ func (q *Queries) Close() error {
 	if q.deletePostStmt != nil {
 		if cerr := q.deletePostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deletePostStmt: %w", cerr)
+		}
+	}
+	if q.deleteRecentPostStmt != nil {
+		if cerr := q.deleteRecentPostStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteRecentPostStmt: %w", cerr)
 		}
 	}
 	if q.deleteRepostStmt != nil {
@@ -842,6 +876,31 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPostsFromNonSpamUsersStmt: %w", cerr)
 		}
 	}
+	if q.getRecentPostStmt != nil {
+		if cerr := q.getRecentPostStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRecentPostStmt: %w", cerr)
+		}
+	}
+	if q.getRecentPostsByActorStmt != nil {
+		if cerr := q.getRecentPostsByActorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRecentPostsByActorStmt: %w", cerr)
+		}
+	}
+	if q.getRecentPostsByActorsFollowingTargetStmt != nil {
+		if cerr := q.getRecentPostsByActorsFollowingTargetStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRecentPostsByActorsFollowingTargetStmt: %w", cerr)
+		}
+	}
+	if q.getRecentPostsFromNonMootsStmt != nil {
+		if cerr := q.getRecentPostsFromNonMootsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRecentPostsFromNonMootsStmt: %w", cerr)
+		}
+	}
+	if q.getRecentPostsFromNonSpamUsersStmt != nil {
+		if cerr := q.getRecentPostsFromNonSpamUsersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRecentPostsFromNonSpamUsersStmt: %w", cerr)
+		}
+	}
 	if q.getRepoBackfillRecordStmt != nil {
 		if cerr := q.getRepoBackfillRecordStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getRepoBackfillRecordStmt: %w", cerr)
@@ -967,6 +1026,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing setSentimentForPostStmt: %w", cerr)
 		}
 	}
+	if q.trimOldRecentPostsStmt != nil {
+		if cerr := q.trimOldRecentPostsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing trimOldRecentPostsStmt: %w", cerr)
+		}
+	}
 	if q.upatePointAssignmentStmt != nil {
 		if cerr := q.upatePointAssignmentStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing upatePointAssignmentStmt: %w", cerr)
@@ -1034,255 +1098,271 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                                   DBTX
-	tx                                   *sql.Tx
-	addEventPostStmt                     *sql.Stmt
-	concludeEventStmt                    *sql.Stmt
-	confirmEventStmt                     *sql.Stmt
-	countBlockersByTargetStmt            *sql.Stmt
-	countBlocksByActorStmt               *sql.Stmt
-	countFollowersByTargetStmt           *sql.Stmt
-	countFollowsByActorStmt              *sql.Stmt
-	countFollowsByActorAndTargetStmt     *sql.Stmt
-	createBlockStmt                      *sql.Stmt
-	createCollectionStmt                 *sql.Stmt
-	createEventStmt                      *sql.Stmt
-	createFollowStmt                     *sql.Stmt
-	createImageStmt                      *sql.Stmt
-	createLikeStmt                       *sql.Stmt
-	createLikeCountStmt                  *sql.Stmt
-	createPointAssignmentStmt            *sql.Stmt
-	createPostStmt                       *sql.Stmt
-	createRepoBackfillRecordStmt         *sql.Stmt
-	createRepostStmt                     *sql.Stmt
-	createSentimentJobStmt               *sql.Stmt
-	createSubjectStmt                    *sql.Stmt
-	decrementFollowerCountByNStmt        *sql.Stmt
-	decrementFollowingCountByNStmt       *sql.Stmt
-	decrementLikeCountByNStmt            *sql.Stmt
-	decrementRepostCountByNStmt          *sql.Stmt
-	deleteBlockStmt                      *sql.Stmt
-	deleteCollectionStmt                 *sql.Stmt
-	deleteEventStmt                      *sql.Stmt
-	deleteFollowStmt                     *sql.Stmt
-	deleteFollowerCountStmt              *sql.Stmt
-	deleteFollowingCountStmt             *sql.Stmt
-	deleteFollowsByActorStmt             *sql.Stmt
-	deleteFollowsByTargetStmt            *sql.Stmt
-	deleteImageStmt                      *sql.Stmt
-	deleteImagesForPostStmt              *sql.Stmt
-	deleteLikeStmt                       *sql.Stmt
-	deleteLikeCountStmt                  *sql.Stmt
-	deletePointAssignmentStmt            *sql.Stmt
-	deletePostStmt                       *sql.Stmt
-	deleteRepostStmt                     *sql.Stmt
-	deleteRepostCountStmt                *sql.Stmt
-	deleteSentimentJobStmt               *sql.Stmt
-	deleteSubjectStmt                    *sql.Stmt
-	findActorsByHandleStmt               *sql.Stmt
-	findPotentialFriendsStmt             *sql.Stmt
-	getActiveEventsForInitiatorStmt      *sql.Stmt
-	getActiveEventsForTargetStmt         *sql.Stmt
-	getActorByDIDStmt                    *sql.Stmt
-	getActorByHandleStmt                 *sql.Stmt
-	getActorTypeAheadStmt                *sql.Stmt
-	getActorsForValidationStmt           *sql.Stmt
-	getActorsWithoutPropicStmt           *sql.Stmt
-	getBlockStmt                         *sql.Stmt
-	getBlocksByActorStmt                 *sql.Stmt
-	getBlocksByActorAndTargetStmt        *sql.Stmt
-	getBlocksByTargetStmt                *sql.Stmt
-	getCollectionStmt                    *sql.Stmt
-	getDailySummariesStmt                *sql.Stmt
-	getEventStmt                         *sql.Stmt
-	getEventsForInitiatorStmt            *sql.Stmt
-	getEventsForTargetStmt               *sql.Stmt
-	getEventsToConcludeStmt              *sql.Stmt
-	getFollowStmt                        *sql.Stmt
-	getFollowPageStmt                    *sql.Stmt
-	getFollowerCountStmt                 *sql.Stmt
-	getFollowerPercentilesStmt           *sql.Stmt
-	getFollowingCountStmt                *sql.Stmt
-	getFollowsByActorStmt                *sql.Stmt
-	getFollowsByActorAndTargetStmt       *sql.Stmt
-	getFollowsByTargetStmt               *sql.Stmt
-	getHotPageStmt                       *sql.Stmt
-	getImageStmt                         *sql.Stmt
-	getImagesForPostStmt                 *sql.Stmt
-	getLikeStmt                          *sql.Stmt
-	getLikeCountStmt                     *sql.Stmt
-	getLikesByActorStmt                  *sql.Stmt
-	getLikesBySubjectStmt                *sql.Stmt
-	getLikesGivenByActorFromToStmt       *sql.Stmt
-	getLikesReceivedByActorFromActorStmt *sql.Stmt
-	getMyPostsByFuzzyContentStmt         *sql.Stmt
-	getPointAssignmentStmt               *sql.Stmt
-	getPointAssignmentsForActorStmt      *sql.Stmt
-	getPointAssignmentsForEventStmt      *sql.Stmt
-	getPostStmt                          *sql.Stmt
-	getPostWithRepliesStmt               *sql.Stmt
-	getPostWithSentimentStmt             *sql.Stmt
-	getPostsByActorStmt                  *sql.Stmt
-	getPostsByActorsFollowingTargetStmt  *sql.Stmt
-	getPostsFromNonMootsStmt             *sql.Stmt
-	getPostsFromNonSpamUsersStmt         *sql.Stmt
-	getRepoBackfillRecordStmt            *sql.Stmt
-	getRepoBackfillRecordsStmt           *sql.Stmt
-	getRepostStmt                        *sql.Stmt
-	getRepostCountStmt                   *sql.Stmt
-	getRepostsByActorStmt                *sql.Stmt
-	getRepostsBySubjectStmt              *sql.Stmt
-	getSentimentForPostStmt              *sql.Stmt
-	getSubjectStmt                       *sql.Stmt
-	getSubjectByIdStmt                   *sql.Stmt
-	getTopPostsStmt                      *sql.Stmt
-	getTopPostsForActorStmt              *sql.Stmt
-	getTopUsersByPointsStmt              *sql.Stmt
-	getTotalLikesGivenByActorStmt        *sql.Stmt
-	getTotalLikesReceivedByActorStmt     *sql.Stmt
-	getTotalPointsForActorStmt           *sql.Stmt
-	getTotalPointsForEventStmt           *sql.Stmt
-	getUnconfirmedEventStmt              *sql.Stmt
-	getUnprocessedSentimentJobsStmt      *sql.Stmt
-	incrementFollowerCountByNStmt        *sql.Stmt
-	incrementFollowingCountByNStmt       *sql.Stmt
-	incrementLikeCountByNStmt            *sql.Stmt
-	incrementLikeCountByNWithSubjectStmt *sql.Stmt
-	incrementRepostCountByNStmt          *sql.Stmt
-	insertLikeStmt                       *sql.Stmt
-	setSentimentForPostStmt              *sql.Stmt
-	upatePointAssignmentStmt             *sql.Stmt
-	updateActorPropicStmt                *sql.Stmt
-	updateActorsValidationStmt           *sql.Stmt
-	updateRepoBackfillRecordStmt         *sql.Stmt
-	upsertActorStmt                      *sql.Stmt
-	upsertActorFromFirehoseStmt          *sql.Stmt
+	db                                        DBTX
+	tx                                        *sql.Tx
+	addEventPostStmt                          *sql.Stmt
+	concludeEventStmt                         *sql.Stmt
+	confirmEventStmt                          *sql.Stmt
+	countBlockersByTargetStmt                 *sql.Stmt
+	countBlocksByActorStmt                    *sql.Stmt
+	countFollowersByTargetStmt                *sql.Stmt
+	countFollowsByActorStmt                   *sql.Stmt
+	countFollowsByActorAndTargetStmt          *sql.Stmt
+	createBlockStmt                           *sql.Stmt
+	createCollectionStmt                      *sql.Stmt
+	createEventStmt                           *sql.Stmt
+	createFollowStmt                          *sql.Stmt
+	createImageStmt                           *sql.Stmt
+	createLikeStmt                            *sql.Stmt
+	createLikeCountStmt                       *sql.Stmt
+	createPointAssignmentStmt                 *sql.Stmt
+	createPostStmt                            *sql.Stmt
+	createRecentPostStmt                      *sql.Stmt
+	createRepoBackfillRecordStmt              *sql.Stmt
+	createRepostStmt                          *sql.Stmt
+	createSentimentJobStmt                    *sql.Stmt
+	createSubjectStmt                         *sql.Stmt
+	decrementFollowerCountByNStmt             *sql.Stmt
+	decrementFollowingCountByNStmt            *sql.Stmt
+	decrementLikeCountByNStmt                 *sql.Stmt
+	decrementRepostCountByNStmt               *sql.Stmt
+	deleteBlockStmt                           *sql.Stmt
+	deleteCollectionStmt                      *sql.Stmt
+	deleteEventStmt                           *sql.Stmt
+	deleteFollowStmt                          *sql.Stmt
+	deleteFollowerCountStmt                   *sql.Stmt
+	deleteFollowingCountStmt                  *sql.Stmt
+	deleteFollowsByActorStmt                  *sql.Stmt
+	deleteFollowsByTargetStmt                 *sql.Stmt
+	deleteImageStmt                           *sql.Stmt
+	deleteImagesForPostStmt                   *sql.Stmt
+	deleteLikeStmt                            *sql.Stmt
+	deleteLikeCountStmt                       *sql.Stmt
+	deletePointAssignmentStmt                 *sql.Stmt
+	deletePostStmt                            *sql.Stmt
+	deleteRecentPostStmt                      *sql.Stmt
+	deleteRepostStmt                          *sql.Stmt
+	deleteRepostCountStmt                     *sql.Stmt
+	deleteSentimentJobStmt                    *sql.Stmt
+	deleteSubjectStmt                         *sql.Stmt
+	findActorsByHandleStmt                    *sql.Stmt
+	findPotentialFriendsStmt                  *sql.Stmt
+	getActiveEventsForInitiatorStmt           *sql.Stmt
+	getActiveEventsForTargetStmt              *sql.Stmt
+	getActorByDIDStmt                         *sql.Stmt
+	getActorByHandleStmt                      *sql.Stmt
+	getActorTypeAheadStmt                     *sql.Stmt
+	getActorsForValidationStmt                *sql.Stmt
+	getActorsWithoutPropicStmt                *sql.Stmt
+	getBlockStmt                              *sql.Stmt
+	getBlocksByActorStmt                      *sql.Stmt
+	getBlocksByActorAndTargetStmt             *sql.Stmt
+	getBlocksByTargetStmt                     *sql.Stmt
+	getCollectionStmt                         *sql.Stmt
+	getDailySummariesStmt                     *sql.Stmt
+	getEventStmt                              *sql.Stmt
+	getEventsForInitiatorStmt                 *sql.Stmt
+	getEventsForTargetStmt                    *sql.Stmt
+	getEventsToConcludeStmt                   *sql.Stmt
+	getFollowStmt                             *sql.Stmt
+	getFollowPageStmt                         *sql.Stmt
+	getFollowerCountStmt                      *sql.Stmt
+	getFollowerPercentilesStmt                *sql.Stmt
+	getFollowingCountStmt                     *sql.Stmt
+	getFollowsByActorStmt                     *sql.Stmt
+	getFollowsByActorAndTargetStmt            *sql.Stmt
+	getFollowsByTargetStmt                    *sql.Stmt
+	getHotPageStmt                            *sql.Stmt
+	getImageStmt                              *sql.Stmt
+	getImagesForPostStmt                      *sql.Stmt
+	getLikeStmt                               *sql.Stmt
+	getLikeCountStmt                          *sql.Stmt
+	getLikesByActorStmt                       *sql.Stmt
+	getLikesBySubjectStmt                     *sql.Stmt
+	getLikesGivenByActorFromToStmt            *sql.Stmt
+	getLikesReceivedByActorFromActorStmt      *sql.Stmt
+	getMyPostsByFuzzyContentStmt              *sql.Stmt
+	getPointAssignmentStmt                    *sql.Stmt
+	getPointAssignmentsForActorStmt           *sql.Stmt
+	getPointAssignmentsForEventStmt           *sql.Stmt
+	getPostStmt                               *sql.Stmt
+	getPostWithRepliesStmt                    *sql.Stmt
+	getPostWithSentimentStmt                  *sql.Stmt
+	getPostsByActorStmt                       *sql.Stmt
+	getPostsByActorsFollowingTargetStmt       *sql.Stmt
+	getPostsFromNonMootsStmt                  *sql.Stmt
+	getPostsFromNonSpamUsersStmt              *sql.Stmt
+	getRecentPostStmt                         *sql.Stmt
+	getRecentPostsByActorStmt                 *sql.Stmt
+	getRecentPostsByActorsFollowingTargetStmt *sql.Stmt
+	getRecentPostsFromNonMootsStmt            *sql.Stmt
+	getRecentPostsFromNonSpamUsersStmt        *sql.Stmt
+	getRepoBackfillRecordStmt                 *sql.Stmt
+	getRepoBackfillRecordsStmt                *sql.Stmt
+	getRepostStmt                             *sql.Stmt
+	getRepostCountStmt                        *sql.Stmt
+	getRepostsByActorStmt                     *sql.Stmt
+	getRepostsBySubjectStmt                   *sql.Stmt
+	getSentimentForPostStmt                   *sql.Stmt
+	getSubjectStmt                            *sql.Stmt
+	getSubjectByIdStmt                        *sql.Stmt
+	getTopPostsStmt                           *sql.Stmt
+	getTopPostsForActorStmt                   *sql.Stmt
+	getTopUsersByPointsStmt                   *sql.Stmt
+	getTotalLikesGivenByActorStmt             *sql.Stmt
+	getTotalLikesReceivedByActorStmt          *sql.Stmt
+	getTotalPointsForActorStmt                *sql.Stmt
+	getTotalPointsForEventStmt                *sql.Stmt
+	getUnconfirmedEventStmt                   *sql.Stmt
+	getUnprocessedSentimentJobsStmt           *sql.Stmt
+	incrementFollowerCountByNStmt             *sql.Stmt
+	incrementFollowingCountByNStmt            *sql.Stmt
+	incrementLikeCountByNStmt                 *sql.Stmt
+	incrementLikeCountByNWithSubjectStmt      *sql.Stmt
+	incrementRepostCountByNStmt               *sql.Stmt
+	insertLikeStmt                            *sql.Stmt
+	setSentimentForPostStmt                   *sql.Stmt
+	trimOldRecentPostsStmt                    *sql.Stmt
+	upatePointAssignmentStmt                  *sql.Stmt
+	updateActorPropicStmt                     *sql.Stmt
+	updateActorsValidationStmt                *sql.Stmt
+	updateRepoBackfillRecordStmt              *sql.Stmt
+	upsertActorStmt                           *sql.Stmt
+	upsertActorFromFirehoseStmt               *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                                   tx,
-		tx:                                   tx,
-		addEventPostStmt:                     q.addEventPostStmt,
-		concludeEventStmt:                    q.concludeEventStmt,
-		confirmEventStmt:                     q.confirmEventStmt,
-		countBlockersByTargetStmt:            q.countBlockersByTargetStmt,
-		countBlocksByActorStmt:               q.countBlocksByActorStmt,
-		countFollowersByTargetStmt:           q.countFollowersByTargetStmt,
-		countFollowsByActorStmt:              q.countFollowsByActorStmt,
-		countFollowsByActorAndTargetStmt:     q.countFollowsByActorAndTargetStmt,
-		createBlockStmt:                      q.createBlockStmt,
-		createCollectionStmt:                 q.createCollectionStmt,
-		createEventStmt:                      q.createEventStmt,
-		createFollowStmt:                     q.createFollowStmt,
-		createImageStmt:                      q.createImageStmt,
-		createLikeStmt:                       q.createLikeStmt,
-		createLikeCountStmt:                  q.createLikeCountStmt,
-		createPointAssignmentStmt:            q.createPointAssignmentStmt,
-		createPostStmt:                       q.createPostStmt,
-		createRepoBackfillRecordStmt:         q.createRepoBackfillRecordStmt,
-		createRepostStmt:                     q.createRepostStmt,
-		createSentimentJobStmt:               q.createSentimentJobStmt,
-		createSubjectStmt:                    q.createSubjectStmt,
-		decrementFollowerCountByNStmt:        q.decrementFollowerCountByNStmt,
-		decrementFollowingCountByNStmt:       q.decrementFollowingCountByNStmt,
-		decrementLikeCountByNStmt:            q.decrementLikeCountByNStmt,
-		decrementRepostCountByNStmt:          q.decrementRepostCountByNStmt,
-		deleteBlockStmt:                      q.deleteBlockStmt,
-		deleteCollectionStmt:                 q.deleteCollectionStmt,
-		deleteEventStmt:                      q.deleteEventStmt,
-		deleteFollowStmt:                     q.deleteFollowStmt,
-		deleteFollowerCountStmt:              q.deleteFollowerCountStmt,
-		deleteFollowingCountStmt:             q.deleteFollowingCountStmt,
-		deleteFollowsByActorStmt:             q.deleteFollowsByActorStmt,
-		deleteFollowsByTargetStmt:            q.deleteFollowsByTargetStmt,
-		deleteImageStmt:                      q.deleteImageStmt,
-		deleteImagesForPostStmt:              q.deleteImagesForPostStmt,
-		deleteLikeStmt:                       q.deleteLikeStmt,
-		deleteLikeCountStmt:                  q.deleteLikeCountStmt,
-		deletePointAssignmentStmt:            q.deletePointAssignmentStmt,
-		deletePostStmt:                       q.deletePostStmt,
-		deleteRepostStmt:                     q.deleteRepostStmt,
-		deleteRepostCountStmt:                q.deleteRepostCountStmt,
-		deleteSentimentJobStmt:               q.deleteSentimentJobStmt,
-		deleteSubjectStmt:                    q.deleteSubjectStmt,
-		findActorsByHandleStmt:               q.findActorsByHandleStmt,
-		findPotentialFriendsStmt:             q.findPotentialFriendsStmt,
-		getActiveEventsForInitiatorStmt:      q.getActiveEventsForInitiatorStmt,
-		getActiveEventsForTargetStmt:         q.getActiveEventsForTargetStmt,
-		getActorByDIDStmt:                    q.getActorByDIDStmt,
-		getActorByHandleStmt:                 q.getActorByHandleStmt,
-		getActorTypeAheadStmt:                q.getActorTypeAheadStmt,
-		getActorsForValidationStmt:           q.getActorsForValidationStmt,
-		getActorsWithoutPropicStmt:           q.getActorsWithoutPropicStmt,
-		getBlockStmt:                         q.getBlockStmt,
-		getBlocksByActorStmt:                 q.getBlocksByActorStmt,
-		getBlocksByActorAndTargetStmt:        q.getBlocksByActorAndTargetStmt,
-		getBlocksByTargetStmt:                q.getBlocksByTargetStmt,
-		getCollectionStmt:                    q.getCollectionStmt,
-		getDailySummariesStmt:                q.getDailySummariesStmt,
-		getEventStmt:                         q.getEventStmt,
-		getEventsForInitiatorStmt:            q.getEventsForInitiatorStmt,
-		getEventsForTargetStmt:               q.getEventsForTargetStmt,
-		getEventsToConcludeStmt:              q.getEventsToConcludeStmt,
-		getFollowStmt:                        q.getFollowStmt,
-		getFollowPageStmt:                    q.getFollowPageStmt,
-		getFollowerCountStmt:                 q.getFollowerCountStmt,
-		getFollowerPercentilesStmt:           q.getFollowerPercentilesStmt,
-		getFollowingCountStmt:                q.getFollowingCountStmt,
-		getFollowsByActorStmt:                q.getFollowsByActorStmt,
-		getFollowsByActorAndTargetStmt:       q.getFollowsByActorAndTargetStmt,
-		getFollowsByTargetStmt:               q.getFollowsByTargetStmt,
-		getHotPageStmt:                       q.getHotPageStmt,
-		getImageStmt:                         q.getImageStmt,
-		getImagesForPostStmt:                 q.getImagesForPostStmt,
-		getLikeStmt:                          q.getLikeStmt,
-		getLikeCountStmt:                     q.getLikeCountStmt,
-		getLikesByActorStmt:                  q.getLikesByActorStmt,
-		getLikesBySubjectStmt:                q.getLikesBySubjectStmt,
-		getLikesGivenByActorFromToStmt:       q.getLikesGivenByActorFromToStmt,
-		getLikesReceivedByActorFromActorStmt: q.getLikesReceivedByActorFromActorStmt,
-		getMyPostsByFuzzyContentStmt:         q.getMyPostsByFuzzyContentStmt,
-		getPointAssignmentStmt:               q.getPointAssignmentStmt,
-		getPointAssignmentsForActorStmt:      q.getPointAssignmentsForActorStmt,
-		getPointAssignmentsForEventStmt:      q.getPointAssignmentsForEventStmt,
-		getPostStmt:                          q.getPostStmt,
-		getPostWithRepliesStmt:               q.getPostWithRepliesStmt,
-		getPostWithSentimentStmt:             q.getPostWithSentimentStmt,
-		getPostsByActorStmt:                  q.getPostsByActorStmt,
-		getPostsByActorsFollowingTargetStmt:  q.getPostsByActorsFollowingTargetStmt,
-		getPostsFromNonMootsStmt:             q.getPostsFromNonMootsStmt,
-		getPostsFromNonSpamUsersStmt:         q.getPostsFromNonSpamUsersStmt,
-		getRepoBackfillRecordStmt:            q.getRepoBackfillRecordStmt,
-		getRepoBackfillRecordsStmt:           q.getRepoBackfillRecordsStmt,
-		getRepostStmt:                        q.getRepostStmt,
-		getRepostCountStmt:                   q.getRepostCountStmt,
-		getRepostsByActorStmt:                q.getRepostsByActorStmt,
-		getRepostsBySubjectStmt:              q.getRepostsBySubjectStmt,
-		getSentimentForPostStmt:              q.getSentimentForPostStmt,
-		getSubjectStmt:                       q.getSubjectStmt,
-		getSubjectByIdStmt:                   q.getSubjectByIdStmt,
-		getTopPostsStmt:                      q.getTopPostsStmt,
-		getTopPostsForActorStmt:              q.getTopPostsForActorStmt,
-		getTopUsersByPointsStmt:              q.getTopUsersByPointsStmt,
-		getTotalLikesGivenByActorStmt:        q.getTotalLikesGivenByActorStmt,
-		getTotalLikesReceivedByActorStmt:     q.getTotalLikesReceivedByActorStmt,
-		getTotalPointsForActorStmt:           q.getTotalPointsForActorStmt,
-		getTotalPointsForEventStmt:           q.getTotalPointsForEventStmt,
-		getUnconfirmedEventStmt:              q.getUnconfirmedEventStmt,
-		getUnprocessedSentimentJobsStmt:      q.getUnprocessedSentimentJobsStmt,
-		incrementFollowerCountByNStmt:        q.incrementFollowerCountByNStmt,
-		incrementFollowingCountByNStmt:       q.incrementFollowingCountByNStmt,
-		incrementLikeCountByNStmt:            q.incrementLikeCountByNStmt,
-		incrementLikeCountByNWithSubjectStmt: q.incrementLikeCountByNWithSubjectStmt,
-		incrementRepostCountByNStmt:          q.incrementRepostCountByNStmt,
-		insertLikeStmt:                       q.insertLikeStmt,
-		setSentimentForPostStmt:              q.setSentimentForPostStmt,
-		upatePointAssignmentStmt:             q.upatePointAssignmentStmt,
-		updateActorPropicStmt:                q.updateActorPropicStmt,
-		updateActorsValidationStmt:           q.updateActorsValidationStmt,
-		updateRepoBackfillRecordStmt:         q.updateRepoBackfillRecordStmt,
-		upsertActorStmt:                      q.upsertActorStmt,
-		upsertActorFromFirehoseStmt:          q.upsertActorFromFirehoseStmt,
+		db:                                        tx,
+		tx:                                        tx,
+		addEventPostStmt:                          q.addEventPostStmt,
+		concludeEventStmt:                         q.concludeEventStmt,
+		confirmEventStmt:                          q.confirmEventStmt,
+		countBlockersByTargetStmt:                 q.countBlockersByTargetStmt,
+		countBlocksByActorStmt:                    q.countBlocksByActorStmt,
+		countFollowersByTargetStmt:                q.countFollowersByTargetStmt,
+		countFollowsByActorStmt:                   q.countFollowsByActorStmt,
+		countFollowsByActorAndTargetStmt:          q.countFollowsByActorAndTargetStmt,
+		createBlockStmt:                           q.createBlockStmt,
+		createCollectionStmt:                      q.createCollectionStmt,
+		createEventStmt:                           q.createEventStmt,
+		createFollowStmt:                          q.createFollowStmt,
+		createImageStmt:                           q.createImageStmt,
+		createLikeStmt:                            q.createLikeStmt,
+		createLikeCountStmt:                       q.createLikeCountStmt,
+		createPointAssignmentStmt:                 q.createPointAssignmentStmt,
+		createPostStmt:                            q.createPostStmt,
+		createRecentPostStmt:                      q.createRecentPostStmt,
+		createRepoBackfillRecordStmt:              q.createRepoBackfillRecordStmt,
+		createRepostStmt:                          q.createRepostStmt,
+		createSentimentJobStmt:                    q.createSentimentJobStmt,
+		createSubjectStmt:                         q.createSubjectStmt,
+		decrementFollowerCountByNStmt:             q.decrementFollowerCountByNStmt,
+		decrementFollowingCountByNStmt:            q.decrementFollowingCountByNStmt,
+		decrementLikeCountByNStmt:                 q.decrementLikeCountByNStmt,
+		decrementRepostCountByNStmt:               q.decrementRepostCountByNStmt,
+		deleteBlockStmt:                           q.deleteBlockStmt,
+		deleteCollectionStmt:                      q.deleteCollectionStmt,
+		deleteEventStmt:                           q.deleteEventStmt,
+		deleteFollowStmt:                          q.deleteFollowStmt,
+		deleteFollowerCountStmt:                   q.deleteFollowerCountStmt,
+		deleteFollowingCountStmt:                  q.deleteFollowingCountStmt,
+		deleteFollowsByActorStmt:                  q.deleteFollowsByActorStmt,
+		deleteFollowsByTargetStmt:                 q.deleteFollowsByTargetStmt,
+		deleteImageStmt:                           q.deleteImageStmt,
+		deleteImagesForPostStmt:                   q.deleteImagesForPostStmt,
+		deleteLikeStmt:                            q.deleteLikeStmt,
+		deleteLikeCountStmt:                       q.deleteLikeCountStmt,
+		deletePointAssignmentStmt:                 q.deletePointAssignmentStmt,
+		deletePostStmt:                            q.deletePostStmt,
+		deleteRecentPostStmt:                      q.deleteRecentPostStmt,
+		deleteRepostStmt:                          q.deleteRepostStmt,
+		deleteRepostCountStmt:                     q.deleteRepostCountStmt,
+		deleteSentimentJobStmt:                    q.deleteSentimentJobStmt,
+		deleteSubjectStmt:                         q.deleteSubjectStmt,
+		findActorsByHandleStmt:                    q.findActorsByHandleStmt,
+		findPotentialFriendsStmt:                  q.findPotentialFriendsStmt,
+		getActiveEventsForInitiatorStmt:           q.getActiveEventsForInitiatorStmt,
+		getActiveEventsForTargetStmt:              q.getActiveEventsForTargetStmt,
+		getActorByDIDStmt:                         q.getActorByDIDStmt,
+		getActorByHandleStmt:                      q.getActorByHandleStmt,
+		getActorTypeAheadStmt:                     q.getActorTypeAheadStmt,
+		getActorsForValidationStmt:                q.getActorsForValidationStmt,
+		getActorsWithoutPropicStmt:                q.getActorsWithoutPropicStmt,
+		getBlockStmt:                              q.getBlockStmt,
+		getBlocksByActorStmt:                      q.getBlocksByActorStmt,
+		getBlocksByActorAndTargetStmt:             q.getBlocksByActorAndTargetStmt,
+		getBlocksByTargetStmt:                     q.getBlocksByTargetStmt,
+		getCollectionStmt:                         q.getCollectionStmt,
+		getDailySummariesStmt:                     q.getDailySummariesStmt,
+		getEventStmt:                              q.getEventStmt,
+		getEventsForInitiatorStmt:                 q.getEventsForInitiatorStmt,
+		getEventsForTargetStmt:                    q.getEventsForTargetStmt,
+		getEventsToConcludeStmt:                   q.getEventsToConcludeStmt,
+		getFollowStmt:                             q.getFollowStmt,
+		getFollowPageStmt:                         q.getFollowPageStmt,
+		getFollowerCountStmt:                      q.getFollowerCountStmt,
+		getFollowerPercentilesStmt:                q.getFollowerPercentilesStmt,
+		getFollowingCountStmt:                     q.getFollowingCountStmt,
+		getFollowsByActorStmt:                     q.getFollowsByActorStmt,
+		getFollowsByActorAndTargetStmt:            q.getFollowsByActorAndTargetStmt,
+		getFollowsByTargetStmt:                    q.getFollowsByTargetStmt,
+		getHotPageStmt:                            q.getHotPageStmt,
+		getImageStmt:                              q.getImageStmt,
+		getImagesForPostStmt:                      q.getImagesForPostStmt,
+		getLikeStmt:                               q.getLikeStmt,
+		getLikeCountStmt:                          q.getLikeCountStmt,
+		getLikesByActorStmt:                       q.getLikesByActorStmt,
+		getLikesBySubjectStmt:                     q.getLikesBySubjectStmt,
+		getLikesGivenByActorFromToStmt:            q.getLikesGivenByActorFromToStmt,
+		getLikesReceivedByActorFromActorStmt:      q.getLikesReceivedByActorFromActorStmt,
+		getMyPostsByFuzzyContentStmt:              q.getMyPostsByFuzzyContentStmt,
+		getPointAssignmentStmt:                    q.getPointAssignmentStmt,
+		getPointAssignmentsForActorStmt:           q.getPointAssignmentsForActorStmt,
+		getPointAssignmentsForEventStmt:           q.getPointAssignmentsForEventStmt,
+		getPostStmt:                               q.getPostStmt,
+		getPostWithRepliesStmt:                    q.getPostWithRepliesStmt,
+		getPostWithSentimentStmt:                  q.getPostWithSentimentStmt,
+		getPostsByActorStmt:                       q.getPostsByActorStmt,
+		getPostsByActorsFollowingTargetStmt:       q.getPostsByActorsFollowingTargetStmt,
+		getPostsFromNonMootsStmt:                  q.getPostsFromNonMootsStmt,
+		getPostsFromNonSpamUsersStmt:              q.getPostsFromNonSpamUsersStmt,
+		getRecentPostStmt:                         q.getRecentPostStmt,
+		getRecentPostsByActorStmt:                 q.getRecentPostsByActorStmt,
+		getRecentPostsByActorsFollowingTargetStmt: q.getRecentPostsByActorsFollowingTargetStmt,
+		getRecentPostsFromNonMootsStmt:            q.getRecentPostsFromNonMootsStmt,
+		getRecentPostsFromNonSpamUsersStmt:        q.getRecentPostsFromNonSpamUsersStmt,
+		getRepoBackfillRecordStmt:                 q.getRepoBackfillRecordStmt,
+		getRepoBackfillRecordsStmt:                q.getRepoBackfillRecordsStmt,
+		getRepostStmt:                             q.getRepostStmt,
+		getRepostCountStmt:                        q.getRepostCountStmt,
+		getRepostsByActorStmt:                     q.getRepostsByActorStmt,
+		getRepostsBySubjectStmt:                   q.getRepostsBySubjectStmt,
+		getSentimentForPostStmt:                   q.getSentimentForPostStmt,
+		getSubjectStmt:                            q.getSubjectStmt,
+		getSubjectByIdStmt:                        q.getSubjectByIdStmt,
+		getTopPostsStmt:                           q.getTopPostsStmt,
+		getTopPostsForActorStmt:                   q.getTopPostsForActorStmt,
+		getTopUsersByPointsStmt:                   q.getTopUsersByPointsStmt,
+		getTotalLikesGivenByActorStmt:             q.getTotalLikesGivenByActorStmt,
+		getTotalLikesReceivedByActorStmt:          q.getTotalLikesReceivedByActorStmt,
+		getTotalPointsForActorStmt:                q.getTotalPointsForActorStmt,
+		getTotalPointsForEventStmt:                q.getTotalPointsForEventStmt,
+		getUnconfirmedEventStmt:                   q.getUnconfirmedEventStmt,
+		getUnprocessedSentimentJobsStmt:           q.getUnprocessedSentimentJobsStmt,
+		incrementFollowerCountByNStmt:             q.incrementFollowerCountByNStmt,
+		incrementFollowingCountByNStmt:            q.incrementFollowingCountByNStmt,
+		incrementLikeCountByNStmt:                 q.incrementLikeCountByNStmt,
+		incrementLikeCountByNWithSubjectStmt:      q.incrementLikeCountByNWithSubjectStmt,
+		incrementRepostCountByNStmt:               q.incrementRepostCountByNStmt,
+		insertLikeStmt:                            q.insertLikeStmt,
+		setSentimentForPostStmt:                   q.setSentimentForPostStmt,
+		trimOldRecentPostsStmt:                    q.trimOldRecentPostsStmt,
+		upatePointAssignmentStmt:                  q.upatePointAssignmentStmt,
+		updateActorPropicStmt:                     q.updateActorPropicStmt,
+		updateActorsValidationStmt:                q.updateActorsValidationStmt,
+		updateRepoBackfillRecordStmt:              q.updateRepoBackfillRecordStmt,
+		upsertActorStmt:                           q.upsertActorStmt,
+		upsertActorFromFirehoseStmt:               q.upsertActorFromFirehoseStmt,
 	}
 }

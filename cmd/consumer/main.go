@@ -121,10 +121,10 @@ func Consumer(cctx *cli.Context) error {
 
 	rawlog, err := zap.NewProduction()
 	if err != nil {
-		log.Fatalf("failed to create logger: %+v\n", err)
+		log.Fatalf("failed to create logger: %+v", err)
 	}
 	defer func() {
-		log.Printf("main function teardown\n")
+		log.Printf("main function teardown")
 		err := rawlog.Sync()
 		if err != nil {
 			log.Printf("failed to sync logger on teardown: %+v", err.Error())
@@ -137,7 +137,7 @@ func Consumer(cctx *cli.Context) error {
 
 	u, err := url.Parse(cctx.String("ws-url"))
 	if err != nil {
-		log.Fatalf("failed to parse ws-url: %+v\n", err)
+		log.Fatalf("failed to parse ws-url: %+v", err)
 	}
 
 	// Registers a tracer Provider globally if the exporter endpoint is set
@@ -160,29 +160,29 @@ func Consumer(cctx *cli.Context) error {
 		DB:       0,
 	})
 	if err != nil {
-		log.Fatalf("failed to create redis client: %+v\n", err)
+		log.Fatalf("failed to create redis client: %+v", err)
 	}
 
 	// Enable tracing instrumentation.
 	if err := redisotel.InstrumentTracing(redisClient); err != nil {
-		log.Fatalf("failed to instrument redis with tracing: %+v\n", err)
+		log.Fatalf("failed to instrument redis with tracing: %+v", err)
 	}
 
 	// Enable metrics instrumentation.
 	if err := redisotel.InstrumentMetrics(redisClient); err != nil {
-		log.Fatalf("failed to instrument redis with metrics: %+v\n", err)
+		log.Fatalf("failed to instrument redis with metrics: %+v", err)
 	}
 
 	// Test the connection to redis
 	_, err = redisClient.Ping(ctx).Result()
 	if err != nil {
-		log.Fatalf("failed to connect to redis: %+v\n", err)
+		log.Fatalf("failed to connect to redis: %+v", err)
 	}
 
 	// Create a Store
 	store, err := store.NewStore(cctx.String("postgres-url"))
 	if err != nil {
-		log.Fatalf("failed to create store: %+v\n", err)
+		log.Fatalf("failed to create store: %+v", err)
 	}
 
 	c, err := consumer.NewConsumer(
@@ -197,7 +197,7 @@ func Consumer(cctx *cli.Context) error {
 		cctx.String("graphd-root"),
 	)
 	if err != nil {
-		log.Fatalf("failed to create consumer: %+v\n", err)
+		log.Fatalf("failed to create consumer: %+v", err)
 	}
 
 	schedSettings := autoscaling.DefaultAutoscaleSettings()
@@ -210,7 +210,7 @@ func Consumer(cctx *cli.Context) error {
 		ticker := time.NewTicker(5 * time.Second)
 		rawlog, err := zap.NewProduction()
 		if err != nil {
-			log.Fatalf("failed to create logger: %+v\n", err)
+			log.Fatalf("failed to create logger: %+v", err)
 		}
 		log := rawlog.Sugar().With("source", "cursor_manager")
 
@@ -220,7 +220,7 @@ func Consumer(cctx *cli.Context) error {
 				log.Info("shutting down cursor manager")
 				err := c.WriteCursor(ctx)
 				if err != nil {
-					log.Errorf("failed to write cursor: %+v\n", err)
+					log.Errorf("failed to write cursor: %+v", err)
 				}
 				log.Info("cursor manager shut down successfully")
 				close(cursorManagerShutdown)
@@ -228,7 +228,7 @@ func Consumer(cctx *cli.Context) error {
 			case <-ticker.C:
 				err := c.WriteCursor(ctx)
 				if err != nil {
-					log.Errorf("failed to write cursor: %+v\n", err)
+					log.Errorf("failed to write cursor: %+v", err)
 				}
 			}
 		}
@@ -243,7 +243,7 @@ func Consumer(cctx *cli.Context) error {
 
 		rawlog, err := zap.NewProduction()
 		if err != nil {
-			log.Fatalf("failed to create logger: %+v\n", err)
+			log.Fatalf("failed to create logger: %+v", err)
 		}
 		log := rawlog.Sugar().With("source", "liveness_checker")
 
@@ -266,6 +266,33 @@ func Consumer(cctx *cli.Context) error {
 		}
 	}()
 
+	// Start a goroutine to trim old recent posts from the DB every 5 minutes
+	shutdownRecentPostTrimmer := make(chan struct{})
+	recentPostTrimmerShutdown := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		rawlog, err := zap.NewProduction()
+		if err != nil {
+			log.Fatalf("failed to create logger: %+v", err)
+		}
+
+		log := rawlog.Sugar().With("source", "recent_post_trimmer")
+
+		for {
+			select {
+			case <-shutdownRecentPostTrimmer:
+				log.Info("shutting down recent post trimmer")
+				close(recentPostTrimmerShutdown)
+				return
+			case <-ticker.C:
+				err := c.TrimRecentPosts(ctx, time.Hour*24*3)
+				if err != nil {
+					log.Errorf("failed to trim recent posts: %+v", err)
+				}
+			}
+		}
+	}()
+
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 
@@ -280,16 +307,16 @@ func Consumer(cctx *cli.Context) error {
 	go func() {
 		logger := log.With("source", "metrics_server")
 
-		logger.Info("metrics server listening on port %d", cctx.Int("port"))
+		logger.Infof("metrics server listening on port %d", cctx.Int("port"))
 
 		go func() {
 			if err := metricServer.ListenAndServe(); err != http.ErrServerClosed {
-				logger.Error("failed to start metrics server: %+v\n", err)
+				logger.Errorf("failed to start metrics server: %+v", err)
 			}
 		}()
 		<-shutdownMetrics
 		if err := metricServer.Shutdown(ctx); err != nil {
-			logger.Error("failed to shutdown metrics server: %+v\n", err)
+			logger.Errorf("failed to shutdown metrics server: %+v", err)
 		}
 		logger.Info("metrics server shut down")
 		close(metricsShutdown)
@@ -342,11 +369,13 @@ func Consumer(cctx *cli.Context) error {
 	close(shutdownLivenessChecker)
 	close(shutdownCursorManager)
 	close(shutdownMetrics)
+	close(shutdownRecentPostTrimmer)
 
 	<-repoStreamShutdown
 	<-livenessCheckerShutdown
 	<-cursorManagerShutdown
 	<-metricsShutdown
+	<-recentPostTrimmerShutdown
 	log.Info("shut down successfully")
 
 	return nil

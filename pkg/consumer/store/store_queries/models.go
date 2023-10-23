@@ -163,6 +163,24 @@ type PostSentiment struct {
 	Confidence  sql.NullFloat64 `json:"confidence"`
 }
 
+type RecentPost struct {
+	ActorDid           string                `json:"actor_did"`
+	Rkey               string                `json:"rkey"`
+	Content            sql.NullString        `json:"content"`
+	ParentPostActorDid sql.NullString        `json:"parent_post_actor_did"`
+	QuotePostActorDid  sql.NullString        `json:"quote_post_actor_did"`
+	QuotePostRkey      sql.NullString        `json:"quote_post_rkey"`
+	ParentPostRkey     sql.NullString        `json:"parent_post_rkey"`
+	RootPostActorDid   sql.NullString        `json:"root_post_actor_did"`
+	RootPostRkey       sql.NullString        `json:"root_post_rkey"`
+	Facets             pqtype.NullRawMessage `json:"facets"`
+	Embed              pqtype.NullRawMessage `json:"embed"`
+	Tags               []string              `json:"tags"`
+	HasEmbeddedMedia   bool                  `json:"has_embedded_media"`
+	CreatedAt          sql.NullTime          `json:"created_at"`
+	InsertedAt         time.Time             `json:"inserted_at"`
+}
+
 type RecentPostsWithScore struct {
 	SubjectID        int64        `json:"subject_id"`
 	ActorDid         string       `json:"actor_did"`

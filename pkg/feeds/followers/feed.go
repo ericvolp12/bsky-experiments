@@ -60,11 +60,11 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 	span.SetAttributes(attribute.String("authorDID", authorDID))
 	span.SetAttributes(attribute.String("rkey", rkey))
 
-	var rawPosts []store_queries.Post
+	var rawPosts []store_queries.RecentPost
 
 	nonMoots, err := f.GraphD.GetFollowersNotFollowing(ctx, userDID)
 	if err == nil {
-		rawPosts, err = f.Store.Queries.GetPostsFromNonSpamUsers(ctx, store_queries.GetPostsFromNonSpamUsersParams{
+		rawPosts, err = f.Store.Queries.GetRecentPostsFromNonSpamUsers(ctx, store_queries.GetRecentPostsFromNonSpamUsersParams{
 			Dids:            nonMoots,
 			Limit:           int32(limit),
 			CursorCreatedAt: createdAt,
@@ -78,7 +78,7 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 		span.SetAttributes(attribute.Bool("fallback", true))
 		// Fallback to old query
 		slog.Error("error getting non-moots, falling back to old query", "error", err)
-		rawPosts, err = f.Store.Queries.GetPostsFromNonMoots(ctx, store_queries.GetPostsFromNonMootsParams{
+		rawPosts, err = f.Store.Queries.GetRecentPostsFromNonMoots(ctx, store_queries.GetRecentPostsFromNonMootsParams{
 			ActorDid:        userDID,
 			Limit:           int32(limit),
 			CursorCreatedAt: createdAt,

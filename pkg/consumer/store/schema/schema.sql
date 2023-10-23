@@ -45,6 +45,33 @@ WHERE root_post_rkey IS NULL
 CREATE INDEX posts_parents ON posts (parent_post_actor_did, parent_post_rkey)
 WHERE parent_post_actor_did IS NOT NULL
     AND parent_post_rkey IS NOT NULL;
+-- Posts
+CREATE TABLE recent_posts (
+    actor_did TEXT NOT NULL,
+    rkey TEXT NOT NULL,
+    content TEXT,
+    parent_post_actor_did TEXT,
+    quote_post_actor_did TEXT,
+    quote_post_rkey TEXT,
+    parent_post_rkey TEXT,
+    root_post_actor_did TEXT,
+    root_post_rkey TEXT,
+    facets JSONB,
+    embed JSONB,
+    tags TEXT[],
+    has_embedded_media BOOLEAN DEFAULT FALSE NOT NULL,
+    created_at TIMESTAMPTZ,
+    inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    PRIMARY KEY (actor_did, rkey)
+);
+CREATE INDEX recent_posts_inserted_at ON recent_posts (inserted_at DESC);
+CREATE INDEX recent_posts_created_at_index ON recent_posts (created_at DESC);
+CREATE INDEX recent_posts_roots_or_quotes_only_created_at ON recent_posts (created_at DESC)
+WHERE root_post_rkey IS NULL
+    AND parent_post_rkey IS NULL;
+CREATE INDEX recent_posts_parents ON recent_posts (parent_post_actor_did, parent_post_rkey)
+WHERE parent_post_actor_did IS NOT NULL
+    AND parent_post_rkey IS NOT NULL;
 -- Subjects
 CREATE TABLE collections (
     id SERIAL PRIMARY KEY,

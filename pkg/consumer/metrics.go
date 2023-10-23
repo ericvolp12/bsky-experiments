@@ -108,3 +108,8 @@ var postFanoutHist = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Help:    "The number of posts fanned out per event",
 	Buckets: prometheus.ExponentialBuckets(1, 2, 18),
 }, []string{"socket_url"})
+
+var postsTrimmed = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "consumer_posts_trimmed_total",
+	Help: "The total number of posts trimmed",
+}, []string{"socket_url"})

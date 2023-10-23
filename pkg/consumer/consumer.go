@@ -218,6 +218,27 @@ func NewConsumer(
 	return &c, nil
 }
 
+// TrimRecentPosts trims the recent posts from the recent_posts table
+func (c *Consumer) TrimRecentPosts(ctx context.Context, window time.Duration) error {
+	ctx, span := tracer.Start(ctx, "TrimRecentPosts")
+	defer span.End()
+
+	span.SetAttributes(attribute.String("window", window.String()))
+
+	numDeleted, err := c.Store.Queries.TrimOldRecentPosts(ctx, int32(window.Hours()))
+	if err != nil {
+		return fmt.Errorf("failed to trim recent posts: %+v", err)
+	}
+
+	span.SetAttributes(attribute.Int64("num_deleted", numDeleted))
+
+	postsTrimmed.WithLabelValues(c.SocketURL).Add(float64(numDeleted))
+
+	c.Logger.Infow("trimmed recent posts", "num_deleted", numDeleted)
+
+	return nil
+}
+
 // HandleStreamEvent handles a stream event from the firehose
 func (c *Consumer) HandleStreamEvent(ctx context.Context, xe *events.XRPCStreamEvent) error {
 	ctx, span := tracer.Start(ctx, "HandleStreamEvent")
@@ -495,6 +516,11 @@ func (c *Consumer) HandleDeleteRecord(
 			log.Errorf("failed to delete post: %+v", err)
 			// Don't return an error here, because we still want to try to delete the images
 		}
+
+		err = c.Store.Queries.DeleteRecentPost(ctx, store_queries.DeleteRecentPostParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+		})
 
 		// Delete sentiment for the post
 		err = c.Store.Queries.DeleteSentimentJob(ctx, store_queries.DeleteSentimentJobParams{
@@ -811,6 +837,26 @@ func (c *Consumer) HandleCreateRecord(
 		err = c.Store.Queries.CreatePost(ctx, createParams)
 		if err != nil {
 			log.Errorf("failed to create post: %+v", err)
+		}
+
+		err = c.Store.Queries.CreateRecentPost(ctx, store_queries.CreateRecentPostParams{
+			ActorDid:           createParams.ActorDid,
+			Rkey:               createParams.Rkey,
+			Content:            createParams.Content,
+			ParentPostActorDid: createParams.ParentPostActorDid,
+			ParentPostRkey:     createParams.ParentPostRkey,
+			QuotePostActorDid:  createParams.QuotePostActorDid,
+			QuotePostRkey:      createParams.QuotePostRkey,
+			RootPostActorDid:   createParams.RootPostActorDid,
+			RootPostRkey:       createParams.RootPostRkey,
+			HasEmbeddedMedia:   createParams.HasEmbeddedMedia,
+			Facets:             createParams.Facets,
+			Embed:              createParams.Embed,
+			Tags:               createParams.Tags,
+			CreatedAt:          createParams.CreatedAt,
+		})
+		if err != nil {
+			log.Errorf("failed to create recent post: %+v", err)
 		}
 
 		// Create a Sentiment Job for the post
