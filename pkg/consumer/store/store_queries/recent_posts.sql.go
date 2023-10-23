@@ -436,7 +436,7 @@ func (q *Queries) GetRecentPostsFromNonSpamUsers(ctx context.Context, arg GetRec
 const trimOldRecentPosts = `-- name: TrimOldRecentPosts :execrows
 DELETE FROM recent_posts
 WHERE created_at < NOW() - make_interval(hours := $1)
-    AND created_at > NOW() + make_interval(mins := 15)
+    OR created_at > NOW() + make_interval(mins := 15)
 `
 
 func (q *Queries) TrimOldRecentPosts(ctx context.Context, hours int32) (int64, error) {
