@@ -10,6 +10,8 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	graphdclient "github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
+	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -18,6 +20,7 @@ type FollowersFeed struct {
 	FeedActorDID string
 	Store        *store.Store
 	GraphD       *graphdclient.Client
+	Redis        *redis.Client
 }
 
 type NotFoundError struct {
@@ -28,12 +31,57 @@ var supportedFeeds = []string{"my-followers"}
 
 var tracer = otel.Tracer("my-followers")
 
-func NewFollowersFeed(ctx context.Context, feedActorDID string, store *store.Store, client *graphdclient.Client) (*FollowersFeed, []string, error) {
+func NewFollowersFeed(ctx context.Context, feedActorDID string, store *store.Store, gClient *graphdclient.Client, rClient *redis.Client) (*FollowersFeed, []string, error) {
 	return &FollowersFeed{
 		FeedActorDID: feedActorDID,
 		Store:        store,
-		GraphD:       client,
+		GraphD:       gClient,
+		Redis:        rClient,
 	}, supportedFeeds, nil
+}
+
+var activePostersKey = "consumer:active_posters"
+
+func (f *FollowersFeed) intersectActivePosters(
+	ctx context.Context,
+	dids []string,
+) ([]string, error) {
+	ctx, span := tracer.Start(ctx, "IntersectActivePosters")
+	defer span.End()
+
+	// Intersect the active posters sorted set and the given set of posters
+	// to find the posters that are both active and in the given set
+
+	zs := make([]redis.Z, len(dids))
+	for i, did := range dids {
+		zs[i] = redis.Z{
+			Score:  1,
+			Member: did,
+		}
+	}
+
+	// Add the posters to a temporary set
+	tempSetKey := fmt.Sprintf("consumer:active_posters:temp:%s", uuid.New().String())
+	_, err := f.Redis.ZAdd(ctx, tempSetKey, zs...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to add posters to temp set: %+v", err)
+	}
+
+	// Intersect the temp set with the active posters set
+	intersection, err := f.Redis.ZInter(ctx, &redis.ZStore{
+		Keys: []string{tempSetKey, activePostersKey},
+	}).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to intersect temp set with active posters set: %+v", err)
+	}
+
+	// Delete the temp set
+	_, err = f.Redis.Del(ctx, tempSetKey).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete temp set: %+v", err)
+	}
+
+	return intersection, nil
 }
 
 func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
@@ -64,6 +112,12 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 
 	nonMoots, err := f.GraphD.GetFollowersNotFollowing(ctx, userDID)
 	if err == nil {
+		// Get the intersection of the non-moots and the active posters
+		nonMoots, err = f.intersectActivePosters(ctx, nonMoots)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error intersecting active posters: %w", err)
+		}
+
 		rawPosts, err = f.Store.Queries.GetRecentPostsFromNonSpamUsers(ctx, store_queries.GetRecentPostsFromNonSpamUsersParams{
 			Dids:            nonMoots,
 			Limit:           int32(limit),

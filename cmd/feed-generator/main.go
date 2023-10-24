@@ -258,7 +258,7 @@ func FeedGenerator(cctx *cli.Context) error {
 	feedGenerator.AddFeed(hotFeedAliases, hotFeed)
 
 	// Create a My Followers feed
-	followersFeed, followersFeedAliases, err := followers.NewFollowersFeed(ctx, feedActorDID, store, graphdClient)
+	followersFeed, followersFeedAliases, err := followers.NewFollowersFeed(ctx, feedActorDID, store, graphdClient, redisClient)
 	if err != nil {
 		log.Fatalf("Failed to create FollowersFeed: %v", err)
 	}
