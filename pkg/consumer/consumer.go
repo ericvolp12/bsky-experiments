@@ -240,7 +240,7 @@ func (c *Consumer) TrimRecentPosts(ctx context.Context, maxAge time.Duration) er
 
 	// Trim the Active Posters sorted set in redis
 	upperBound := fmt.Sprintf("(%d", time.Now().Add(-maxAge).UnixNano())
-	numActiveTrimmed, err := c.RedisClient.ZRemRangeByScore(ctx, "active_posters", "-inf", upperBound).Result()
+	numActiveTrimmed, err := c.RedisClient.ZRemRangeByScore(ctx, activePostersKey, "-inf", upperBound).Result()
 	if err != nil {
 		return fmt.Errorf("failed to trim active posters: %+v", err)
 	}

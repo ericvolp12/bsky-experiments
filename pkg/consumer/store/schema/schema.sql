@@ -31,7 +31,7 @@ CREATE TABLE posts (
     root_post_rkey TEXT,
     facets JSONB,
     embed JSONB,
-    tags TEXT[],
+    tags TEXT [],
     has_embedded_media BOOLEAN DEFAULT FALSE NOT NULL,
     created_at TIMESTAMPTZ,
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -58,7 +58,7 @@ CREATE TABLE recent_posts (
     root_post_rkey TEXT,
     facets JSONB,
     embed JSONB,
-    tags TEXT[],
+    tags TEXT [],
     has_embedded_media BOOLEAN DEFAULT FALSE NOT NULL,
     created_at TIMESTAMPTZ,
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -66,6 +66,7 @@ CREATE TABLE recent_posts (
 );
 CREATE INDEX recent_posts_inserted_at ON recent_posts (inserted_at DESC);
 CREATE INDEX recent_posts_created_at_index ON recent_posts (created_at DESC);
+CREATE INDEX recent_posts_did_rkey_created_at ON recent_posts (actor_did DESC, rkey DESC, created_at DESC);
 CREATE INDEX recent_posts_roots_or_quotes_only_created_at ON recent_posts (created_at DESC)
 WHERE root_post_rkey IS NULL
     AND parent_post_rkey IS NULL;
@@ -167,7 +168,7 @@ CREATE TABLE following_counts (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (actor_did)
 );
-CREATE INDEX following_counts_num_following_lt_4000 ON following_counts (actor_did)
+CREATE INDEX following_counts_on_actor_did_and_num_following ON following_counts(actor_did, num_following)
 WHERE num_following < 4000;
 -- Images
 CREATE TABLE images (
