@@ -92,7 +92,6 @@ func main() {
 		&cli.StringFlag{
 			Name:    "graphd-root",
 			Usage:   "graphd root url",
-			Value:   "http://localhost:1323",
 			EnvVars: []string{"GRAPHD_ROOT"},
 		},
 	}
