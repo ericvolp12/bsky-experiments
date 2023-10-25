@@ -159,8 +159,10 @@ func NewConsumer(
 
 		magicHeaderKey: magicHeaderKey,
 		magicHeaderVal: magicHeaderVal,
+	}
 
-		graphdClient: graphdclient.NewClient(graphdRoot, &h),
+	if graphdRoot != "" {
+		c.graphdClient = graphdclient.NewClient(graphdRoot, &h)
 	}
 
 	if magicHeaderKey != "" && magicHeaderVal != "" {
@@ -632,9 +634,11 @@ func (c *Consumer) HandleDeleteRecord(
 			return fmt.Errorf("can't delete follow: %+v", err)
 		}
 
-		err = c.graphdClient.Unfollow(ctx, repo, follow.TargetDid)
-		if err != nil {
-			log.Errorf("failed to propagate follow to GraphD: %+v", err)
+		if c.graphdClient != nil {
+			err = c.graphdClient.Unfollow(ctx, repo, follow.TargetDid)
+			if err != nil {
+				log.Errorf("failed to propagate follow to GraphD: %+v", err)
+			}
 		}
 
 		err = c.Store.Queries.DeleteFollow(ctx, store_queries.DeleteFollowParams{
@@ -1183,9 +1187,11 @@ func (c *Consumer) HandleCreateRecord(
 			log.Errorf("failed to increment following count: %+v", err)
 		}
 
-		err = c.graphdClient.Follow(ctx, repo, rec.Subject)
-		if err != nil {
-			log.Errorf("failed to propagate follow to GraphD: %+v", err)
+		if c.graphdClient != nil {
+			err = c.graphdClient.Follow(ctx, repo, rec.Subject)
+			if err != nil {
+				log.Errorf("failed to propagate follow to GraphD: %+v", err)
+			}
 		}
 	case *bsky.ActorProfile:
 		span.SetAttributes(attribute.String("record_type", "actor_profile"))
