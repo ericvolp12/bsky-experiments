@@ -164,7 +164,7 @@ func NewConsumer(
 	}
 
 	if magicHeaderKey != "" && magicHeaderVal != "" {
-		c.SyncLimiter = rate.NewLimiter(4, 1)
+		c.SyncLimiter = rate.NewLimiter(40, 1)
 	}
 
 	// Check to see if the cursor exists in redis

@@ -6,12 +6,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ipfs/go-cid"
 	typegen "github.com/whyrusleeping/cbor-gen"
 )
 
 type bufferedOp struct {
 	kind string
 	rec  *typegen.CBORMarshaler
+	cid  *cid.Cid
 }
 
 type Memjob struct {
@@ -55,7 +57,7 @@ func (s *Memstore) EnqueueJob(repo string) error {
 	return nil
 }
 
-func (s *Memstore) BufferOp(ctx context.Context, repo, kind, path string, rec *typegen.CBORMarshaler) (bool, error) {
+func (s *Memstore) BufferOp(ctx context.Context, repo, kind, path string, rec *typegen.CBORMarshaler, cid *cid.Cid) (bool, error) {
 	s.lk.Lock()
 
 	// If the job doesn't exist, we can't buffer an op for it
@@ -80,6 +82,7 @@ func (s *Memstore) BufferOp(ctx context.Context, repo, kind, path string, rec *t
 	j.bufferedOps[path] = append(j.bufferedOps[path], &bufferedOp{
 		kind: kind,
 		rec:  rec,
+		cid:  cid,
 	})
 	j.updatedAt = time.Now()
 	return true, nil
@@ -128,13 +131,13 @@ func (j *Memjob) SetState(ctx context.Context, state string) error {
 	return nil
 }
 
-func (j *Memjob) FlushBufferedOps(ctx context.Context, fn func(kind, path string, rec *typegen.CBORMarshaler) error) error {
+func (j *Memjob) FlushBufferedOps(ctx context.Context, fn func(kind, path string, rec *typegen.CBORMarshaler, cid *cid.Cid) error) error {
 	j.lk.Lock()
 	defer j.lk.Unlock()
 
 	for path, ops := range j.bufferedOps {
 		for _, op := range ops {
-			if err := fn(op.kind, path, op.rec); err != nil {
+			if err := fn(op.kind, path, op.rec, op.cid); err != nil {
 				return err
 			}
 		}

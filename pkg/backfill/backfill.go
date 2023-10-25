@@ -4,19 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
 
 	// Blank import to register types for CBORGEN
 	_ "github.com/bluesky-social/indigo/api/bsky"
+	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/repomgr"
 	"github.com/ipfs/go-cid"
 	typegen "github.com/whyrusleeping/cbor-gen"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
-	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 )
 
@@ -30,7 +31,7 @@ type Job interface {
 	// Once done it clears the buffer and marks the job as "complete"
 	// Allowing the Job interface to abstract away the details of how buffered
 	// operations are stored and/or locked
-	FlushBufferedOps(ctx context.Context, cb func(kind, path string, rec *typegen.CBORMarshaler) error) error
+	FlushBufferedOps(ctx context.Context, cb func(kind, path string, rec *typegen.CBORMarshaler, cid *cid.Cid) error) error
 
 	ClearBufferedOps(ctx context.Context) error
 }
@@ -39,7 +40,7 @@ type Job interface {
 type Store interface {
 	// BufferOp buffers an operation for a job and returns true if the operation was buffered
 	// If the operation was not buffered, it returns false and an error (ErrJobNotFound or ErrJobComplete)
-	BufferOp(ctx context.Context, repo string, kind, path string, rec *typegen.CBORMarshaler) (bool, error)
+	BufferOp(ctx context.Context, repo string, kind, path string, rec *typegen.CBORMarshaler, cid *cid.Cid) (bool, error)
 	GetJob(ctx context.Context, repo string) (Job, error)
 	GetNextEnqueuedJob(ctx context.Context) (Job, error)
 }
@@ -47,8 +48,8 @@ type Store interface {
 // Backfiller is a struct which handles backfilling a repo
 type Backfiller struct {
 	Name               string
-	HandleCreateRecord func(ctx context.Context, repo string, path string, rec *typegen.CBORMarshaler) error
-	HandleUpdateRecord func(ctx context.Context, repo string, path string, rec *typegen.CBORMarshaler) error
+	HandleCreateRecord func(ctx context.Context, repo string, path string, rec *typegen.CBORMarshaler, cid *cid.Cid) error
+	HandleUpdateRecord func(ctx context.Context, repo string, path string, rec *typegen.CBORMarshaler, cid *cid.Cid) error
 	HandleDeleteRecord func(ctx context.Context, repo string, path string) error
 	Store              Store
 
@@ -61,7 +62,6 @@ type Backfiller struct {
 	NSIDFilter   string
 	CheckoutPath string
 
-	Logger      *zap.SugaredLogger
 	syncLimiter *rate.Limiter
 
 	magicHeaderKey string
@@ -87,32 +87,47 @@ var ErrJobNotFound = errors.New("job not found")
 
 var tracer = otel.Tracer("backfiller")
 
+type BackfillOptions struct {
+	ParallelBackfills     int
+	ParallelRecordCreates int
+	NSIDFilter            string
+	SyncRequestsPerSecond int
+	CheckoutPath          string
+}
+
+func DefaultBackfillOptions() *BackfillOptions {
+	return &BackfillOptions{
+		ParallelBackfills:     10,
+		ParallelRecordCreates: 100,
+		NSIDFilter:            "",
+		SyncRequestsPerSecond: 2,
+		CheckoutPath:          "https://bsky.network/xrpc/com.atproto.sync.getRepo",
+	}
+}
+
 // NewBackfiller creates a new Backfiller
 func NewBackfiller(
 	name string,
 	store Store,
-	handleCreate func(ctx context.Context, repo string, path string, rec *typegen.CBORMarshaler) error,
-	handleUpdate func(ctx context.Context, repo string, path string, rec *typegen.CBORMarshaler) error,
+	handleCreate func(ctx context.Context, repo string, path string, rec *typegen.CBORMarshaler, cid *cid.Cid) error,
+	handleUpdate func(ctx context.Context, repo string, path string, rec *typegen.CBORMarshaler, cid *cid.Cid) error,
 	handleDelete func(ctx context.Context, repo string, path string) error,
-	parallelBackfills int,
-	parallelRecordCreates int,
-	nsidFilter string,
-	logger *zap.SugaredLogger,
-	syncRequestsPerSecond int,
-	checkoutPath string,
+	opts *BackfillOptions,
 ) *Backfiller {
+	if opts == nil {
+		opts = DefaultBackfillOptions()
+	}
 	return &Backfiller{
 		Name:                  name,
 		Store:                 store,
 		HandleCreateRecord:    handleCreate,
 		HandleUpdateRecord:    handleUpdate,
 		HandleDeleteRecord:    handleDelete,
-		ParallelBackfills:     parallelBackfills,
-		ParallelRecordCreates: parallelRecordCreates,
-		NSIDFilter:            nsidFilter,
-		Logger:                logger,
-		syncLimiter:           rate.NewLimiter(rate.Limit(syncRequestsPerSecond), 1),
-		CheckoutPath:          checkoutPath,
+		ParallelBackfills:     opts.ParallelBackfills,
+		ParallelRecordCreates: opts.ParallelRecordCreates,
+		NSIDFilter:            opts.NSIDFilter,
+		syncLimiter:           rate.NewLimiter(rate.Limit(opts.SyncRequestsPerSecond), 1),
+		CheckoutPath:          opts.CheckoutPath,
 		stop:                  make(chan chan struct{}),
 	}
 }
@@ -121,7 +136,7 @@ func NewBackfiller(
 func (b *Backfiller) Start() {
 	ctx := context.Background()
 
-	log := b.Logger.With("source", "backfiller_main")
+	log := slog.With("source", "backfiller", "name", b.Name)
 	log.Info("starting backfill processor")
 
 	sem := make(chan struct{}, b.ParallelBackfills)
@@ -138,7 +153,7 @@ func (b *Backfiller) Start() {
 		// Get the next job
 		job, err := b.Store.GetNextEnqueuedJob(ctx)
 		if err != nil {
-			log.Errorf("failed to get next backfill: %+v", err)
+			log.Error("failed to get next enqueued job", "error", err)
 			time.Sleep(1 * time.Second)
 			continue
 		} else if job == nil {
@@ -149,7 +164,7 @@ func (b *Backfiller) Start() {
 		// Mark the backfill as "in progress"
 		err = job.SetState(ctx, StateInProgress)
 		if err != nil {
-			log.Errorf("failed to set backfill state: %+v", err)
+			log.Error("failed to set job state", "error", err)
 			continue
 		}
 
@@ -164,18 +179,19 @@ func (b *Backfiller) Start() {
 
 // Stop stops the backfill processor
 func (b *Backfiller) Stop() {
-	b.Logger.Info("stopping backfill processor")
+	log := slog.With("source", "backfiller", "name", b.Name)
+	log.Info("stopping backfill processor")
 	stopped := make(chan struct{})
 	b.stop <- stopped
 	<-stopped
-	b.Logger.Info("backfill processor stopped")
+	log.Info("backfill processor stopped")
 }
 
 // FlushBuffer processes buffered operations for a job
 func (b *Backfiller) FlushBuffer(ctx context.Context, job Job) int {
 	ctx, span := tracer.Start(ctx, "FlushBuffer")
 	defer span.End()
-	log := b.Logger.With("source", "backfiller_buffer_flush", "repo", job.Repo())
+	log := slog.With("source", "backfiller_buffer_flush", "repo", job.Repo())
 
 	processed := 0
 
@@ -183,22 +199,22 @@ func (b *Backfiller) FlushBuffer(ctx context.Context, job Job) int {
 
 	// Flush buffered operations, clear the buffer, and mark the job as "complete"
 	// Clearning and marking are handled by the job interface
-	err := job.FlushBufferedOps(ctx, func(kind, path string, rec *typegen.CBORMarshaler) error {
+	err := job.FlushBufferedOps(ctx, func(kind, path string, rec *typegen.CBORMarshaler, cid *cid.Cid) error {
 		switch repomgr.EventKind(kind) {
 		case repomgr.EvtKindCreateRecord:
-			err := b.HandleCreateRecord(ctx, repo, path, rec)
+			err := b.HandleCreateRecord(ctx, repo, path, rec, cid)
 			if err != nil {
-				log.Errorf("failed to handle create record: %+v", err)
+				log.Error("failed to handle create record", "error", err)
 			}
 		case repomgr.EvtKindUpdateRecord:
-			err := b.HandleUpdateRecord(ctx, repo, path, rec)
+			err := b.HandleUpdateRecord(ctx, repo, path, rec, cid)
 			if err != nil {
-				log.Errorf("failed to handle update record: %+v", err)
+				log.Error("failed to handle update record", "error", err)
 			}
 		case repomgr.EvtKindDeleteRecord:
 			err := b.HandleDeleteRecord(ctx, repo, path)
 			if err != nil {
-				log.Errorf("failed to handle delete record: %+v", err)
+				log.Error("failed to handle delete record", "error", err)
 			}
 		}
 		backfillOpsBuffered.WithLabelValues(b.Name).Dec()
@@ -206,7 +222,13 @@ func (b *Backfiller) FlushBuffer(ctx context.Context, job Job) int {
 		return nil
 	})
 	if err != nil {
-		log.Errorf("failed to flush buffered ops: %+v", err)
+		log.Error("failed to flush buffered ops", "error", err)
+	}
+
+	// Mark the job as "complete"
+	err = job.SetState(ctx, StateComplete)
+	if err != nil {
+		log.Error("failed to set job state", "error", err)
 	}
 
 	return processed
@@ -231,19 +253,19 @@ func (b *Backfiller) BackfillRepo(ctx context.Context, job Job) {
 
 	repoDid := job.Repo()
 
-	log := b.Logger.With("source", "backfiller_backfill_repo", "repo", repoDid)
-	log.Infof("processing backfill for %s", repoDid)
+	log := slog.With("source", "backfiller_backfill_repo", "repo", repoDid)
+	log.Info(fmt.Sprintf("processing backfill for %s", repoDid))
 
-	var url = fmt.Sprintf("%s?did=%s", b.CheckoutPath, repoDid)
+	url := fmt.Sprintf("%s?did=%s", b.CheckoutPath, repoDid)
 
 	// GET and CAR decode the body
 	client := &http.Client{
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
-		Timeout:   120 * time.Second,
+		Timeout:   600 * time.Second,
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		log.Errorf("Error creating request: %v", err)
+		log.Error("failed to create request", "error", err)
 		return
 	}
 
@@ -257,12 +279,12 @@ func (b *Backfiller) BackfillRepo(ctx context.Context, job Job) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Errorf("Error sending request: %v", err)
+		log.Error("failed to send request", "error", err)
 		return
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		log.Errorf("Error response: %v", resp.StatusCode)
+		log.Info("failed to get repo", "status", resp.StatusCode)
 		reason := "unknown error"
 		if resp.StatusCode == http.StatusBadRequest {
 			reason = "repo not found"
@@ -272,13 +294,13 @@ func (b *Backfiller) BackfillRepo(ctx context.Context, job Job) {
 		// Mark the job as "failed"
 		err := job.SetState(ctx, state)
 		if err != nil {
-			log.Errorf("failed to set job state: %+v", err)
+			log.Error("failed to set job state", "error", err)
 		}
 
 		// Clear buffered ops
 		err = job.ClearBufferedOps(ctx)
 		if err != nil {
-			log.Errorf("failed to clear buffered ops: %+v", err)
+			log.Error("failed to clear buffered ops", "error", err)
 		}
 		return
 	}
@@ -292,20 +314,20 @@ func (b *Backfiller) BackfillRepo(ctx context.Context, job Job) {
 
 	r, err := repo.ReadRepoFromCar(ctx, instrumentedReader)
 	if err != nil {
-		log.Errorf("Error reading repo: %v", err)
+		log.Error("failed to read repo from car", "error", err)
 
 		state := "failed (couldn't read repo CAR from response body)"
 
 		// Mark the job as "failed"
 		err := job.SetState(ctx, state)
 		if err != nil {
-			log.Errorf("failed to set job state: %+v", err)
+			log.Error("failed to set job state", "error", err)
 		}
 
 		// Clear buffered ops
 		err = job.ClearBufferedOps(ctx)
 		if err != nil {
-			log.Errorf("failed to clear buffered ops: %+v", err)
+			log.Error("failed to clear buffered ops", "error", err)
 		}
 		return
 	}
@@ -333,19 +355,24 @@ func (b *Backfiller) BackfillRepo(ctx context.Context, job Job) {
 		go func() {
 			defer wg.Done()
 			for item := range recordQueue {
-				recordCid, rec, err := r.GetRecord(ctx, item.recordPath)
+				blk, err := r.Blockstore().Get(ctx, item.nodeCid)
 				if err != nil {
-					recordResults <- recordResult{recordPath: item.recordPath, err: fmt.Errorf("failed to get record: %w", err)}
+					recordResults <- recordResult{recordPath: item.recordPath, err: fmt.Errorf("failed to get blocks for record: %w", err)}
+					continue
+				}
+				rec, err := lexutil.CborDecodeValue(blk.RawData())
+				if err != nil {
+					recordResults <- recordResult{recordPath: item.recordPath, err: fmt.Errorf("failed to decode record: %w", err)}
 					continue
 				}
 
-				// Verify that the record cid matches the cid in the event
-				if recordCid != item.nodeCid {
-					recordResults <- recordResult{recordPath: item.recordPath, err: fmt.Errorf("mismatch in record and op cid: %s != %s", recordCid, item.nodeCid)}
+				recM, ok := rec.(typegen.CBORMarshaler)
+				if !ok {
+					recordResults <- recordResult{recordPath: item.recordPath, err: fmt.Errorf("failed to cast record to CBORMarshaler")}
 					continue
 				}
 
-				err = b.HandleCreateRecord(ctx, repoDid, item.recordPath, &rec)
+				err = b.HandleCreateRecord(ctx, repoDid, item.recordPath, &recM, &item.nodeCid)
 				if err != nil {
 					recordResults <- recordResult{recordPath: item.recordPath, err: fmt.Errorf("failed to handle create record: %w", err)}
 					continue
@@ -364,7 +391,7 @@ func (b *Backfiller) BackfillRepo(ctx context.Context, job Job) {
 		defer resultWG.Done()
 		for result := range recordResults {
 			if result.err != nil {
-				log.Errorf("Error processing record %s: %v", result.recordPath, result.err)
+				log.Error("Error processing record", "record", result.recordPath, "error", result.err)
 			}
 		}
 	}()
@@ -376,5 +403,9 @@ func (b *Backfiller) BackfillRepo(ctx context.Context, job Job) {
 	// Process buffered operations, marking the job as "complete" when done
 	numProcessed := b.FlushBuffer(ctx, job)
 
-	log.Infow("backfill complete", "buffered_deletes_processed", numProcessed, "records_backfilled", numRecords, "duration", time.Since(start))
+	log.Info("backfill complete",
+		"buffered_records_processed", numProcessed,
+		"records_backfilled", numRecords,
+		"duration", time.Since(start),
+	)
 }
