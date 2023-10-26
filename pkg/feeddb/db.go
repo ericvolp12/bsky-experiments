@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -18,8 +19,8 @@ import (
 const (
 	// PostsPerHour is the number of posts we expect to see per hour
 	PostsPerHour = 10 * 60 * 60
-	// MaxPosts is the maximum number of posts we expect to see in 3 days, the size of our ring buffer
-	MaxPosts = PostsPerHour * 24 * 3
+	// MaxPosts is the maximum number of posts we expect to see in 2 days, the size of our ring buffer
+	MaxPosts = PostsPerHour * 24 * 2
 )
 
 var tracer = otel.Tracer("feeddb")
@@ -46,7 +47,7 @@ func NewDB(cstore *store.Store) *DB {
 		posts:          make(map[string]*store_queries.RecentPost),
 		cstore:         cstore,
 		pageSize:       50_000,
-		lastInsertedAt: time.Time{},
+		lastInsertedAt: time.Now().Add(-48 * time.Hour),
 	}
 }
 
@@ -305,33 +306,45 @@ func (s *DB) GetPostsFromAuthors(ctx context.Context, authorDIDs []string, page,
 	}()
 
 	s.mu.RLock()
-	posts := []*store_queries.RecentPost{}
-	for _, post := range s.posts {
-		for _, authorDID := range authorDIDs {
-			if post.ActorDid == authorDID {
-				posts = append(posts, post)
-			}
-		}
-	}
+	allPosts := make([]*store_queries.RecentPost, len(s.buffer))
+	copy(allPosts, s.buffer[:])
 	s.mu.RUnlock()
 
-	// Sort posts by InsertedAt in descending order.
-	sort.Slice(posts, func(i, j int) bool {
-		return posts[i].InsertedAt.After(posts[j].InsertedAt)
-	})
+	var matchingPosts []*store_queries.RecentPost
+
+	// Iterate backward from the current position in the ring buffer.
+	currentIndex := s.index
+	for i := 0; i < len(allPosts); i++ {
+		currentIndex = (currentIndex - 1 + len(allPosts)) % len(allPosts)
+		post := allPosts[currentIndex]
+		if post == nil {
+			continue
+		}
+		if slices.Contains(authorDIDs, post.ActorDid) {
+			matchingPosts = append(matchingPosts, post)
+		}
+		if len(matchingPosts) >= page*pageSize+pageSize {
+			break // Break once you have enough results.
+		}
+	}
+
+	// Reverse the matchingPosts to restore the original order.
+	slices.Reverse(matchingPosts)
 
 	// Pagination logic.
 	start := page * pageSize
-	if start > len(posts) {
+	if start > len(matchingPosts) {
 		return nil
 	}
 	end := start + pageSize
-	if end > len(posts) {
-		end = len(posts)
+	if end > len(matchingPosts) {
+		end = len(matchingPosts)
 	}
 
-	span.SetAttributes(attribute.Int64("num_posts", int64(len(posts))))
+	span.SetAttributes(attribute.Int64("num_posts", int64(len(matchingPosts))))
 	span.SetAttributes(attribute.Int64("num_posts_returned", int64(end-start)))
 
-	return posts[start:end]
+	slog.Info("GetPostsFromAuthors", "total_time", time.Since(tStart))
+
+	return matchingPosts[start:end]
 }

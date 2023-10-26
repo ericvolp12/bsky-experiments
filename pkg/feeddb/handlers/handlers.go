@@ -72,3 +72,38 @@ func (h *Handlers) GetPostsPageByRegex(c echo.Context) error {
 	posts := h.db.GetPostsMatchingRegex(ctx, re, cursor, limit)
 	return c.JSON(200, posts)
 }
+
+func (h *Handlers) GetPostsPageByAuthors(c echo.Context) error {
+	ctx, span := tracer.Start(c.Request().Context(), "GetPostsPageByRegex")
+	defer span.End()
+
+	limitQ := c.QueryParam("limit")
+	limit := 50
+
+	var err error
+
+	if limitQ != "" {
+		limit, err = strconv.Atoi(limitQ)
+		if err != nil {
+			return c.JSON(400, fmt.Errorf("invalid limit: %w", err))
+		}
+	}
+
+	cursorQ := c.QueryParam("cursor")
+	cursor := 0
+
+	if cursorQ != "" {
+		cursor, err = strconv.Atoi(cursorQ)
+		if err != nil {
+			return c.JSON(400, fmt.Errorf("invalid cursor: %w", err))
+		}
+	}
+
+	authorDIDs := c.Request().URL.Query()["authors"]
+	if len(authorDIDs) == 0 {
+		return c.JSON(400, fmt.Errorf("no authors provided"))
+	}
+
+	posts := h.db.GetPostsFromAuthors(ctx, authorDIDs, cursor, limit)
+	return c.JSON(200, posts)
+}

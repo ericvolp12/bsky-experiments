@@ -91,6 +91,7 @@ func FeedDB(cctx *cli.Context) error {
 	e.GET("/debug/*", echo.WrapHandler(http.DefaultServeMux))
 
 	e.GET("/posts/by_regex", h.GetPostsPageByRegex)
+	e.GET("/posts/by_authors", h.GetPostsPageByAuthors)
 
 	echoProm := echoprometheus.NewMiddlewareWithConfig(echoprometheus.MiddlewareConfig{
 		Namespace: "feeddb",
