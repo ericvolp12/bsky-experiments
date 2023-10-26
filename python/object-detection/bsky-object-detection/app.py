@@ -154,12 +154,16 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     images_submitted.inc(len(image_metas))
 
     async with aiohttp.ClientSession() as session:
+        start = time()
         download_tasks = [download_image(session, img) for img in image_metas]
         for i in range(0, len(image_metas), batch_size):
+            batch_start = time()
             download_batch = download_tasks[i : i + batch_size]
             pil_images: List[
                 Tuple[ImageMeta, Image.Image | None]
             ] = await asyncio.gather(*download_batch)
+
+            dl_done = time()
 
             # Log failed downloads
             failed = [img_pair[0] for img_pair in pil_images if not img_pair[1]]
@@ -181,6 +185,16 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
                         extra={"error": e, "successful": successful},
                     )
                     detection_results = []
+                finally:
+                    detection_done = time()
+                    logging.info(
+                        {
+                            "message": "Batch processing complete",
+                            "batch_size": len(successful),
+                            "download_time": dl_done - batch_start,
+                            "detection_time": detection_done - dl_done,
+                        }
+                    )
             else:
                 detection_results = []
 
