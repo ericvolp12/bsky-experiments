@@ -169,6 +169,7 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     image_results: List[ImageResult] = []
     images_submitted.inc(len(image_metas))
 
+    start = time()
     async with aiohttp.ClientSession() as session:
         async for pil_images in batched_downloads(session, image_metas, batch_size):
             batch_start = time()
@@ -192,13 +193,12 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
                     )
                 finally:
                     detection_done = time()
-                    dl_done = detection_done  # As images are processed immediately after download
                     logging.info(
                         {
                             "message": "Batch processing complete",
                             "batch_size": len(successful),
-                            "download_time": dl_done - batch_start,
-                            "detection_time": detection_done - dl_done,
+                            "batch_start_offset": batch_start - start,
+                            "batch_processing_time": detection_done - batch_start,
                         }
                     )
 
