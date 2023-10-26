@@ -143,6 +143,9 @@ async def download_image(
 
 
 batch_size = 8
+batch_size_str = os.getenv("BATCH_SIZE")
+if batch_size_str:
+    batch_size = int(batch_size_str)
 
 
 @app.post("/detect_objects", response_model=List[ImageResult])
