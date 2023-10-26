@@ -62,7 +62,7 @@ func main() {
 		&cli.IntFlag{
 			Name:    "image-page-size",
 			Usage:   "number of images to index per page",
-			Value:   50,
+			Value:   60,
 			EnvVars: []string{"IMAGE_PAGE_SIZE"},
 		},
 		&cli.IntFlag{

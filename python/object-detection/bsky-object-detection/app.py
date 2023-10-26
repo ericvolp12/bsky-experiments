@@ -3,7 +3,7 @@ import io
 import logging
 import os
 from time import time
-from typing import List, Tuple
+from typing import AsyncGenerator, List, Optional, Tuple
 
 import aiohttp
 
@@ -141,6 +141,22 @@ async def download_image(
                 return image_meta, None
             return image_meta, img
 
+async def batched_downloads(
+    session: aiohttp.ClientSession, image_metas: List[ImageMeta], batch_size: int
+) -> AsyncGenerator[List[Tuple[ImageMeta, Optional[Image.Image]]], None]:
+    tasks = [download_image(session, img) for img in image_metas]
+    buffer = []
+
+    for coro in asyncio.as_completed(tasks):
+        result = await coro
+        buffer.append(result)
+        if len(buffer) >= batch_size:
+            yield buffer
+            buffer = []
+
+    # Yield any remaining images in the buffer
+    if buffer:
+        yield buffer
 
 batch_size = 8
 batch_size_str = os.getenv("BATCH_SIZE")
@@ -154,16 +170,8 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     images_submitted.inc(len(image_metas))
 
     async with aiohttp.ClientSession() as session:
-        start = time()
-        download_tasks = [download_image(session, img) for img in image_metas]
-        for i in range(0, len(image_metas), batch_size):
+        async for pil_images in batched_downloads(session, image_metas, batch_size):
             batch_start = time()
-            download_batch = download_tasks[i : i + batch_size]
-            pil_images: List[
-                Tuple[ImageMeta, Image.Image | None]
-            ] = await asyncio.gather(*download_batch)
-
-            dl_done = time()
 
             # Log failed downloads
             failed = [img_pair[0] for img_pair in pil_images if not img_pair[1]]
@@ -172,10 +180,8 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
                 image_results.append(ImageResult(meta=image_meta, results=[]))
 
             # Detect objects on successful downloads
-            successful = []
-            for image_meta, pil_image in pil_images:
-                if pil_image:
-                    successful.append((image_meta, pil_image))
+            successful = [(image_meta, pil_image) for image_meta, pil_image in pil_images if pil_image]
+            detection_results = []
             if successful:
                 try:
                     detection_results = detect_objects(image_pairs=successful)
@@ -184,9 +190,9 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
                         f"Error detecting objects: {e}",
                         extra={"error": e, "successful": successful},
                     )
-                    detection_results = []
                 finally:
                     detection_done = time()
+                    dl_done = detection_done  # As images are processed immediately after download
                     logging.info(
                         {
                             "message": "Batch processing complete",
@@ -195,8 +201,6 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
                             "detection_time": detection_done - dl_done,
                         }
                     )
-            else:
-                detection_results = []
 
             # Populate image results
             for image_meta, detection_result in detection_results:
