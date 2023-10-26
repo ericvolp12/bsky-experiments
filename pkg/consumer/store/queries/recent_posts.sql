@@ -91,6 +91,12 @@ ORDER BY p.created_at DESC,
     p.actor_did DESC,
     p.rkey DESC
 LIMIT $1;
+-- name: GetRecentPostsPageByInsertedAt :many
+SELECT *
+FROM recent_posts
+WHERE inserted_at > $1
+ORDER BY inserted_at ASC
+LIMIT $2;
 -- name: GetRecentPostsFromNonMoots :many
 WITH my_follows AS (
     SELECT target_did

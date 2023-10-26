@@ -1,0 +1,12 @@
+version: "3.8"
+services:
+  feeddb:
+    build:
+      context: ../../
+      dockerfile: build/feeddb/Dockerfile
+    image: feeddb
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: always
+    env_file:
+      - ../../.feeddb.env

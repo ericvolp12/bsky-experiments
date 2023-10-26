@@ -579,7 +579,7 @@ func (q *Queries) GetPostsFromNonMoots(ctx context.Context, arg GetPostsFromNonM
 const getPostsFromNonSpamUsers = `-- name: GetPostsFromNonSpamUsers :many
 WITH non_spam AS (
     SELECT nm.actor_did
-    FROM unnest($5::TEXT[]) nm(actor_did)
+    FROM unnest($5::TEXT []) nm(actor_did)
         LEFT JOIN following_counts fc ON nm.actor_did = fc.actor_did
     WHERE fc.num_following < 4000
 )

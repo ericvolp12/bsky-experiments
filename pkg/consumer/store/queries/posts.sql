@@ -72,7 +72,7 @@ LIMIT $2;
 -- name: GetPostsFromNonSpamUsers :many
 WITH non_spam AS (
     SELECT nm.actor_did
-    FROM unnest(sqlc.arg('dids')::TEXT[]) nm(actor_did)
+    FROM unnest(sqlc.arg('dids')::TEXT []) nm(actor_did)
         LEFT JOIN following_counts fc ON nm.actor_did = fc.actor_did
     WHERE fc.num_following < 4000
 )

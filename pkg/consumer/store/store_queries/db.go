@@ -315,6 +315,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getRecentPostsFromNonSpamUsersStmt, err = db.PrepareContext(ctx, getRecentPostsFromNonSpamUsers); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRecentPostsFromNonSpamUsers: %w", err)
 	}
+	if q.getRecentPostsPageByInsertedAtStmt, err = db.PrepareContext(ctx, getRecentPostsPageByInsertedAt); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRecentPostsPageByInsertedAt: %w", err)
+	}
 	if q.getRepoBackfillRecordStmt, err = db.PrepareContext(ctx, getRepoBackfillRecord); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRepoBackfillRecord: %w", err)
 	}
@@ -901,6 +904,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getRecentPostsFromNonSpamUsersStmt: %w", cerr)
 		}
 	}
+	if q.getRecentPostsPageByInsertedAtStmt != nil {
+		if cerr := q.getRecentPostsPageByInsertedAtStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRecentPostsPageByInsertedAtStmt: %w", cerr)
+		}
+	}
 	if q.getRepoBackfillRecordStmt != nil {
 		if cerr := q.getRepoBackfillRecordStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getRepoBackfillRecordStmt: %w", cerr)
@@ -1197,6 +1205,7 @@ type Queries struct {
 	getRecentPostsByActorsFollowingTargetStmt *sql.Stmt
 	getRecentPostsFromNonMootsStmt            *sql.Stmt
 	getRecentPostsFromNonSpamUsersStmt        *sql.Stmt
+	getRecentPostsPageByInsertedAtStmt        *sql.Stmt
 	getRepoBackfillRecordStmt                 *sql.Stmt
 	getRepoBackfillRecordsStmt                *sql.Stmt
 	getRepostStmt                             *sql.Stmt
@@ -1332,6 +1341,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getRecentPostsByActorsFollowingTargetStmt: q.getRecentPostsByActorsFollowingTargetStmt,
 		getRecentPostsFromNonMootsStmt:            q.getRecentPostsFromNonMootsStmt,
 		getRecentPostsFromNonSpamUsersStmt:        q.getRecentPostsFromNonSpamUsersStmt,
+		getRecentPostsPageByInsertedAtStmt:        q.getRecentPostsPageByInsertedAtStmt,
 		getRepoBackfillRecordStmt:                 q.getRepoBackfillRecordStmt,
 		getRepoBackfillRecordsStmt:                q.getRepoBackfillRecordsStmt,
 		getRepostStmt:                             q.getRepostStmt,
