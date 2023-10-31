@@ -63,6 +63,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createImageStmt, err = db.PrepareContext(ctx, createImage); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateImage: %w", err)
 	}
+	if q.createKeyStmt, err = db.PrepareContext(ctx, createKey); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateKey: %w", err)
+	}
 	if q.createLikeStmt, err = db.PrepareContext(ctx, createLike); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateLike: %w", err)
 	}
@@ -131,6 +134,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteImagesForPostStmt, err = db.PrepareContext(ctx, deleteImagesForPost); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteImagesForPost: %w", err)
+	}
+	if q.deleteKeyStmt, err = db.PrepareContext(ctx, deleteKey); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteKey: %w", err)
 	}
 	if q.deleteLikeStmt, err = db.PrepareContext(ctx, deleteLike); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteLike: %w", err)
@@ -248,6 +254,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getImagesForPostStmt, err = db.PrepareContext(ctx, getImagesForPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetImagesForPost: %w", err)
+	}
+	if q.getKeyStmt, err = db.PrepareContext(ctx, getKey); err != nil {
+		return nil, fmt.Errorf("error preparing query GetKey: %w", err)
 	}
 	if q.getLikeStmt, err = db.PrepareContext(ctx, getLike); err != nil {
 		return nil, fmt.Errorf("error preparing query GetLike: %w", err)
@@ -484,6 +493,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createImageStmt: %w", cerr)
 		}
 	}
+	if q.createKeyStmt != nil {
+		if cerr := q.createKeyStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createKeyStmt: %w", cerr)
+		}
+	}
 	if q.createLikeStmt != nil {
 		if cerr := q.createLikeStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createLikeStmt: %w", cerr)
@@ -597,6 +611,11 @@ func (q *Queries) Close() error {
 	if q.deleteImagesForPostStmt != nil {
 		if cerr := q.deleteImagesForPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteImagesForPostStmt: %w", cerr)
+		}
+	}
+	if q.deleteKeyStmt != nil {
+		if cerr := q.deleteKeyStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteKeyStmt: %w", cerr)
 		}
 	}
 	if q.deleteLikeStmt != nil {
@@ -792,6 +811,11 @@ func (q *Queries) Close() error {
 	if q.getImagesForPostStmt != nil {
 		if cerr := q.getImagesForPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getImagesForPostStmt: %w", cerr)
+		}
+	}
+	if q.getKeyStmt != nil {
+		if cerr := q.getKeyStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getKeyStmt: %w", cerr)
 		}
 	}
 	if q.getLikeStmt != nil {
@@ -1121,6 +1145,7 @@ type Queries struct {
 	createEventStmt                           *sql.Stmt
 	createFollowStmt                          *sql.Stmt
 	createImageStmt                           *sql.Stmt
+	createKeyStmt                             *sql.Stmt
 	createLikeStmt                            *sql.Stmt
 	createLikeCountStmt                       *sql.Stmt
 	createPointAssignmentStmt                 *sql.Stmt
@@ -1144,6 +1169,7 @@ type Queries struct {
 	deleteFollowsByTargetStmt                 *sql.Stmt
 	deleteImageStmt                           *sql.Stmt
 	deleteImagesForPostStmt                   *sql.Stmt
+	deleteKeyStmt                             *sql.Stmt
 	deleteLikeStmt                            *sql.Stmt
 	deleteLikeCountStmt                       *sql.Stmt
 	deletePointAssignmentStmt                 *sql.Stmt
@@ -1183,6 +1209,7 @@ type Queries struct {
 	getHotPageStmt                            *sql.Stmt
 	getImageStmt                              *sql.Stmt
 	getImagesForPostStmt                      *sql.Stmt
+	getKeyStmt                                *sql.Stmt
 	getLikeStmt                               *sql.Stmt
 	getLikeCountStmt                          *sql.Stmt
 	getLikesByActorStmt                       *sql.Stmt
@@ -1257,6 +1284,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createEventStmt:                           q.createEventStmt,
 		createFollowStmt:                          q.createFollowStmt,
 		createImageStmt:                           q.createImageStmt,
+		createKeyStmt:                             q.createKeyStmt,
 		createLikeStmt:                            q.createLikeStmt,
 		createLikeCountStmt:                       q.createLikeCountStmt,
 		createPointAssignmentStmt:                 q.createPointAssignmentStmt,
@@ -1280,6 +1308,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteFollowsByTargetStmt:                 q.deleteFollowsByTargetStmt,
 		deleteImageStmt:                           q.deleteImageStmt,
 		deleteImagesForPostStmt:                   q.deleteImagesForPostStmt,
+		deleteKeyStmt:                             q.deleteKeyStmt,
 		deleteLikeStmt:                            q.deleteLikeStmt,
 		deleteLikeCountStmt:                       q.deleteLikeCountStmt,
 		deletePointAssignmentStmt:                 q.deletePointAssignmentStmt,
@@ -1319,6 +1348,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getHotPageStmt:                            q.getHotPageStmt,
 		getImageStmt:                              q.getImageStmt,
 		getImagesForPostStmt:                      q.getImagesForPostStmt,
+		getKeyStmt:                                q.getKeyStmt,
 		getLikeStmt:                               q.getLikeStmt,
 		getLikeCountStmt:                          q.getLikeCountStmt,
 		getLikesByActorStmt:                       q.getLikesByActorStmt,

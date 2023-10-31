@@ -6,6 +6,7 @@ package store_queries
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	"github.com/sqlc-dev/pqtype"
@@ -23,6 +24,14 @@ type Actor struct {
 	CreatedAt     sql.NullTime   `json:"created_at"`
 	UpdatedAt     sql.NullTime   `json:"updated_at"`
 	InsertedAt    time.Time      `json:"inserted_at"`
+}
+
+type ApiKey struct {
+	ApiKey       string          `json:"api_key"`
+	AuthEntity   json.RawMessage `json:"auth_entity"`
+	AssignedUser string          `json:"assigned_user"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
 type Block struct {

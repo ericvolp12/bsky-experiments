@@ -70,7 +70,13 @@ type Auth struct {
 	ServiceDID   string
 	PLCDirectory string
 	// A bit of a hack for small-scope authenticated APIs
-	APIKeyFeedMap map[string]*FeedAuthEntity
+	KeyProvider APIKeyProvider
+}
+
+var ErrAPIKeyNotFound = fmt.Errorf("API key not found")
+
+type APIKeyProvider interface {
+	GetEntityFromAPIKey(ctx context.Context, apiKey string) (*FeedAuthEntity, error)
 }
 
 // NewAuth creates a new Auth instance with the given key cache size and TTL
@@ -87,6 +93,7 @@ func NewAuth(
 	plcDirectory string,
 	requestsPerSecond int,
 	serviceDID string,
+	keyProvider APIKeyProvider,
 ) (*Auth, error) {
 	keyCache, err := lru.NewARC[string, KeyCacheEntry](keyCacheSize)
 	if err != nil {
@@ -104,18 +111,14 @@ func NewAuth(
 	limiter := rate.NewLimiter(rate.Every(timeBetweenRequests), 1)
 
 	return &Auth{
-		KeyCache:      keyCache,
-		KeyCacheTTL:   keyCacheTTL,
-		PLCDirectory:  plcDirectory,
-		HTTPClient:    &client,
-		ServiceDID:    serviceDID,
-		Limiter:       limiter,
-		APIKeyFeedMap: make(map[string]*FeedAuthEntity),
+		KeyCache:     keyCache,
+		KeyCacheTTL:  keyCacheTTL,
+		PLCDirectory: plcDirectory,
+		HTTPClient:   &client,
+		ServiceDID:   serviceDID,
+		Limiter:      limiter,
+		KeyProvider:  keyProvider,
 	}, nil
-}
-
-func (auth *Auth) UpdateAPIKeyFeedMapping(apiKey string, feedAuthEntity *FeedAuthEntity) {
-	auth.APIKeyFeedMap[apiKey] = feedAuthEntity
 }
 
 func (auth *Auth) GetClaimsFromAuthHeader(ctx context.Context, authHeader string, claims jwt.Claims) error {
@@ -299,16 +302,16 @@ func (auth *Auth) AuthenticateGinRequestViaAPIKey(c *gin.Context) {
 		return
 	}
 
-	for key, authEntity := range auth.APIKeyFeedMap {
-		if keyFromHeader == key {
-			span.SetAttributes(attribute.Bool("auth.api_key", true))
-			c.Set("feed.auth.entity", authEntity)
-			c.Next()
-			return
-		}
+	authEntity, err := auth.KeyProvider.GetEntityFromAPIKey(c.Request.Context(), keyFromHeader)
+	if err == nil {
+		span.SetAttributes(attribute.Bool("auth.api_key", true))
+		c.Set("feed.auth.entity", authEntity)
+		c.Next()
+		return
 	}
 
 	span.SetAttributes(attribute.Bool("auth.api_key", false))
+	span.SetAttributes(attribute.String("auth.api_key.error", err.Error()))
 	c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid API key"})
 	c.Abort()
 	return

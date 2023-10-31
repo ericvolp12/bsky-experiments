@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -86,12 +85,6 @@ func main() {
 			Usage:   "URL to the exported graph JSON",
 			Value:   "https://s3.jazco.io/exported_graph_enriched.json",
 			EnvVars: []string{"GRAPH_JSON_URL"},
-		},
-		&cli.StringFlag{
-			Name:     "keys-json-path",
-			Usage:    "path to the JSON file containing the API Keys",
-			Required: true,
-			EnvVars:  []string{"KEYS_JSON_PATH"},
 		},
 		&cli.StringFlag{
 			Name:     "service-endpoint",
@@ -342,35 +335,19 @@ func FeedGenerator(cctx *cli.Context) error {
 	p := ginprometheus.NewPrometheus("gin", nil)
 	p.Use(router)
 
+	// Init a store provider for API keys
+	storeProvider := auth.NewStoreProvider(store)
+
 	auther, err := auth.NewAuth(
 		10000,
 		time.Hour*1,
 		"https://plc.directory",
 		5,
 		"did:web:feedsky.jazco.io",
+		storeProvider,
 	)
 	if err != nil {
 		log.Fatalf("Failed to create Auth: %v", err)
-	}
-
-	// Add Auth Entities to auth for API Key Auth
-	// Read the JSON file
-	file, err := os.Open(cctx.String("keys-json-path"))
-	if err != nil {
-		log.Fatalf("Failed to open file: %v", err)
-	}
-	defer file.Close()
-
-	// Decode the file into a slice of FeedAuthEntity structs
-	entities := make([]*auth.FeedAuthEntity, 0)
-	decoder := json.NewDecoder(file)
-	if err := decoder.Decode(&entities); err != nil {
-		log.Fatalf("Failed to decode file: %v", err)
-	}
-
-	// Add the entities to the Auth struct's map
-	for _, entity := range entities {
-		auther.UpdateAPIKeyFeedMapping(entity.APIKey, entity)
 	}
 
 	router.GET("/update_cluster_assignments", endpoints.UpdateClusterAssignments)
