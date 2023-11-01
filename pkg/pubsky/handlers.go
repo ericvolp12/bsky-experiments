@@ -99,7 +99,7 @@ func (p *Pubsky) HandleIndex(c *gin.Context) {
 	}
 
 	if len(rootDBPost.ImageCids) > 0 && rootDBPost.ImageCids[0] != "" {
-		templateData.Image = fmt.Sprintf("https://av-cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", did, rootDBPost.ImageCids[0])
+		templateData.Image = fmt.Sprintf("https://cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", did, rootDBPost.ImageCids[0])
 	}
 
 	c.Status(200)
@@ -160,7 +160,7 @@ func (p *Pubsky) HandleGetPost(c *gin.Context) {
 
 	var actorPropicURL string
 	if rootDBPost.ProPicCid.Valid {
-		actorPropicURL = fmt.Sprintf("https://av-cdn.bsky.app/img/avatar/plain/%s/%s@jpeg", did, rootDBPost.ProPicCid.String)
+		actorPropicURL = fmt.Sprintf("https://cdn.bsky.app/img/avatar/plain/%s/%s@jpeg", did, rootDBPost.ProPicCid.String)
 	}
 
 	rootPost := Post{
@@ -188,7 +188,7 @@ func (p *Pubsky) HandleGetPost(c *gin.Context) {
 		}
 		alt := rootDBPost.ImageAlts[i]
 
-		url := fmt.Sprintf("https://av-cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", did, cid)
+		url := fmt.Sprintf("https://cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", did, cid)
 		rootPost.Images = append(rootPost.Images, Image{
 			Cid: cid,
 			URL: url,
@@ -223,7 +223,7 @@ func (p *Pubsky) HandleGetPost(c *gin.Context) {
 
 			var actorPropicURL string
 			if dbPost.ProPicCid.Valid {
-				actorPropicURL = fmt.Sprintf("https://av-cdn.bsky.app/img/avatar/plain/%s/%s@jpeg", dbPost.ActorDid, dbPost.ProPicCid.String)
+				actorPropicURL = fmt.Sprintf("https://cdn.bsky.app/img/avatar/plain/%s/%s@jpeg", dbPost.ActorDid, dbPost.ProPicCid.String)
 			}
 
 			post := Post{
@@ -252,7 +252,7 @@ func (p *Pubsky) HandleGetPost(c *gin.Context) {
 
 				alt := dbPost.ImageAlts[i]
 
-				url := fmt.Sprintf("https://av-cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", dbPost.ActorDid, cid)
+				url := fmt.Sprintf("https://cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", dbPost.ActorDid, cid)
 				post.Images = append(post.Images, Image{
 					Cid: cid,
 					URL: url,

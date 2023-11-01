@@ -214,7 +214,7 @@ func (bsky *BSky) ProcessRepoRecord(
 				CID:      imageCID,
 				MimeType: image.Image.MimeType,
 				AltText:  image.Alt,
-				URL:      fmt.Sprintf("https://av-cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", authorDID, imageCID),
+				URL:      fmt.Sprintf("https://cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", authorDID, imageCID),
 			})
 		}
 
