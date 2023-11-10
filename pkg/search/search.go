@@ -7,7 +7,7 @@ import (
 	"github.com/XSAM/otelsql"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/search_queries"
 	_ "github.com/lib/pq" // postgres driver
-	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.19.0"
 )
 
 type NotFoundError struct {

@@ -8,7 +8,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	_ "github.com/lib/pq" // postgres driver
 	"go.opentelemetry.io/otel"
-	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.19.0"
 )
 
 var tracer = otel.Tracer("store")

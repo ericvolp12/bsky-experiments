@@ -14,6 +14,7 @@ import (
 
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
+	"github.com/bluesky-social/indigo/atproto/identity"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer"
@@ -34,6 +35,7 @@ type Jazbot struct {
 	BotDid    string
 	limiter   *rate.Limiter
 	PLCMirror string
+	Directory identity.Directory
 }
 
 type Command struct {
@@ -79,6 +81,10 @@ var SupportedCommands = map[string]Command{
 		Name: "getstoveylikes",
 		Desc: "Get the # of likes Stovey has given you",
 	},
+	"whereami": {
+		Name: "whereami",
+		Desc: "Get the name of your PDS",
+	},
 }
 
 func NewJazbot(ctx context.Context, store *store.Store, botDid, plcMirror string) (*Jazbot, error) {
@@ -94,6 +100,8 @@ func NewJazbot(ctx context.Context, store *store.Store, botDid, plcMirror string
 
 	logger := rawLogger.With(zap.String("source", "jazbot")).Sugar()
 
+	dir := identity.DefaultDirectory()
+
 	j := Jazbot{
 		Store:     store,
 		Client:    client,
@@ -102,6 +110,7 @@ func NewJazbot(ctx context.Context, store *store.Store, botDid, plcMirror string
 		BotDid:    botDid,
 		limiter:   rate.NewLimiter(rate.Limit(0.5), 1), // One request every 2 seconds
 		PLCMirror: plcMirror,
+		Directory: dir,
 	}
 
 	// Start a goroutine to refresh the xrpc client
@@ -345,6 +354,13 @@ func (j *Jazbot) HandleRequest(
 			resp, facets, err = j.GetLeaderboard(ctx, actorDid)
 			if err != nil {
 				j.Logger.Errorf("failed to get leaderboard for user (%s): %+v", actorDid, err)
+			}
+		case "whereami":
+			validCommandsReceivedCounter.WithLabelValues(command).Inc()
+			var err error
+			resp, err = j.GetPDS(ctx, actorDid)
+			if err != nil {
+				j.Logger.Errorf("failed to get PDS for user (%s): %+v", actorDid, err)
 			}
 		default:
 			failedCommandsReceivedCounter.WithLabelValues("invalid_command").Inc()
