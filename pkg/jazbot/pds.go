@@ -38,6 +38,10 @@ func (j *Jazbot) GetPDS(ctx context.Context, actorDid string) (string, error) {
 		}
 	}
 
-	resp = fmt.Sprintf("Your PDS is: %s!\nI hope you're enjoying your time there!", pds)
+	resp = fmt.Sprintf("Your PDS is: %s!\nI hope you're enjoying your time there! 😊", pds)
+	if pds == "bsky.social" {
+		resp = fmt.Sprintf("Your PDS is: %s!\nDon't worry! The Great Federation Rapture will soon visit you and you'll join the rest of us in the great big Mycosphere in the sky!😇😇😇", pds)
+	}
+
 	return resp, nil
 }
