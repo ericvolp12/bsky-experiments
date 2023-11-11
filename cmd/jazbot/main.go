@@ -31,7 +31,7 @@ func main() {
 	app := cli.App{
 		Name:    "jazbot",
 		Usage:   "atproto firehose bot",
-		Version: "0.0.1",
+		Version: "0.0.2",
 	}
 
 	app.Flags = []cli.Flag{
@@ -293,7 +293,7 @@ func Jazbot(cctx *cli.Context) error {
 
 	log.Infof("connecting to WebSocket at: %s", u.String())
 	con, _, err := websocket.DefaultDialer.Dial(u.String(), http.Header{
-		"User-Agent": []string{"jazbot/0.0.1"},
+		"User-Agent": []string{fmt.Sprintf("%s/%s", cctx.App.Name, cctx.App.Version)},
 	})
 	if err != nil {
 		log.Infof("failed to connect to websocket: %v", err)
