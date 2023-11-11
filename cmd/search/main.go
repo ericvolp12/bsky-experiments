@@ -209,6 +209,7 @@ func main() {
 	router.GET("/thread", api.ProcessThreadRequest)
 	router.GET("/stats", api.GetAuthorStats)
 	router.GET("/post/:id", api.GetPost)
+	router.GET("/redir", api.RedirectAtURI)
 
 	router.GET("/opted_out_authors", api.GetOptedOutAuthors)
 	router.POST("/opt_out", api.GraphOptOut)
