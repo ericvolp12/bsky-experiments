@@ -4,73 +4,59 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/xrpc"
-	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 
 	"golang.org/x/time/rate"
 )
 
 type UserCount struct {
-	Client           *xrpc.Client
-	ClientMux        *sync.RWMutex
 	CurrentUserCount int
-	RateLimiter      *rate.Limiter
-	LastCursor       string
-	LastPageSize     int
 
 	RedisClient *redis.Client
 	Prefix      string
+
+	PDSs []*PDS
 }
 
-func NewUserCount(ctx context.Context, client *xrpc.Client, redisClient *redis.Client) *UserCount {
-	clientMux := &sync.RWMutex{}
-
-	// Run a routine that refreshes the auth token every 10 minutes
-	authTicker := time.NewTicker(10 * time.Minute)
-	quit := make(chan struct{})
-	go func() {
-		log.Println("starting auth refresh routine...")
-		for {
-			select {
-			case <-authTicker.C:
-				log.Println("refreshing auth token...")
-				err := intXRPC.RefreshAuth(ctx, client, clientMux)
-				if err != nil {
-					log.Printf("error refreshing auth token: %s\n", err)
-				} else {
-					log.Println("successfully refreshed auth token")
-				}
-			case <-quit:
-				authTicker.Stop()
-				return
-			}
-		}
-	}()
-
+func NewUserCount(ctx context.Context, redisClient *redis.Client) *UserCount {
 	prefix := "usercount"
 
 	// Check for a prior cursor in redis
-
-	lastCursor, err := redisClient.Get(ctx, prefix+":last_cursor").Result()
+	pdsList, err := redisClient.HGetAll(ctx, prefix+":pdslist").Result()
 	if err != nil {
 		if err != redis.Nil {
-			log.Printf("error getting last cursor from redis: %s\n", err)
+			log.Printf("error getting last pds from redis: %s\n", err)
 		}
-		lastCursor = ""
+		pdsList = map[string]string{}
 	}
 
-	lastPageSize, err := redisClient.Get(ctx, prefix+":last_page_size").Int()
-	if err != nil {
-		if err != redis.Nil {
-			log.Printf("error getting last page size from redis: %s\n", err)
+	// pdsList is a map of host -> last cursor, last page size, last user count
+	// We need to convert it to a slice of PDS structs
+	pdsSlice := []*PDS{}
+	for host, pdsString := range pdsList {
+		pds := NewPDS(host, 4)
+		_, err := fmt.Sscanf(pdsString, "%d|%d|%s", &pds.UserCount, &pds.LastPageSize, &pds.LastCursor)
+		if err != nil {
+			log.Printf("error parsing pds string: %s\n", err)
+			continue
 		}
-		lastPageSize = 0
+		pdsSlice = append(pdsSlice, pds)
+	}
+
+	// If there are no PDSs in redis, add the default list
+	if len(pdsSlice) == 0 {
+		for _, host := range PDSHostList {
+			pdsSlice = append(pdsSlice, NewPDS(host, 4))
+		}
 	}
 
 	lastUserCount, err := redisClient.Get(ctx, prefix+":last_user_count").Int()
@@ -81,18 +67,59 @@ func NewUserCount(ctx context.Context, client *xrpc.Client, redisClient *redis.C
 		lastUserCount = 0
 	}
 
-	// Set up a rate limiter to limit requests to 50 per second
-	limiter := rate.NewLimiter(rate.Limit(50), 1)
-
 	return &UserCount{
-		Client:           client,
-		RateLimiter:      limiter,
-		ClientMux:        clientMux,
 		RedisClient:      redisClient,
-		Prefix:           "usercount",
-		LastCursor:       lastCursor,
-		LastPageSize:     lastPageSize,
+		Prefix:           prefix,
 		CurrentUserCount: lastUserCount,
+		PDSs:             pdsSlice,
+	}
+}
+
+var PDSHostList = []string{
+	"https://bsky.social",
+	"https://morel.us-east.host.bsky.network",
+	"https://puffball.us-east.host.bsky.network",
+	"https://inkcap.us-east.host.bsky.network",
+	"https://oyster.us-east.host.bsky.network",
+	"https://enoki.us-east.host.bsky.network",
+	"https://porcini.us-east.host.bsky.network",
+	"https://shimeji.us-east.host.bsky.network",
+	"https://amanita.us-east.host.bsky.network",
+	"https://lionsmane.us-east.host.bsky.network",
+	"https://shiitake.us-east.host.bsky.network",
+}
+
+type PDS struct {
+	Host         string
+	UserCount    int
+	LastCursor   string
+	LastPageSize int
+	Limiter      *rate.Limiter
+	Client       *xrpc.Client
+}
+
+func NewPDS(host string, rps int) *PDS {
+	instrumentedTransport := otelhttp.NewTransport(&http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	})
+
+	// Create the XRPC Client
+	client := xrpc.Client{
+		Client: &http.Client{
+			Transport: instrumentedTransport,
+		},
+		Host: host,
+	}
+
+	return &PDS{
+		Host:    host,
+		Client:  &client,
+		Limiter: rate.NewLimiter(rate.Limit(rps), 1),
 	}
 }
 
@@ -103,49 +130,73 @@ func NewUserCount(ctx context.Context, client *xrpc.Client, redisClient *redis.C
 func (uc *UserCount) GetUserCount(ctx context.Context) (int, error) {
 	ctx, span := otel.Tracer("usercount").Start(ctx, "GetUserCount")
 	defer span.End()
+	var wg sync.WaitGroup
+	resultCh := make(chan int, len(uc.PDSs))
+	errorCh := make(chan error, len(uc.PDSs))
 
-	for {
-		// Use rate limiter before each request
-		err := uc.RateLimiter.Wait(ctx)
-		if err != nil {
-			fmt.Printf("error waiting for rate limiter: %v", err)
-			return -1, fmt.Errorf("error waiting for rate limiter: %w", err)
-		}
+	for _, pds := range uc.PDSs {
+		wg.Add(1)
+		go func(pds *PDS) {
+			defer wg.Done()
 
-		span.AddEvent("AcquireClientRLock")
-		uc.ClientMux.RLock()
-		span.AddEvent("ClientRLockAcquired")
-		repoOutput, err := comatproto.SyncListRepos(ctx, uc.Client, uc.LastCursor, 1000)
-		if err != nil {
-			fmt.Printf("error listing repos: %s\n", err)
-			span.AddEvent("ReleaseClientRLock")
-			uc.ClientMux.RUnlock()
-			return -1, fmt.Errorf("error listing repos: %w", err)
-		}
-		span.AddEvent("ReleaseClientRLock")
-		uc.ClientMux.RUnlock()
+			for {
+				err := pds.Limiter.Wait(ctx)
+				if err != nil {
+					errorCh <- fmt.Errorf("error waiting for rate limiter: %w", err)
+					return
+				}
 
-		// On the last page, the cursor will be nil and the repo list will be empty
+				repoOutput, err := comatproto.SyncListRepos(ctx, pds.Client, pds.LastCursor, 1000)
+				if err != nil {
+					errorCh <- fmt.Errorf("error listing repos: %w", err)
+					return
+				}
 
-		uc.CurrentUserCount += len(repoOutput.Repos)
+				pds.UserCount += len(repoOutput.Repos)
+				pds.LastPageSize = len(repoOutput.Repos)
 
-		if repoOutput.Cursor == nil {
-			break
-		}
+				if repoOutput.Cursor == nil {
+					resultCh <- pds.UserCount
+					slog.Info("Finished counting users for PDS", "host", pds.Host, "count", pds.UserCount)
+					return
+				}
 
-		uc.LastCursor = *repoOutput.Cursor
+				pds.LastCursor = *repoOutput.Cursor
+			}
+		}(pds)
 	}
 
-	// Store the last cursor in redis
-	err := uc.RedisClient.Set(ctx, uc.Prefix+":last_cursor", uc.LastCursor, 0).Err()
-	if err != nil {
-		log.Printf("error setting last cursor in redis: %s\n", err)
+	go func() {
+		wg.Wait()
+		close(resultCh)
+		close(errorCh)
+	}()
+
+	var totalUserCount int
+	for count := range resultCh {
+		totalUserCount += count
 	}
 
-	// Store the last page size in redis
-	err = uc.RedisClient.Set(ctx, uc.Prefix+":last_page_size", uc.LastPageSize, 0).Err()
+	select {
+	case err := <-errorCh:
+		if err != nil {
+			return -1, err
+		}
+	default:
+		// No error
+	}
+
+	uc.CurrentUserCount = totalUserCount
+
+	// Store the PDS list in redis
+	pdsList := map[string]interface{}{}
+	for _, pds := range uc.PDSs {
+		pdsList[pds.Host] = fmt.Sprintf("%d|%d|%s", pds.UserCount, pds.LastPageSize, pds.LastCursor)
+	}
+
+	err := uc.RedisClient.HSet(ctx, uc.Prefix+":pdslist", pdsList).Err()
 	if err != nil {
-		log.Printf("error setting last page size in redis: %s\n", err)
+		log.Printf("error setting pds list in redis: %s\n", err)
 	}
 
 	// Store the last user count in redis

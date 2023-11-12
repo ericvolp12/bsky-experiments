@@ -13,7 +13,6 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/search/endpoints"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	"github.com/ericvolp12/bsky-experiments/pkg/usercount"
-	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	ginprometheus "github.com/ericvolp12/go-gin-prometheus"
 	"github.com/gin-contrib/cors"
 	ginzap "github.com/gin-contrib/zap"
@@ -123,12 +122,7 @@ func main() {
 	}
 	defer store.Close()
 
-	client, err := intXRPC.GetXRPCClient(ctx)
-	if err != nil {
-		log.Fatalf("Failed to create XRPC client: %v", err)
-	}
-
-	userCount := usercount.NewUserCount(ctx, client, redisClient)
+	userCount := usercount.NewUserCount(ctx, redisClient)
 
 	api, err := endpoints.NewAPI(
 		postRegistry,
@@ -162,7 +156,7 @@ func main() {
 					logger.Error(e)
 				}
 			} else if path != "/metrics" {
-				logger.Info(path,
+				fields := []zap.Field{
 					zap.Int("status", c.Writer.Status()),
 					zap.String("method", c.Request.Method),
 					zap.String("path", path),
@@ -170,9 +164,17 @@ func main() {
 					zap.String("ip", c.ClientIP()),
 					zap.String("user-agent", c.Request.UserAgent()),
 					zap.String("time", end.Format(time.RFC3339)),
-					zap.String("rootPostID", c.GetString("rootPostID")),
-					zap.String("rootPostAuthorDID", c.GetString("rootPostAuthorDID")),
+
 					zap.Duration("latency", latency),
+				}
+				if c.GetString("rootPostID") != "" {
+					fields = append(fields, zap.String("rootPostID", c.GetString("rootPostID")))
+				}
+				if c.GetString("rootPostAuthorDID") != "" {
+					fields = append(fields, zap.String("rootPostAuthorDID", c.GetString("rootPostAuthorDID")))
+				}
+				logger.Info(path,
+					fields...,
 				)
 			}
 		}
@@ -208,7 +210,6 @@ func main() {
 
 	router.GET("/thread", api.ProcessThreadRequest)
 	router.GET("/stats", api.GetAuthorStats)
-	router.GET("/post/:id", api.GetPost)
 	router.GET("/redir", api.RedirectAtURI)
 
 	router.GET("/opted_out_authors", api.GetOptedOutAuthors)

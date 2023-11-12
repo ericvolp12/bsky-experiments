@@ -24,21 +24,6 @@ type LayoutCacheEntry struct {
 	Expiration time.Time
 }
 
-func (api *API) GetPost(c *gin.Context) {
-	postID := c.Param("id")
-	post, err := api.PostRegistry.GetPost(c.Request.Context(), postID)
-	if err != nil {
-		if errors.As(err, &search.NotFoundError{}) {
-			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("post with ID '%s' not found", postID)})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
-		return
-	}
-
-	c.JSON(http.StatusOK, post)
-}
-
 func (api *API) LayoutThread(ctx context.Context, rootPostID string, threadView []search.PostView) ([]layout.ThreadViewLayout, error) {
 	ctx, span := tracer.Start(ctx, "LayoutThread")
 	defer span.End()
