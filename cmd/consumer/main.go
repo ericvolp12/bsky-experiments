@@ -16,6 +16,7 @@ import (
 	"github.com/bluesky-social/indigo/events/schedulers/autoscaling"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -265,6 +266,39 @@ func Consumer(cctx *cli.Context) error {
 		}
 	}()
 
+	// Start a goroutine to update daily stats for yesterday and today every hour
+	shutdownDailyStatsUpdater := make(chan struct{})
+	dailyStatsUpdaterShutdown := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		rawlog, err := zap.NewProduction()
+		if err != nil {
+			log.Fatalf("failed to create logger: %+v", err)
+		}
+
+		log := rawlog.Sugar().With("source", "daily_stats_updater")
+
+		for {
+			select {
+			case <-shutdownDailyStatsUpdater:
+				log.Info("shutting down daily stats updater")
+				close(dailyStatsUpdaterShutdown)
+				return
+			case <-ticker.C:
+				ctx := context.Background()
+				log.Info("refreshing stats for yesterday and today")
+				err = c.Store.Queries.RefreshStatsForDay(ctx, store_queries.RefreshStatsForDayParams{
+					StartTodayOffset: -2,
+					EndTodayOffset:   1,
+				})
+				if err != nil {
+					log.Errorf("failed to refresh stats for today: %+v", err)
+				}
+				log.Info("finished refreshing stats for yesterday and today")
+			}
+		}
+	}()
+
 	// Start a goroutine to trim old recent posts from the DB every 5 minutes
 	shutdownRecentPostTrimmer := make(chan struct{})
 	recentPostTrimmerShutdown := make(chan struct{})
@@ -370,12 +404,14 @@ func Consumer(cctx *cli.Context) error {
 	close(shutdownCursorManager)
 	close(shutdownMetrics)
 	close(shutdownRecentPostTrimmer)
+	close(shutdownDailyStatsUpdater)
 
 	<-repoStreamShutdown
 	<-livenessCheckerShutdown
 	<-cursorManagerShutdown
 	<-metricsShutdown
 	<-recentPostTrimmerShutdown
+	<-dailyStatsUpdaterShutdown
 	log.Info("shut down successfully")
 
 	return nil

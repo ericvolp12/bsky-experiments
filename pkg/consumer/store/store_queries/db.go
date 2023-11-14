@@ -399,6 +399,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.insertLikeStmt, err = db.PrepareContext(ctx, insertLike); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertLike: %w", err)
 	}
+	if q.refreshStatsForDayStmt, err = db.PrepareContext(ctx, refreshStatsForDay); err != nil {
+		return nil, fmt.Errorf("error preparing query RefreshStatsForDay: %w", err)
+	}
 	if q.setSentimentForPostStmt, err = db.PrepareContext(ctx, setSentimentForPost); err != nil {
 		return nil, fmt.Errorf("error preparing query SetSentimentForPost: %w", err)
 	}
@@ -1053,6 +1056,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing insertLikeStmt: %w", cerr)
 		}
 	}
+	if q.refreshStatsForDayStmt != nil {
+		if cerr := q.refreshStatsForDayStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing refreshStatsForDayStmt: %w", cerr)
+		}
+	}
 	if q.setSentimentForPostStmt != nil {
 		if cerr := q.setSentimentForPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setSentimentForPostStmt: %w", cerr)
@@ -1257,6 +1265,7 @@ type Queries struct {
 	incrementLikeCountByNWithSubjectStmt      *sql.Stmt
 	incrementRepostCountByNStmt               *sql.Stmt
 	insertLikeStmt                            *sql.Stmt
+	refreshStatsForDayStmt                    *sql.Stmt
 	setSentimentForPostStmt                   *sql.Stmt
 	trimOldRecentPostsStmt                    *sql.Stmt
 	upatePointAssignmentStmt                  *sql.Stmt
@@ -1396,6 +1405,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		incrementLikeCountByNWithSubjectStmt:      q.incrementLikeCountByNWithSubjectStmt,
 		incrementRepostCountByNStmt:               q.incrementRepostCountByNStmt,
 		insertLikeStmt:                            q.insertLikeStmt,
+		refreshStatsForDayStmt:                    q.refreshStatsForDayStmt,
 		setSentimentForPostStmt:                   q.setSentimentForPostStmt,
 		trimOldRecentPostsStmt:                    q.trimOldRecentPostsStmt,
 		upatePointAssignmentStmt:                  q.upatePointAssignmentStmt,
