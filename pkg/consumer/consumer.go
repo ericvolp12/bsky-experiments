@@ -362,6 +362,13 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 		backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
 	}
 
+	if evt.TooBig {
+		span.SetAttributes(attribute.Bool("too_big", true))
+		log.Info("repo commit too big, skipping")
+		tooBigEventsCounter.WithLabelValues(c.SocketURL).Inc()
+		return nil
+	}
+
 	span.AddEvent("Read Repo From Car")
 	rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
 	if err != nil {

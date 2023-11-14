@@ -16,6 +16,11 @@ var rebasesProcessedCounter = promauto.NewCounterVec(prometheus.CounterOpts{
 	Help: "The total number of rebase operations processed by Consumer",
 }, []string{"socket_url"})
 
+var tooBigEventsCounter = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "consumer_too_big_events_total",
+	Help: "The total number of events that were too big to process",
+}, []string{"socket_url"})
+
 var recordsProcessedCounter = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: "consumer_records_processed_total",
 	Help: "The total number of records processed by Consumer",

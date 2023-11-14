@@ -139,6 +139,11 @@ func (uc *UserCount) GetUserCount(ctx context.Context) (int, error) {
 		go func(pds *PDS) {
 			defer wg.Done()
 
+			// For now reset the cursor and counts every time
+			pds.LastCursor = ""
+			pds.UserCount = 0
+			pds.LastPageSize = 0
+
 			for {
 				err := pds.Limiter.Wait(ctx)
 				if err != nil {
