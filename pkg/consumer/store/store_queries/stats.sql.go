@@ -12,6 +12,7 @@ import (
 const getDailySummaries = `-- name: GetDailySummaries :many
 SELECT date, "Likes per Day", "Daily Active Likers", "Daily Active Posters", "Posts per Day", "Posts with Images per Day", "Images per Day", "Images with Alt Text per Day", "First Time Posters", "Follows per Day", "Daily Active Followers", "Blocks per Day", "Daily Active Blockers"
 FROM daily_summary
+ORDER BY date DESC
 `
 
 func (q *Queries) GetDailySummaries(ctx context.Context) ([]DailySummary, error) {

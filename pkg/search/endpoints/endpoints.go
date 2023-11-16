@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/clusters"
@@ -24,6 +25,8 @@ type API struct {
 	ClusterManager *clusters.ClusterManager
 
 	LayoutServiceHost string
+
+	Directory identity.Directory
 
 	ThreadViewCacheTTL time.Duration
 	ThreadViewCache    *lru.ARCCache[string, ThreadViewCacheEntry]
@@ -64,10 +67,13 @@ func NewAPI(
 		return nil, fmt.Errorf("error initializing cluster manager: %w", err)
 	}
 
+	dir := identity.DefaultDirectory()
+
 	return &API{
 		PostRegistry:       postRegistry,
 		UserCount:          userCount,
 		Store:              store,
+		Directory:          dir,
 		ClusterManager:     clusterManager,
 		LayoutServiceHost:  layoutServiceHost,
 		ThreadViewCacheTTL: threadViewCacheTTL,

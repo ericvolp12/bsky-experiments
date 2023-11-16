@@ -222,6 +222,7 @@ func main() {
 
 	router.GET("/actors/type_ahead", api.SearchActorTypeAhead)
 	router.GET("/repo/:did", api.GetRepoAsJSON)
+	router.POST("/repo/cleanup", api.CleanupOldRecords)
 
 	port := os.Getenv("PORT")
 	if port == "" {
