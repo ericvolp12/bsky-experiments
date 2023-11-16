@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -67,6 +68,10 @@ func (api *API) GetCleanupStatus(c *gin.Context) {
 	if jobID != "" {
 		job, err := api.Store.Queries.GetRepoCleanupJob(ctx, jobID)
 		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "job not found"})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Errorf("error getting job: %w", err).Error()})
 			return
 		}
@@ -79,6 +84,10 @@ func (api *API) GetCleanupStatus(c *gin.Context) {
 	if did != "" {
 		jobs, err := api.Store.Queries.GetCleanupJobsByRepo(ctx, store_queries.GetCleanupJobsByRepoParams{Repo: did, Limit: 100})
 		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "no jobs found for the provided DID"})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Errorf("error getting jobs: %w", err).Error()})
 			return
 		}
