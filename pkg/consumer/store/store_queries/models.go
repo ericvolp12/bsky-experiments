@@ -206,6 +206,21 @@ type RepoBackfillStatus struct {
 	State        string    `json:"state"`
 }
 
+type RepoCleanupJob struct {
+	JobID           string       `json:"job_id"`
+	Repo            string       `json:"repo"`
+	RefreshToken    string       `json:"refresh_token"`
+	CleanupTypes    []string     `json:"cleanup_types"`
+	DeleteOlderThan time.Time    `json:"delete_older_than"`
+	NumDeleted      int32        `json:"num_deleted"`
+	NumDeletedToday int32        `json:"num_deleted_today"`
+	EstNumRemaining int32        `json:"est_num_remaining"`
+	JobState        string       `json:"job_state"`
+	CreatedAt       time.Time    `json:"created_at"`
+	UpdatedAt       time.Time    `json:"updated_at"`
+	LastDeletedAt   sql.NullTime `json:"last_deleted_at"`
+}
+
 type Repost struct {
 	ActorDid   string       `json:"actor_did"`
 	Rkey       string       `json:"rkey"`

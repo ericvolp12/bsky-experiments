@@ -153,6 +153,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteRecentPostStmt, err = db.PrepareContext(ctx, deleteRecentPost); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteRecentPost: %w", err)
 	}
+	if q.deleteRepoCleanupJobStmt, err = db.PrepareContext(ctx, deleteRepoCleanupJob); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteRepoCleanupJob: %w", err)
+	}
 	if q.deleteRepostStmt, err = db.PrepareContext(ctx, deleteRepost); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteRepost: %w", err)
 	}
@@ -203,6 +206,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getBlocksByTargetStmt, err = db.PrepareContext(ctx, getBlocksByTarget); err != nil {
 		return nil, fmt.Errorf("error preparing query GetBlocksByTarget: %w", err)
+	}
+	if q.getCleanupJobsByRepoStmt, err = db.PrepareContext(ctx, getCleanupJobsByRepo); err != nil {
+		return nil, fmt.Errorf("error preparing query GetCleanupJobsByRepo: %w", err)
 	}
 	if q.getCollectionStmt, err = db.PrepareContext(ctx, getCollection); err != nil {
 		return nil, fmt.Errorf("error preparing query GetCollection: %w", err)
@@ -333,6 +339,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getRepoBackfillRecordsStmt, err = db.PrepareContext(ctx, getRepoBackfillRecords); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRepoBackfillRecords: %w", err)
 	}
+	if q.getRepoCleanupJobStmt, err = db.PrepareContext(ctx, getRepoCleanupJob); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRepoCleanupJob: %w", err)
+	}
 	if q.getRepostStmt, err = db.PrepareContext(ctx, getRepost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRepost: %w", err)
 	}
@@ -344,6 +353,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getRepostsBySubjectStmt, err = db.PrepareContext(ctx, getRepostsBySubject); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRepostsBySubject: %w", err)
+	}
+	if q.getRunningCleanupJobsStmt, err = db.PrepareContext(ctx, getRunningCleanupJobs); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRunningCleanupJobs: %w", err)
 	}
 	if q.getSentimentForPostStmt, err = db.PrepareContext(ctx, getSentimentForPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSentimentForPost: %w", err)
@@ -425,6 +437,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.upsertActorFromFirehoseStmt, err = db.PrepareContext(ctx, upsertActorFromFirehose); err != nil {
 		return nil, fmt.Errorf("error preparing query UpsertActorFromFirehose: %w", err)
+	}
+	if q.upsertRepoCleanupJobStmt, err = db.PrepareContext(ctx, upsertRepoCleanupJob); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertRepoCleanupJob: %w", err)
 	}
 	return &q, nil
 }
@@ -646,6 +661,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing deleteRecentPostStmt: %w", cerr)
 		}
 	}
+	if q.deleteRepoCleanupJobStmt != nil {
+		if cerr := q.deleteRepoCleanupJobStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteRepoCleanupJobStmt: %w", cerr)
+		}
+	}
 	if q.deleteRepostStmt != nil {
 		if cerr := q.deleteRepostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteRepostStmt: %w", cerr)
@@ -729,6 +749,11 @@ func (q *Queries) Close() error {
 	if q.getBlocksByTargetStmt != nil {
 		if cerr := q.getBlocksByTargetStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getBlocksByTargetStmt: %w", cerr)
+		}
+	}
+	if q.getCleanupJobsByRepoStmt != nil {
+		if cerr := q.getCleanupJobsByRepoStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getCleanupJobsByRepoStmt: %w", cerr)
 		}
 	}
 	if q.getCollectionStmt != nil {
@@ -946,6 +971,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getRepoBackfillRecordsStmt: %w", cerr)
 		}
 	}
+	if q.getRepoCleanupJobStmt != nil {
+		if cerr := q.getRepoCleanupJobStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRepoCleanupJobStmt: %w", cerr)
+		}
+	}
 	if q.getRepostStmt != nil {
 		if cerr := q.getRepostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getRepostStmt: %w", cerr)
@@ -964,6 +994,11 @@ func (q *Queries) Close() error {
 	if q.getRepostsBySubjectStmt != nil {
 		if cerr := q.getRepostsBySubjectStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getRepostsBySubjectStmt: %w", cerr)
+		}
+	}
+	if q.getRunningCleanupJobsStmt != nil {
+		if cerr := q.getRunningCleanupJobsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRunningCleanupJobsStmt: %w", cerr)
 		}
 	}
 	if q.getSentimentForPostStmt != nil {
@@ -1101,6 +1136,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing upsertActorFromFirehoseStmt: %w", cerr)
 		}
 	}
+	if q.upsertRepoCleanupJobStmt != nil {
+		if cerr := q.upsertRepoCleanupJobStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertRepoCleanupJobStmt: %w", cerr)
+		}
+	}
 	return err
 }
 
@@ -1183,6 +1223,7 @@ type Queries struct {
 	deletePointAssignmentStmt                 *sql.Stmt
 	deletePostStmt                            *sql.Stmt
 	deleteRecentPostStmt                      *sql.Stmt
+	deleteRepoCleanupJobStmt                  *sql.Stmt
 	deleteRepostStmt                          *sql.Stmt
 	deleteRepostCountStmt                     *sql.Stmt
 	deleteSentimentJobStmt                    *sql.Stmt
@@ -1200,6 +1241,7 @@ type Queries struct {
 	getBlocksByActorStmt                      *sql.Stmt
 	getBlocksByActorAndTargetStmt             *sql.Stmt
 	getBlocksByTargetStmt                     *sql.Stmt
+	getCleanupJobsByRepoStmt                  *sql.Stmt
 	getCollectionStmt                         *sql.Stmt
 	getDailySummariesStmt                     *sql.Stmt
 	getEventStmt                              *sql.Stmt
@@ -1243,10 +1285,12 @@ type Queries struct {
 	getRecentPostsPageByInsertedAtStmt        *sql.Stmt
 	getRepoBackfillRecordStmt                 *sql.Stmt
 	getRepoBackfillRecordsStmt                *sql.Stmt
+	getRepoCleanupJobStmt                     *sql.Stmt
 	getRepostStmt                             *sql.Stmt
 	getRepostCountStmt                        *sql.Stmt
 	getRepostsByActorStmt                     *sql.Stmt
 	getRepostsBySubjectStmt                   *sql.Stmt
+	getRunningCleanupJobsStmt                 *sql.Stmt
 	getSentimentForPostStmt                   *sql.Stmt
 	getSubjectStmt                            *sql.Stmt
 	getSubjectByIdStmt                        *sql.Stmt
@@ -1274,6 +1318,7 @@ type Queries struct {
 	updateRepoBackfillRecordStmt              *sql.Stmt
 	upsertActorStmt                           *sql.Stmt
 	upsertActorFromFirehoseStmt               *sql.Stmt
+	upsertRepoCleanupJobStmt                  *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -1323,6 +1368,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deletePointAssignmentStmt:                 q.deletePointAssignmentStmt,
 		deletePostStmt:                            q.deletePostStmt,
 		deleteRecentPostStmt:                      q.deleteRecentPostStmt,
+		deleteRepoCleanupJobStmt:                  q.deleteRepoCleanupJobStmt,
 		deleteRepostStmt:                          q.deleteRepostStmt,
 		deleteRepostCountStmt:                     q.deleteRepostCountStmt,
 		deleteSentimentJobStmt:                    q.deleteSentimentJobStmt,
@@ -1340,6 +1386,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getBlocksByActorStmt:                      q.getBlocksByActorStmt,
 		getBlocksByActorAndTargetStmt:             q.getBlocksByActorAndTargetStmt,
 		getBlocksByTargetStmt:                     q.getBlocksByTargetStmt,
+		getCleanupJobsByRepoStmt:                  q.getCleanupJobsByRepoStmt,
 		getCollectionStmt:                         q.getCollectionStmt,
 		getDailySummariesStmt:                     q.getDailySummariesStmt,
 		getEventStmt:                              q.getEventStmt,
@@ -1383,10 +1430,12 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getRecentPostsPageByInsertedAtStmt:        q.getRecentPostsPageByInsertedAtStmt,
 		getRepoBackfillRecordStmt:                 q.getRepoBackfillRecordStmt,
 		getRepoBackfillRecordsStmt:                q.getRepoBackfillRecordsStmt,
+		getRepoCleanupJobStmt:                     q.getRepoCleanupJobStmt,
 		getRepostStmt:                             q.getRepostStmt,
 		getRepostCountStmt:                        q.getRepostCountStmt,
 		getRepostsByActorStmt:                     q.getRepostsByActorStmt,
 		getRepostsBySubjectStmt:                   q.getRepostsBySubjectStmt,
+		getRunningCleanupJobsStmt:                 q.getRunningCleanupJobsStmt,
 		getSentimentForPostStmt:                   q.getSentimentForPostStmt,
 		getSubjectStmt:                            q.getSubjectStmt,
 		getSubjectByIdStmt:                        q.getSubjectByIdStmt,
@@ -1414,5 +1463,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		updateRepoBackfillRecordStmt:              q.updateRepoBackfillRecordStmt,
 		upsertActorStmt:                           q.upsertActorStmt,
 		upsertActorFromFirehoseStmt:               q.upsertActorFromFirehoseStmt,
+		upsertRepoCleanupJobStmt:                  q.upsertRepoCleanupJobStmt,
 	}
 }
