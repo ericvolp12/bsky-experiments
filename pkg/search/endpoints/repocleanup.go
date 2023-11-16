@@ -116,6 +116,7 @@ func (api *API) enqueueCleanupJob(ctx context.Context, req CleanupOldRecordsRequ
 	client := xrpc.Client{
 		Client: &http.Client{
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
+			Timeout:   5 * time.Minute,
 		},
 		Host:      "https://bsky.social",
 		UserAgent: &cleanupUserAgent,
@@ -382,6 +383,7 @@ func (api *API) cleanupNextBatch(ctx context.Context, job store_queries.RepoClea
 	client := xrpc.Client{
 		Client: &http.Client{
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
+			Timeout:   5 * time.Minute,
 		},
 		Host:      "https://bsky.social",
 		UserAgent: &cleanupUserAgent,
