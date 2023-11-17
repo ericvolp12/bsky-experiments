@@ -13,6 +13,17 @@ import (
 	"github.com/lib/pq"
 )
 
+const cancelRepoCleanupJob = `-- name: CancelRepoCleanupJob :exec
+UPDATE repo_cleanup_jobs
+SET job_state = 'cancelled'
+WHERE job_id = $1
+`
+
+func (q *Queries) CancelRepoCleanupJob(ctx context.Context, jobID string) error {
+	_, err := q.exec(ctx, q.cancelRepoCleanupJobStmt, cancelRepoCleanupJob, jobID)
+	return err
+}
+
 const deleteRepoCleanupJob = `-- name: DeleteRepoCleanupJob :exec
 DELETE FROM repo_cleanup_jobs
 WHERE job_id = $1
@@ -108,6 +119,50 @@ LIMIT $1
 
 func (q *Queries) GetRunningCleanupJobs(ctx context.Context, limit int32) ([]RepoCleanupJob, error) {
 	rows, err := q.query(ctx, q.getRunningCleanupJobsStmt, getRunningCleanupJobs, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RepoCleanupJob
+	for rows.Next() {
+		var i RepoCleanupJob
+		if err := rows.Scan(
+			&i.JobID,
+			&i.Repo,
+			&i.RefreshToken,
+			pq.Array(&i.CleanupTypes),
+			&i.DeleteOlderThan,
+			&i.NumDeleted,
+			&i.NumDeletedToday,
+			&i.EstNumRemaining,
+			&i.JobState,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LastDeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getRunningCleanupJobsByRepo = `-- name: GetRunningCleanupJobsByRepo :many
+SELECT job_id, repo, refresh_token, cleanup_types, delete_older_than, num_deleted, num_deleted_today, est_num_remaining, job_state, created_at, updated_at, last_deleted_at
+FROM repo_cleanup_jobs
+WHERE repo = $1
+    AND job_state = 'running'
+ORDER BY updated_at DESC
+`
+
+func (q *Queries) GetRunningCleanupJobsByRepo(ctx context.Context, repo string) ([]RepoCleanupJob, error) {
+	rows, err := q.query(ctx, q.getRunningCleanupJobsByRepoStmt, getRunningCleanupJobsByRepo, repo)
 	if err != nil {
 		return nil, err
 	}

@@ -225,6 +225,7 @@ func main() {
 
 	router.GET("/repo/cleanup", api.GetCleanupStatus)
 	router.POST("/repo/cleanup", api.CleanupOldRecords)
+	router.DELETE("/repo/cleanup", api.CancelCleanupJob)
 
 	go api.RunCleanupDaemon(ctx)
 

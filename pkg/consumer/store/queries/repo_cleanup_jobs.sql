@@ -50,6 +50,12 @@ FROM repo_cleanup_jobs
 WHERE repo = $1
 ORDER BY updated_at DESC
 LIMIT $2;
+-- name: GetRunningCleanupJobsByRepo :many
+SELECT *
+FROM repo_cleanup_jobs
+WHERE repo = $1
+    AND job_state = 'running'
+ORDER BY updated_at DESC;
 -- name: DeleteRepoCleanupJob :exec
 DELETE FROM repo_cleanup_jobs
 WHERE job_id = $1;

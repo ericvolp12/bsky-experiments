@@ -27,6 +27,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addEventPostStmt, err = db.PrepareContext(ctx, addEventPost); err != nil {
 		return nil, fmt.Errorf("error preparing query AddEventPost: %w", err)
 	}
+	if q.cancelRepoCleanupJobStmt, err = db.PrepareContext(ctx, cancelRepoCleanupJob); err != nil {
+		return nil, fmt.Errorf("error preparing query CancelRepoCleanupJob: %w", err)
+	}
 	if q.concludeEventStmt, err = db.PrepareContext(ctx, concludeEvent); err != nil {
 		return nil, fmt.Errorf("error preparing query ConcludeEvent: %w", err)
 	}
@@ -357,6 +360,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getRunningCleanupJobsStmt, err = db.PrepareContext(ctx, getRunningCleanupJobs); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRunningCleanupJobs: %w", err)
 	}
+	if q.getRunningCleanupJobsByRepoStmt, err = db.PrepareContext(ctx, getRunningCleanupJobsByRepo); err != nil {
+		return nil, fmt.Errorf("error preparing query GetRunningCleanupJobsByRepo: %w", err)
+	}
 	if q.getSentimentForPostStmt, err = db.PrepareContext(ctx, getSentimentForPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSentimentForPost: %w", err)
 	}
@@ -449,6 +455,11 @@ func (q *Queries) Close() error {
 	if q.addEventPostStmt != nil {
 		if cerr := q.addEventPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addEventPostStmt: %w", cerr)
+		}
+	}
+	if q.cancelRepoCleanupJobStmt != nil {
+		if cerr := q.cancelRepoCleanupJobStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing cancelRepoCleanupJobStmt: %w", cerr)
 		}
 	}
 	if q.concludeEventStmt != nil {
@@ -1001,6 +1012,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getRunningCleanupJobsStmt: %w", cerr)
 		}
 	}
+	if q.getRunningCleanupJobsByRepoStmt != nil {
+		if cerr := q.getRunningCleanupJobsByRepoStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getRunningCleanupJobsByRepoStmt: %w", cerr)
+		}
+	}
 	if q.getSentimentForPostStmt != nil {
 		if cerr := q.getSentimentForPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getSentimentForPostStmt: %w", cerr)
@@ -1181,6 +1197,7 @@ type Queries struct {
 	db                                        DBTX
 	tx                                        *sql.Tx
 	addEventPostStmt                          *sql.Stmt
+	cancelRepoCleanupJobStmt                  *sql.Stmt
 	concludeEventStmt                         *sql.Stmt
 	confirmEventStmt                          *sql.Stmt
 	countBlockersByTargetStmt                 *sql.Stmt
@@ -1291,6 +1308,7 @@ type Queries struct {
 	getRepostsByActorStmt                     *sql.Stmt
 	getRepostsBySubjectStmt                   *sql.Stmt
 	getRunningCleanupJobsStmt                 *sql.Stmt
+	getRunningCleanupJobsByRepoStmt           *sql.Stmt
 	getSentimentForPostStmt                   *sql.Stmt
 	getSubjectStmt                            *sql.Stmt
 	getSubjectByIdStmt                        *sql.Stmt
@@ -1326,6 +1344,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		db:                                        tx,
 		tx:                                        tx,
 		addEventPostStmt:                          q.addEventPostStmt,
+		cancelRepoCleanupJobStmt:                  q.cancelRepoCleanupJobStmt,
 		concludeEventStmt:                         q.concludeEventStmt,
 		confirmEventStmt:                          q.confirmEventStmt,
 		countBlockersByTargetStmt:                 q.countBlockersByTargetStmt,
@@ -1436,6 +1455,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getRepostsByActorStmt:                     q.getRepostsByActorStmt,
 		getRepostsBySubjectStmt:                   q.getRepostsBySubjectStmt,
 		getRunningCleanupJobsStmt:                 q.getRunningCleanupJobsStmt,
+		getRunningCleanupJobsByRepoStmt:           q.getRunningCleanupJobsByRepoStmt,
 		getSentimentForPostStmt:                   q.getSentimentForPostStmt,
 		getSubjectStmt:                            q.getSubjectStmt,
 		getSubjectByIdStmt:                        q.getSubjectByIdStmt,

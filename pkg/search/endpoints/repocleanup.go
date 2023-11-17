@@ -102,6 +102,58 @@ func (api *API) GetCleanupStatus(c *gin.Context) {
 	return
 }
 
+func (api *API) CancelCleanupJob(c *gin.Context) {
+	ctx := c.Request.Context()
+	ctx, span := tracer.Start(ctx, "CancelCleanupJob")
+	defer span.End()
+
+	jobID := c.Query("job_id")
+	if jobID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "must specify job_id in query params"})
+		return
+	}
+
+	job, err := api.Store.Queries.GetRepoCleanupJob(ctx, jobID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "job not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Errorf("error getting job: %w", err).Error()})
+		return
+	}
+
+	if job.JobState == "completed" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "job already completed"})
+		return
+	}
+
+	job.JobState = "cancelled"
+	job.RefreshToken = ""
+	job.UpdatedAt = time.Now().UTC()
+
+	_, err = api.Store.Queries.UpsertRepoCleanupJob(ctx, store_queries.UpsertRepoCleanupJobParams{
+		JobID:           job.JobID,
+		Repo:            job.Repo,
+		RefreshToken:    job.RefreshToken,
+		CleanupTypes:    job.CleanupTypes,
+		DeleteOlderThan: job.DeleteOlderThan,
+		NumDeleted:      job.NumDeleted,
+		NumDeletedToday: job.NumDeletedToday,
+		EstNumRemaining: job.EstNumRemaining,
+		JobState:        job.JobState,
+		UpdatedAt:       job.UpdatedAt,
+		LastDeletedAt:   job.LastDeletedAt,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Errorf("error updating job: %w", err).Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "job cancelled"})
+	return
+}
+
 type cleanupInfo struct {
 	NumEnqueued int    `json:"num_enqueued"`
 	DryRun      bool   `json:"dry_run"`
@@ -144,6 +196,20 @@ func (api *API) enqueueCleanupJob(ctx context.Context, req CleanupOldRecordsRequ
 
 	log = log.With("did", out.Did)
 	log = log.With("handle", out.Handle)
+
+	// Check if we have a pending job for this DID
+	existingJobs, err := api.Store.Queries.GetRunningCleanupJobsByRepo(ctx, out.Did)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			log.Error("Error getting existing jobs", "error", err)
+		}
+	} else if len(existingJobs) > 0 {
+		log.Info("Found existing job for DID, skipping")
+		return &cleanupInfo{
+			JobID:   existingJobs[0].JobID,
+			Message: "Found existing active job for your account, you can only have one job running at a time.",
+		}, nil
+	}
 
 	// Get the user's PDS from PLC
 	did, err := syntax.ParseDID(out.Did)
@@ -326,7 +392,7 @@ func (api *API) RunCleanupDaemon(ctx context.Context) {
 					sem.Release(1)
 					wg.Done()
 				}()
-				log = log.With("job_id", job.JobID, "did", job.Repo)
+				log := log.With("job_id", job.JobID, "did", job.Repo)
 				resJob, err := api.cleanupNextBatch(ctx, job)
 				if err != nil {
 					log.Error("Error cleaning up batch", "error", err)
@@ -403,6 +469,12 @@ func (api *API) cleanupNextBatch(ctx context.Context, job store_queries.RepoClea
 	out, err := comatproto.ServerRefreshSession(ctx, &client)
 	if err != nil {
 		log.Error("Error refreshing session", "error", err)
+		if strings.Contains(err.Error(), "ExpiredToken") {
+			job.RefreshToken = ""
+			job.JobState = "errored: ExpiredToken"
+			job.UpdatedAt = time.Now().UTC()
+			return &job, nil
+		}
 		return nil, fmt.Errorf("error refreshing session: %w", err)
 	}
 
