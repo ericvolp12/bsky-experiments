@@ -37,6 +37,7 @@ type API struct {
 	StatsCacheRWMux    *sync.RWMutex
 
 	CheckoutLimiter *rate.Limiter
+	MagicHeaderVal  string
 }
 
 var tracer = otel.Tracer("search-api")
@@ -47,6 +48,7 @@ func NewAPI(
 	userCount *usercount.UserCount,
 	graphJSONUrl string,
 	layoutServiceHost string,
+	MagicHeaderVal string,
 	threadViewCacheTTL time.Duration,
 	layoutCacheTTL time.Duration,
 	statsCacheTTL time.Duration,
@@ -74,6 +76,7 @@ func NewAPI(
 		UserCount:          userCount,
 		Store:              store,
 		Directory:          dir,
+		MagicHeaderVal:     MagicHeaderVal,
 		ClusterManager:     clusterManager,
 		LayoutServiceHost:  layoutServiceHost,
 		ThreadViewCacheTTL: threadViewCacheTTL,

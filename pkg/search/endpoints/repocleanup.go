@@ -174,6 +174,10 @@ func (api *API) enqueueCleanupJob(ctx context.Context, req CleanupOldRecordsRequ
 		UserAgent: &cleanupUserAgent,
 	}
 
+	if api.MagicHeaderVal != "" {
+		client.Headers = map[string]string{"x-ratelimit-bypass": api.MagicHeaderVal}
+	}
+
 	log = log.With("identifier", req.Identifier)
 
 	// Login as the user
@@ -453,6 +457,10 @@ func (api *API) cleanupNextBatch(ctx context.Context, job store_queries.RepoClea
 		},
 		Host:      "https://bsky.social",
 		UserAgent: &cleanupUserAgent,
+	}
+
+	if api.MagicHeaderVal != "" {
+		client.Headers = map[string]string{"x-ratelimit-bypass": api.MagicHeaderVal}
 	}
 
 	ident, err := api.Directory.LookupDID(ctx, syntax.DID(job.Repo))

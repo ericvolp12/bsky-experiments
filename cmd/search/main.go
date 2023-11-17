@@ -80,6 +80,8 @@ func main() {
 		DB:       0,
 	})
 
+	magicHeaderVal := os.Getenv("MAGIC_HEADER_VAL")
+
 	// Enable tracing instrumentation.
 	if err := redisotel.InstrumentTracing(redisClient); err != nil {
 		log.Fatalf("failed to instrument redis with tracing: %+v\n", err)
@@ -130,6 +132,7 @@ func main() {
 		userCount,
 		graphJSONUrl,
 		layoutServiceHost,
+		magicHeaderVal,
 		10*time.Minute, // Thread View Cache TTL
 		10*time.Minute, // Layout Cache TTL
 		30*time.Second, // Stats Cache TTL

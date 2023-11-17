@@ -13,3 +13,6 @@ CREATE TABLE repo_cleanup_jobs (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     last_deleted_at TIMESTAMP WITH TIME ZONE
 );
+CREATE INDEX repo_cleanup_jobs_repo_idx ON repo_cleanup_jobs (repo);
+CREATE INDEX repo_cleanup_jobs_job_state_idx ON repo_cleanup_jobs (job_state);
+CREATE INDEX repo_cleanup_jobs_updated_at_idx ON repo_cleanup_jobs (updated_at);
