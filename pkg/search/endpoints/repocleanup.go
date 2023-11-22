@@ -102,6 +102,20 @@ func (api *API) GetCleanupStatus(c *gin.Context) {
 	return
 }
 
+func (api *API) GetCleanupStats(c *gin.Context) {
+	ctx := c.Request.Context()
+	ctx, span := tracer.Start(ctx, "GetCleanupStats")
+	defer span.End()
+
+	cleanupStats, err := api.Store.Queries.GetCleanupStats(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Errorf("error getting cleanup metadata: %w", err).Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, cleanupStats)
+}
+
 func (api *API) CancelCleanupJob(c *gin.Context) {
 	ctx := c.Request.Context()
 	ctx, span := tracer.Start(ctx, "CancelCleanupJob")
@@ -370,9 +384,12 @@ func (api *API) RunCleanupDaemon(ctx context.Context) {
 		// Filter for jobs that haven't had a deletion run in the last hour and haven't hit the max for the day
 		jobsToRun := []*store_queries.RepoCleanupJob{}
 		anHourAgo := time.Now().UTC().Add(-1 * time.Hour)
-		for _, job := range jobs {
+		aDayAgo := time.Now().UTC().Add(-24 * time.Hour)
+		for i := range jobs {
+			job := jobs[i]
 			if !job.LastDeletedAt.Valid || // Add new jobs
-				(job.LastDeletedAt.Time.Before(anHourAgo) && job.NumDeletedToday < int32(maxDeletesPerDay)) {
+				(job.LastDeletedAt.Time.Before(anHourAgo) && job.NumDeletedToday < int32(maxDeletesPerDay)) ||
+				(job.LastDeletedAt.Time.Before(aDayAgo)) {
 				jobsToRun = append(jobsToRun, &job)
 			}
 		}
@@ -388,7 +405,8 @@ func (api *API) RunCleanupDaemon(ctx context.Context) {
 		wg := sync.WaitGroup{}
 		maxConcurrent := 10
 		sem := semaphore.NewWeighted(int64(maxConcurrent))
-		for _, job := range jobsToRun {
+		for i := range jobsToRun {
+			job := jobsToRun[i]
 			wg.Add(1)
 			sem.Acquire(ctx, 1)
 			go func(job store_queries.RepoCleanupJob) {

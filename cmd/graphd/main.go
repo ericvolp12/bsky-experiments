@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	_ "github.com/joho/godotenv/autoload"
 
@@ -81,35 +80,6 @@ func GraphD(cctx *cli.Context) error {
 		return err
 	}
 
-	// Start a routine to periodically save the graph to disk
-	shutdownGraphSave := make(chan struct{})
-	saveGraphShutdown := make(chan struct{})
-	go func() {
-		t := time.NewTicker(30 * time.Minute)
-		defer t.Stop()
-		defer close(saveGraphShutdown)
-
-		log := slog.With("source", "graph_save")
-
-		for {
-			select {
-			case <-shutdownGraphSave:
-				err := graph.SaveToBinaryFile()
-				if err != nil {
-					log.Error("failed to save graph to file", "error", err)
-				}
-				return
-			case <-t.C:
-				start := time.Now()
-				err := graph.SaveToBinaryFile()
-				if err != nil {
-					log.Error("failed to save graph to file", "error", err)
-				}
-				log.Info("saved graph to file", "duration", time.Since(start))
-			}
-		}
-	}()
-
 	e := echo.New()
 
 	h := handlers.NewHandlers(graph)
@@ -179,10 +149,8 @@ func GraphD(cctx *cli.Context) error {
 	}
 
 	slog.Info("shutting down, waiting for workers to clean up...")
-	close(shutdownGraphSave)
 	close(shutdownEcho)
 
-	<-saveGraphShutdown
 	<-echoShutdown
 	slog.Info("shut down successfully")
 

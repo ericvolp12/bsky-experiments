@@ -27,9 +27,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.addEventPostStmt, err = db.PrepareContext(ctx, addEventPost); err != nil {
 		return nil, fmt.Errorf("error preparing query AddEventPost: %w", err)
 	}
-	if q.cancelRepoCleanupJobStmt, err = db.PrepareContext(ctx, cancelRepoCleanupJob); err != nil {
-		return nil, fmt.Errorf("error preparing query CancelRepoCleanupJob: %w", err)
-	}
 	if q.concludeEventStmt, err = db.PrepareContext(ctx, concludeEvent); err != nil {
 		return nil, fmt.Errorf("error preparing query ConcludeEvent: %w", err)
 	}
@@ -212,6 +209,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getCleanupJobsByRepoStmt, err = db.PrepareContext(ctx, getCleanupJobsByRepo); err != nil {
 		return nil, fmt.Errorf("error preparing query GetCleanupJobsByRepo: %w", err)
+	}
+	if q.getCleanupStatsStmt, err = db.PrepareContext(ctx, getCleanupStats); err != nil {
+		return nil, fmt.Errorf("error preparing query GetCleanupStats: %w", err)
 	}
 	if q.getCollectionStmt, err = db.PrepareContext(ctx, getCollection); err != nil {
 		return nil, fmt.Errorf("error preparing query GetCollection: %w", err)
@@ -455,11 +455,6 @@ func (q *Queries) Close() error {
 	if q.addEventPostStmt != nil {
 		if cerr := q.addEventPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addEventPostStmt: %w", cerr)
-		}
-	}
-	if q.cancelRepoCleanupJobStmt != nil {
-		if cerr := q.cancelRepoCleanupJobStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing cancelRepoCleanupJobStmt: %w", cerr)
 		}
 	}
 	if q.concludeEventStmt != nil {
@@ -765,6 +760,11 @@ func (q *Queries) Close() error {
 	if q.getCleanupJobsByRepoStmt != nil {
 		if cerr := q.getCleanupJobsByRepoStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getCleanupJobsByRepoStmt: %w", cerr)
+		}
+	}
+	if q.getCleanupStatsStmt != nil {
+		if cerr := q.getCleanupStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getCleanupStatsStmt: %w", cerr)
 		}
 	}
 	if q.getCollectionStmt != nil {
@@ -1197,7 +1197,6 @@ type Queries struct {
 	db                                        DBTX
 	tx                                        *sql.Tx
 	addEventPostStmt                          *sql.Stmt
-	cancelRepoCleanupJobStmt                  *sql.Stmt
 	concludeEventStmt                         *sql.Stmt
 	confirmEventStmt                          *sql.Stmt
 	countBlockersByTargetStmt                 *sql.Stmt
@@ -1259,6 +1258,7 @@ type Queries struct {
 	getBlocksByActorAndTargetStmt             *sql.Stmt
 	getBlocksByTargetStmt                     *sql.Stmt
 	getCleanupJobsByRepoStmt                  *sql.Stmt
+	getCleanupStatsStmt                       *sql.Stmt
 	getCollectionStmt                         *sql.Stmt
 	getDailySummariesStmt                     *sql.Stmt
 	getEventStmt                              *sql.Stmt
@@ -1344,7 +1344,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		db:                                        tx,
 		tx:                                        tx,
 		addEventPostStmt:                          q.addEventPostStmt,
-		cancelRepoCleanupJobStmt:                  q.cancelRepoCleanupJobStmt,
 		concludeEventStmt:                         q.concludeEventStmt,
 		confirmEventStmt:                          q.confirmEventStmt,
 		countBlockersByTargetStmt:                 q.countBlockersByTargetStmt,
@@ -1406,6 +1405,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getBlocksByActorAndTargetStmt:             q.getBlocksByActorAndTargetStmt,
 		getBlocksByTargetStmt:                     q.getBlocksByTargetStmt,
 		getCleanupJobsByRepoStmt:                  q.getCleanupJobsByRepoStmt,
+		getCleanupStatsStmt:                       q.getCleanupStatsStmt,
 		getCollectionStmt:                         q.getCollectionStmt,
 		getDailySummariesStmt:                     q.getDailySummariesStmt,
 		getEventStmt:                              q.getEventStmt,

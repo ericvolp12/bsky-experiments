@@ -13,17 +13,6 @@ import (
 	"github.com/lib/pq"
 )
 
-const cancelRepoCleanupJob = `-- name: CancelRepoCleanupJob :exec
-UPDATE repo_cleanup_jobs
-SET job_state = 'cancelled'
-WHERE job_id = $1
-`
-
-func (q *Queries) CancelRepoCleanupJob(ctx context.Context, jobID string) error {
-	_, err := q.exec(ctx, q.cancelRepoCleanupJobStmt, cancelRepoCleanupJob, jobID)
-	return err
-}
-
 const deleteRepoCleanupJob = `-- name: DeleteRepoCleanupJob :exec
 DELETE FROM repo_cleanup_jobs
 WHERE job_id = $1
@@ -81,6 +70,26 @@ func (q *Queries) GetCleanupJobsByRepo(ctx context.Context, arg GetCleanupJobsBy
 		return nil, err
 	}
 	return items, nil
+}
+
+const getCleanupStats = `-- name: GetCleanupStats :one
+SELECT SUM(num_deleted) AS total_num_deleted,
+    COUNT (num_deleted) AS num_jobs,
+    COUNT (DISTINCT repo) AS num_repos
+FROM repo_cleanup_jobs
+`
+
+type GetCleanupStatsRow struct {
+	TotalNumDeleted int64 `json:"total_num_deleted"`
+	NumJobs         int64 `json:"num_jobs"`
+	NumRepos        int64 `json:"num_repos"`
+}
+
+func (q *Queries) GetCleanupStats(ctx context.Context) (GetCleanupStatsRow, error) {
+	row := q.queryRow(ctx, q.getCleanupStatsStmt, getCleanupStats)
+	var i GetCleanupStatsRow
+	err := row.Scan(&i.TotalNumDeleted, &i.NumJobs, &i.NumRepos)
+	return i, err
 }
 
 const getRepoCleanupJob = `-- name: GetRepoCleanupJob :one

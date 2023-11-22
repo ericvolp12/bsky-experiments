@@ -65,3 +65,8 @@ FROM repo_cleanup_jobs
 WHERE job_state = 'running'
 ORDER BY updated_at ASC
 LIMIT $1;
+-- name: GetCleanupStats :one
+SELECT SUM(num_deleted) AS total_num_deleted,
+    COUNT (num_deleted) AS num_jobs,
+    COUNT (DISTINCT repo) AS num_repos
+FROM repo_cleanup_jobs;
