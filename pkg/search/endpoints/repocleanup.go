@@ -278,16 +278,27 @@ func (api *API) enqueueCleanupJob(ctx context.Context, req CleanupOldRecordsRequ
 
 		switch rec := rec.(type) {
 		case *bsky.FeedPost:
-			if !slices.Contains(req.CleanupTypes, "post") {
-				return nil
-			}
 			createdAt, err := dateparse.ParseAny(rec.CreatedAt)
 			if err != nil {
 				log.Error("Error parsing date", "error", err)
 				return nil
 			}
+			if createdAt.After(time.Now().AddDate(0, 0, -req.DeleteUntilDaysAgo)) {
+				return nil
+			}
 
-			if createdAt.Before(time.Now().AddDate(0, 0, -req.DeleteUntilDaysAgo)) {
+			hasMedia := rec.Embed != nil && rec.Embed.EmbedImages != nil && len(rec.Embed.EmbedImages.Images) > 0
+
+			if hasMedia {
+				if slices.Contains(req.CleanupTypes, "post_with_media") {
+					lk.Lock()
+					recordsToDelete = append(recordsToDelete, path)
+					lk.Unlock()
+				}
+				return nil
+			}
+
+			if slices.Contains(req.CleanupTypes, "post") {
 				lk.Lock()
 				recordsToDelete = append(recordsToDelete, path)
 				lk.Unlock()
@@ -545,16 +556,27 @@ func (api *API) cleanupNextBatch(ctx context.Context, job store_queries.RepoClea
 
 		switch rec := rec.(type) {
 		case *bsky.FeedPost:
-			if !slices.Contains(job.CleanupTypes, "post") {
-				return nil
-			}
 			createdAt, err := dateparse.ParseAny(rec.CreatedAt)
 			if err != nil {
 				log.Error("Error parsing date", "error", err)
 				return nil
 			}
+			if createdAt.After(job.DeleteOlderThan) {
+				return nil
+			}
 
-			if createdAt.Before(job.DeleteOlderThan) {
+			hasMedia := rec.Embed != nil && rec.Embed.EmbedImages != nil && len(rec.Embed.EmbedImages.Images) > 0
+
+			if hasMedia {
+				if slices.Contains(job.CleanupTypes, "post_with_media") {
+					lk.Lock()
+					recordsToDelete = append(recordsToDelete, path)
+					lk.Unlock()
+				}
+				return nil
+			}
+
+			if slices.Contains(job.CleanupTypes, "post") {
 				lk.Lock()
 				recordsToDelete = append(recordsToDelete, path)
 				lk.Unlock()
