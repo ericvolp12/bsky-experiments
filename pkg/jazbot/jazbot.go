@@ -161,6 +161,8 @@ func (j *Jazbot) HandleRequest(
 	text string,
 	postCid *lexutil.LexLink,
 	parentURI *string,
+	rootURI *string,
+	rootCid *string,
 ) error {
 	// Requests are of the form:
 	// !jazbot <command>
@@ -375,12 +377,20 @@ func (j *Jazbot) HandleRequest(
 			Uri:           fmt.Sprintf("at://%s/app.bsky.feed.post/%s", actorDid, rkey),
 			Cid:           postCid.String(),
 		}
+		root := parent
+		if rootURI != nil && rootCid != nil {
+			root = comatproto.RepoStrongRef{
+				LexiconTypeID: "app.bsky.feed.post",
+				Uri:           *rootURI,
+				Cid:           *rootCid,
+			}
+		}
 		post := appbsky.FeedPost{
 			Text:      resp,
 			CreatedAt: time.Now().Format(time.RFC3339),
 			Reply: &appbsky.FeedPost_ReplyRef{
 				Parent: &parent,
-				Root:   &parent,
+				Root:   &root,
 			},
 			Facets: facets,
 		}

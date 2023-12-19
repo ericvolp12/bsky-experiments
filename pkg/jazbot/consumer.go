@@ -235,14 +235,21 @@ func (c *Consumer) HandleCreateRecord(
 		span.SetAttributes(attribute.String("record_type", "feed_post"))
 		recordsProcessedCounter.WithLabelValues("feed_post", c.SocketURL).Inc()
 
-		var parentURI string
+		var parentURI *string
 		if rec.Reply != nil && rec.Reply.Parent != nil {
-			parentURI = rec.Reply.Parent.Uri
+			parentURI = &rec.Reply.Parent.Uri
+		}
+
+		var rootURI *string
+		var rootCid *string
+		if rec.Reply != nil && rec.Reply.Root != nil {
+			rootURI = &rec.Reply.Root.Uri
+			rootCid = &rec.Reply.Root.Cid
 		}
 
 		// Check if the record text starts with `!jazbot`
 		if strings.HasPrefix(rec.Text, "!jazbot") {
-			err := c.Jazbot.HandleRequest(ctx, repo, rkey, rec.Text, cid, &parentURI)
+			err := c.Jazbot.HandleRequest(ctx, repo, rkey, rec.Text, cid, parentURI, rootURI, rootCid)
 			if err != nil {
 				return nil, fmt.Errorf("jazbot failed to handle request: %+v", err)
 			}
