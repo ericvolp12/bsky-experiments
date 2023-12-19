@@ -270,6 +270,10 @@ func (api *API) enqueueCleanupJob(ctx context.Context, req CleanupOldRecordsRequ
 	// Iterate over records in the repo to find the ones to delete
 	err = rr.ForEach(ctx, "app.bsky.feed.", func(path string, nodeCid cid.Cid) error {
 		log := log.With("path", path)
+		// Skip threadgates
+		if strings.Contains(path, "threadgate") {
+			return nil
+		}
 		_, rec, err := rr.GetRecord(ctx, path)
 		if err != nil {
 			log.Error("Error getting record", "error", err)
@@ -548,6 +552,10 @@ func (api *API) cleanupNextBatch(ctx context.Context, job store_queries.RepoClea
 	// Iterate over records in the repo to find the ones to delete
 	err = rr.ForEach(ctx, "app.bsky.feed.", func(path string, nodeCid cid.Cid) error {
 		log := log.With("path", path)
+		// Skip threadgates
+		if strings.Contains(path, "threadgate") {
+			return nil
+		}
 		_, rec, err := rr.GetRecord(ctx, path)
 		if err != nil {
 			log.Error("Error getting record", "error", err)
