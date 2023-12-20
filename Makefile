@@ -202,3 +202,23 @@ feeddb-down: # Stops feeddb docker container
 run-dev-feeddb: .feeddb.env ## Runs feeddb for local dev
 	@echo "Running Feeddb..."
 	go run ./cmd/feeddb
+
+.PHONY: build-graphfd
+build-graphfd:
+	@echo "Building Graphfd Go binary..."
+	$(GO_CMD_W_CGO) build -o graphfd cmd/graphfd/*.go
+	
+.PHONY: graphfd-up
+graphfd-up: # Runs graphfd docker container
+	@echo "Starting Graphfd..."
+	docker compose -f build/graphfd/docker-compose.yml up --build -d
+
+.PHONY: graphfd-down
+graphfd-down: # Stops graphfd docker container
+	@echo "Stopping Graphfd..."
+	docker compose -f build/graphfd/docker-compose.yml down
+
+.PHONY: run-dev-graphfd
+run-dev-graphfd: .env ## Runs graphfd for local dev
+	@echo "Running Graphfd..."
+	go run ./cmd/graphfd
