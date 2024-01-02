@@ -288,6 +288,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getMyPostsByFuzzyContentStmt, err = db.PrepareContext(ctx, getMyPostsByFuzzyContent); err != nil {
 		return nil, fmt.Errorf("error preparing query GetMyPostsByFuzzyContent: %w", err)
 	}
+	if q.getPinnedPostsByActorStmt, err = db.PrepareContext(ctx, getPinnedPostsByActor); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPinnedPostsByActor: %w", err)
+	}
 	if q.getPointAssignmentStmt, err = db.PrepareContext(ctx, getPointAssignment); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPointAssignment: %w", err)
 	}
@@ -892,6 +895,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getMyPostsByFuzzyContentStmt: %w", cerr)
 		}
 	}
+	if q.getPinnedPostsByActorStmt != nil {
+		if cerr := q.getPinnedPostsByActorStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPinnedPostsByActorStmt: %w", cerr)
+		}
+	}
 	if q.getPointAssignmentStmt != nil {
 		if cerr := q.getPointAssignmentStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPointAssignmentStmt: %w", cerr)
@@ -1284,6 +1292,7 @@ type Queries struct {
 	getLikesGivenByActorFromToStmt            *sql.Stmt
 	getLikesReceivedByActorFromActorStmt      *sql.Stmt
 	getMyPostsByFuzzyContentStmt              *sql.Stmt
+	getPinnedPostsByActorStmt                 *sql.Stmt
 	getPointAssignmentStmt                    *sql.Stmt
 	getPointAssignmentsForActorStmt           *sql.Stmt
 	getPointAssignmentsForEventStmt           *sql.Stmt
@@ -1431,6 +1440,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getLikesGivenByActorFromToStmt:            q.getLikesGivenByActorFromToStmt,
 		getLikesReceivedByActorFromActorStmt:      q.getLikesReceivedByActorFromActorStmt,
 		getMyPostsByFuzzyContentStmt:              q.getMyPostsByFuzzyContentStmt,
+		getPinnedPostsByActorStmt:                 q.getPinnedPostsByActorStmt,
 		getPointAssignmentStmt:                    q.getPointAssignmentStmt,
 		getPointAssignmentsForActorStmt:           q.getPointAssignmentsForActorStmt,
 		getPointAssignmentsForEventStmt:           q.getPointAssignmentsForEventStmt,

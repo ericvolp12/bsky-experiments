@@ -46,6 +46,15 @@ FROM posts
 WHERE actor_did = $1
 ORDER BY created_at DESC
 LIMIT $2;
+-- name: GetPinnedPostsByActor :many
+SELECT *
+FROM posts
+WHERE actor_did = $1
+    AND content LIKE '%📌%'
+    AND parent_post_rkey IS NOT NULL
+    AND parent_post_actor_did IS NOT NULL
+ORDER BY inserted_at DESC
+LIMIT $2 OFFSET $3;
 -- name: GetPostsByActorsFollowingTarget :many
 WITH followers AS (
     SELECT actor_did

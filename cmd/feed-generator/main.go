@@ -18,6 +18,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/firehose"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/followers"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/hot"
+	"github.com/ericvolp12/bsky-experiments/pkg/feeds/pins"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/postlabel"
 	"github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
@@ -256,6 +257,13 @@ func FeedGenerator(cctx *cli.Context) error {
 		log.Fatalf("Failed to create FollowersFeed: %v", err)
 	}
 	feedGenerator.AddFeed(followersFeedAliases, followersFeed)
+
+	// Create a My Pins feed
+	pinsFeed, pinsFeedAliases, err := pins.NewPinsFeed(ctx, feedActorDID, store)
+	if err != nil {
+		log.Fatalf("Failed to create PinsFeed: %v", err)
+	}
+	feedGenerator.AddFeed(pinsFeedAliases, pinsFeed)
 
 	router := gin.New()
 

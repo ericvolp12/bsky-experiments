@@ -163,6 +163,62 @@ func (q *Queries) GetMyPostsByFuzzyContent(ctx context.Context, arg GetMyPostsBy
 	return items, nil
 }
 
+const getPinnedPostsByActor = `-- name: GetPinnedPostsByActor :many
+SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, facets, embed, tags, has_embedded_media, created_at, inserted_at
+FROM posts
+WHERE actor_did = $1
+    AND content LIKE '%📌%'
+    AND parent_post_rkey IS NOT NULL
+    AND parent_post_actor_did IS NOT NULL
+ORDER BY inserted_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type GetPinnedPostsByActorParams struct {
+	ActorDid string `json:"actor_did"`
+	Limit    int32  `json:"limit"`
+	Offset   int32  `json:"offset"`
+}
+
+func (q *Queries) GetPinnedPostsByActor(ctx context.Context, arg GetPinnedPostsByActorParams) ([]Post, error) {
+	rows, err := q.query(ctx, q.getPinnedPostsByActorStmt, getPinnedPostsByActor, arg.ActorDid, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Post
+	for rows.Next() {
+		var i Post
+		if err := rows.Scan(
+			&i.ActorDid,
+			&i.Rkey,
+			&i.Content,
+			&i.ParentPostActorDid,
+			&i.QuotePostActorDid,
+			&i.QuotePostRkey,
+			&i.ParentPostRkey,
+			&i.RootPostActorDid,
+			&i.RootPostRkey,
+			&i.Facets,
+			&i.Embed,
+			pq.Array(&i.Tags),
+			&i.HasEmbeddedMedia,
+			&i.CreatedAt,
+			&i.InsertedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPost = `-- name: GetPost :one
 SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, facets, embed, tags, has_embedded_media, created_at, inserted_at
 FROM posts

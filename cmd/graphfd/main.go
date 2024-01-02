@@ -43,7 +43,6 @@ func main() {
 			Name:    "graph-csv",
 			Usage:   "path to graph csv file",
 			EnvVars: []string{"GRAPH_CSV"},
-			Value:   "data/follows.csv",
 		},
 		&cli.StringFlag{
 			Name:    "graph-data-dir",
@@ -137,10 +136,12 @@ func GraphD(cctx *cli.Context) error {
 		close(echoShutdown)
 	}()
 
-	err = graph.LoadFromFile()
-	if err != nil {
-		slog.Error("failed to load graph from file", "error", err)
-		return err
+	if cctx.String("graph-csv") != "" {
+		err = graph.LoadFromFile()
+		if err != nil {
+			slog.Error("failed to load graph from file", "error", err)
+			return err
+		}
 	}
 
 	// Trap SIGINT to trigger a shutdown.

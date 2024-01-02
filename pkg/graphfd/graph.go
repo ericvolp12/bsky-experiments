@@ -82,8 +82,7 @@ func (g *Graph) LoadFromFile() error {
 			log.Info("loaded follows", "total", totalFollows, "duration", time.Since(start))
 		}
 
-		// Zero-allocation file reading (no string conversion)
-		followTxt = fileScanner.Bytes()
+		followTxt = fileScanner.Bytes()                          // Zero-allocation file reading (no string conversion)
 		parts = strings.SplitN(BytesToString(followTxt), ",", 3) // Use SplitN for efficiency
 		if len(parts) < 3 {
 			log.Error("invalid follow", "follow", followTxt)
@@ -97,7 +96,7 @@ func (g *Graph) LoadFromFile() error {
 		followerMap, ok = followerMaps[g.AcquireDID(parts[1])]
 		if !ok {
 			followerMap = &FollowMap{
-				Members: make(map[uint64]string),
+				Members: make(map[uint64]string, 1),
 			}
 			followerMaps[g.AcquireDID(parts[1])] = followerMap
 			followerMap.Members[g.AcquireDID(parts[0])] = parts[2]
