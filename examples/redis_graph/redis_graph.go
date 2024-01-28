@@ -15,7 +15,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout)))
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",

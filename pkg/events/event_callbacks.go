@@ -10,7 +10,6 @@ import (
 
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
-	"github.com/bluesky-social/indigo/api/label"
 	"github.com/bluesky-social/indigo/events"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/repo"
@@ -30,8 +29,6 @@ type RepoStreamCtxCallbacks struct {
 	RepoInfo      func(ctx context.Context, evt *comatproto.SyncSubscribeRepos_Info) error
 	RepoMigrate   func(ctx context.Context, evt *comatproto.SyncSubscribeRepos_Migrate) error
 	RepoTombstone func(ctx context.Context, evt *comatproto.SyncSubscribeRepos_Tombstone) error
-	LabelLabels   func(ctx context.Context, evt *label.SubscribeLabels_Labels) error
-	LabelInfo     func(ctx context.Context, evt *label.SubscribeLabels_Info) error
 	Error         func(ctx context.Context, evt *events.ErrorFrame) error
 }
 
