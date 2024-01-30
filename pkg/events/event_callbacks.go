@@ -303,6 +303,8 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 				// Ignore mute list creation for now
 			case *appbsky.GraphListitem:
 				// Ignore mute list updates for now
+			case *appbsky.FeedThreadgate:
+				// Ignore threadgates for now
 			default:
 				log.Warnf("unknown record type: %+v", rec)
 			}

@@ -1243,6 +1243,9 @@ func (c *Consumer) HandleCreateRecord(
 		span.SetAttributes(attribute.String("record_type", "graph_listitem"))
 		recordsProcessedCounter.WithLabelValues("graph_listitem", c.SocketURL).Inc()
 		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+	case *bsky.FeedThreadgate:
+		span.SetAttributes(attribute.String("record_type", "feed_threadgate"))
+		recordsProcessedCounter.WithLabelValues("feed_threadgate", c.SocketURL).Inc()
 	default:
 		span.SetAttributes(attribute.String("record_type", "unknown"))
 		log.Warnf("unknown record type: %+v", rec)

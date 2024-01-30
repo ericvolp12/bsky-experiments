@@ -50,7 +50,10 @@ LIMIT $2;
 SELECT *
 FROM posts
 WHERE actor_did = $1
-    AND content LIKE '%📌%'
+    AND (
+        content LIKE '%📌%'
+        OR content LIKE '%🔖%'
+    )
     AND parent_post_rkey IS NOT NULL
     AND parent_post_actor_did IS NOT NULL
 ORDER BY inserted_at DESC

@@ -167,7 +167,10 @@ const getPinnedPostsByActor = `-- name: GetPinnedPostsByActor :many
 SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, facets, embed, tags, has_embedded_media, created_at, inserted_at
 FROM posts
 WHERE actor_did = $1
-    AND content LIKE '%📌%'
+    AND (
+        content LIKE '%📌%'
+        OR content LIKE '%🔖%'
+    )
     AND parent_post_rkey IS NOT NULL
     AND parent_post_actor_did IS NOT NULL
 ORDER BY inserted_at DESC
