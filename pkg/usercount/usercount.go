@@ -43,7 +43,7 @@ func NewUserCount(ctx context.Context, redisClient *redis.Client) *UserCount {
 	// We need to convert it to a slice of PDS structs
 	pdsSlice := []*PDS{}
 	for host, pdsString := range pdsList {
-		pds := NewPDS(host, 4)
+		pds := NewPDS(host, 10)
 		_, err := fmt.Sscanf(pdsString, "%d|%d|%s", &pds.UserCount, &pds.LastPageSize, &pds.LastCursor)
 		if err != nil {
 			log.Printf("error parsing pds string: %s\n", err)
@@ -55,7 +55,7 @@ func NewUserCount(ctx context.Context, redisClient *redis.Client) *UserCount {
 	// If there are no PDSs in redis, add the default list
 	if len(pdsSlice) == 0 {
 		for _, host := range PDSHostList {
-			pdsSlice = append(pdsSlice, NewPDS(host, 4))
+			pdsSlice = append(pdsSlice, NewPDS(host, 10))
 		}
 	}
 
@@ -76,7 +76,6 @@ func NewUserCount(ctx context.Context, redisClient *redis.Client) *UserCount {
 }
 
 var PDSHostList = []string{
-	"https://bsky.social",
 	"https://morel.us-east.host.bsky.network",
 	"https://puffball.us-east.host.bsky.network",
 	"https://inkcap.us-east.host.bsky.network",
@@ -87,6 +86,16 @@ var PDSHostList = []string{
 	"https://amanita.us-east.host.bsky.network",
 	"https://lionsmane.us-east.host.bsky.network",
 	"https://shiitake.us-east.host.bsky.network",
+	"https://blewit.us-west.host.bsky.network",
+	"https://conocybe.us-west.host.bsky.network",
+	"https://boletus.us-west.host.bsky.network",
+	"https://lepista.us-west.host.bsky.network",
+	"https://chaga.us-west.host.bsky.network",
+	"https://agaric.us-west.host.bsky.network",
+	"https://maitake.us-west.host.bsky.network",
+	"https://verpa.us-west.host.bsky.network",
+	"https://russula.us-west.host.bsky.network",
+	"https://hydnum.us-west.host.bsky.network",
 }
 
 type PDS struct {
