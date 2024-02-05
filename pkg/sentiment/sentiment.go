@@ -8,6 +8,8 @@ import (
 	"net/http"
 
 	"github.com/pemistahl/lingua-go"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 )
@@ -46,22 +48,16 @@ type sentimentResponse struct {
 
 var tracer = otel.Tracer("sentiment")
 
+var languagePostCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "sentiment_language_post_count",
+	Help: "The number of posts in a given language",
+}, []string{"lang"})
+
 func NewSentiment(sentimentServiceHost string) *Sentiment {
-
-	// Build an English langauge detector since our sentiment service only supports English
-	languages := []lingua.Language{
-		lingua.English,
-		lingua.Spanish,
-		lingua.Portuguese,
-		lingua.Korean,
-		lingua.Japanese,
-		lingua.Persian,
-	}
-
 	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
 
 	detector := lingua.NewLanguageDetectorBuilder().
-		FromLanguages(languages...).
+		FromAllLanguages().
 		Build()
 
 	return &Sentiment{
@@ -79,6 +75,13 @@ func (s *Sentiment) GetPostsSentiment(ctx context.Context, posts []*SentimentPos
 
 	// Return early if all of the posts are not in English
 	for i, post := range posts {
+		// Record the likely language of each post
+		lang, ok := s.LanguageDetector.DetectLanguageOf(post.Text)
+		if ok {
+			languagePostCount.WithLabelValues(lang.String()).Inc()
+		} else {
+			languagePostCount.WithLabelValues("unknown").Inc()
+		}
 		confidence := s.LanguageDetector.ComputeLanguageConfidence(post.Text, lingua.English)
 		if confidence > 0.5 {
 			englishPosts = append(englishPosts, posts[i])
