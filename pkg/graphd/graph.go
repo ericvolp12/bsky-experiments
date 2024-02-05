@@ -11,12 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/puzpuzpuz/xsync/v3"
 	"golang.org/x/exp/maps"
 )
 
 type Graph struct {
-	follows   sync.Map
-	followers sync.Map
+	follows   *xsync.MapOf[uint64, *FollowMap]
+	followers *xsync.MapOf[uint64, *FollowMap]
 
 	utd   map[uint64]string
 	utdLk sync.RWMutex
@@ -27,11 +28,9 @@ type Graph struct {
 	uidNext uint64
 	nextLk  sync.Mutex
 
-	followCount   uint64
-	followCountLk sync.RWMutex
+	followCount *xsync.Counter
 
-	userCount   uint64
-	userCountLk sync.RWMutex
+	userCount *xsync.Counter
 
 	graphFilePath  string
 	binaryFilePath string
@@ -44,6 +43,10 @@ type FollowMap struct {
 
 func NewGraph(filePath string, binaryFilePath string) *Graph {
 	return &Graph{
+		follows:        xsync.NewMapOf[uint64, *FollowMap](),
+		followers:      xsync.NewMapOf[uint64, *FollowMap](),
+		followCount:    xsync.NewCounter(),
+		userCount:      xsync.NewCounter(),
 		utd:            map[uint64]string{},
 		dtu:            map[string]uint64{},
 		graphFilePath:  filePath,
@@ -119,9 +122,7 @@ func (g *Graph) SaveToFile() error {
 	g.utdLk.RUnlock()
 
 	// Write all the follows to the graph CSV
-	g.follows.Range(func(key, value interface{}) bool {
-		actorUID := key.(uint64)
-		followMap := value.(*FollowMap)
+	g.follows.Range(func(actorUID uint64, followMap *FollowMap) bool {
 		entries := make([]string, 0, len(followMap.data))
 
 		followMap.lk.RLock()
@@ -186,9 +187,7 @@ func (g *Graph) SaveToBinaryFile() error {
 
 	// Convert follows to a map[uint64][]uint64
 	followsCopy := make(map[uint64][]uint64)
-	g.follows.Range(func(key, value interface{}) bool {
-		actorUID := key.(uint64)
-		followMap := value.(*FollowMap)
+	g.follows.Range(func(actorUID uint64, followMap *FollowMap) bool {
 		followMap.lk.RLock()
 		for targetUID := range followMap.data {
 			followsCopy[actorUID] = append(followsCopy[actorUID], targetUID)
@@ -342,15 +341,11 @@ func (g *Graph) LoadGraphFromBinaryFile() error {
 }
 
 func (g *Graph) GetUsercount() uint64 {
-	g.userCountLk.RLock()
-	defer g.userCountLk.RUnlock()
-	return g.userCount
+	return uint64(g.userCount.Value())
 }
 
 func (g *Graph) GetFollowcount() uint64 {
-	g.followCountLk.RLock()
-	defer g.followCountLk.RUnlock()
-	return g.followCount
+	return uint64(g.followCount.Value())
 }
 
 func (g *Graph) GetDID(uid uint64) (string, bool) {
@@ -432,55 +427,45 @@ func (g *Graph) AcquireDID(did string) uint64 {
 			data: map[uint64]struct{}{},
 		})
 
-		g.userCountLk.Lock()
-		g.userCount++
-		g.userCountLk.Unlock()
+		g.userCount.Add(1)
 	}
 	return uid
 }
 
 func (g *Graph) AddFollow(actorUID, targetUID uint64) {
-	followMap, ok := g.follows.Load(actorUID)
-	if !ok {
-		followMap = &FollowMap{
-			data: map[uint64]struct{}{},
-		}
-		g.follows.Store(actorUID, followMap)
+	initMap := &FollowMap{
+		data: map[uint64]struct{}{},
 	}
-	followMap.(*FollowMap).lk.Lock()
-	followMap.(*FollowMap).data[targetUID] = struct{}{}
-	followMap.(*FollowMap).lk.Unlock()
+	followMap, _ := g.follows.LoadOrStore(actorUID, initMap)
+	followMap.lk.Lock()
+	followMap.data[targetUID] = struct{}{}
+	followMap.lk.Unlock()
 
-	followMap, ok = g.followers.Load(targetUID)
-	if !ok {
-		followMap = &FollowMap{
-			data: map[uint64]struct{}{},
-		}
-		g.followers.Store(targetUID, followMap)
+	initMap = &FollowMap{
+		data: map[uint64]struct{}{},
 	}
-	followMap.(*FollowMap).lk.Lock()
-	followMap.(*FollowMap).data[actorUID] = struct{}{}
-	followMap.(*FollowMap).lk.Unlock()
+	followMap, _ = g.followers.LoadOrStore(targetUID, initMap)
+	followMap.lk.Lock()
+	followMap.data[actorUID] = struct{}{}
+	followMap.lk.Unlock()
 
-	g.followCountLk.Lock()
-	g.followCount++
-	g.followCountLk.Unlock()
+	g.followCount.Add(1)
 }
 
 // RemoveFollow removes a follow from the graph if it exists
 func (g *Graph) RemoveFollow(actorUID, targetUID uint64) {
 	followMap, ok := g.follows.Load(actorUID)
 	if ok {
-		followMap.(*FollowMap).lk.Lock()
-		delete(followMap.(*FollowMap).data, targetUID)
-		followMap.(*FollowMap).lk.Unlock()
+		followMap.lk.Lock()
+		delete(followMap.data, targetUID)
+		followMap.lk.Unlock()
 	}
 
 	followMap, ok = g.followers.Load(targetUID)
-	if !ok {
-		followMap.(*FollowMap).lk.Lock()
-		delete(followMap.(*FollowMap).data, actorUID)
-		followMap.(*FollowMap).lk.Unlock()
+	if ok {
+		followMap.lk.Lock()
+		delete(followMap.data, actorUID)
+		followMap.lk.Unlock()
 	}
 }
 
@@ -489,12 +474,12 @@ func (g *Graph) GetFollowers(uid uint64) ([]uint64, error) {
 	if !ok {
 		return nil, fmt.Errorf("uid %d not found", uid)
 	}
-	followMap.(*FollowMap).lk.RLock()
-	defer followMap.(*FollowMap).lk.RUnlock()
+	followMap.lk.RLock()
+	defer followMap.lk.RUnlock()
 
-	followers := make([]uint64, len(followMap.(*FollowMap).data))
+	followers := make([]uint64, len(followMap.data))
 	i := 0
-	for follower := range followMap.(*FollowMap).data {
+	for follower := range followMap.data {
 		followers[i] = follower
 		i++
 	}
@@ -507,11 +492,11 @@ func (g *Graph) GetFollowersMap(uid uint64) (map[uint64]struct{}, error) {
 	if !ok {
 		return nil, fmt.Errorf("uid %d not found", uid)
 	}
-	followMap.(*FollowMap).lk.RLock()
-	defer followMap.(*FollowMap).lk.RUnlock()
+	followMap.lk.RLock()
+	defer followMap.lk.RUnlock()
 
-	mapCopy := make(map[uint64]struct{}, len(followMap.(*FollowMap).data))
-	for follower := range followMap.(*FollowMap).data {
+	mapCopy := make(map[uint64]struct{}, len(followMap.data))
+	for follower := range followMap.data {
 		mapCopy[follower] = struct{}{}
 	}
 
@@ -523,11 +508,11 @@ func (g *Graph) GetFollowingMap(uid uint64) (map[uint64]struct{}, error) {
 	if !ok {
 		return nil, fmt.Errorf("uid %d not found", uid)
 	}
-	followMap.(*FollowMap).lk.RLock()
-	defer followMap.(*FollowMap).lk.RUnlock()
+	followMap.lk.RLock()
+	defer followMap.lk.RUnlock()
 
-	mapCopy := make(map[uint64]struct{}, len(followMap.(*FollowMap).data))
-	for follower := range followMap.(*FollowMap).data {
+	mapCopy := make(map[uint64]struct{}, len(followMap.data))
+	for follower := range followMap.data {
 		mapCopy[follower] = struct{}{}
 	}
 
@@ -578,9 +563,9 @@ func (g *Graph) IntersectFollowers(uids []uint64) ([]uint64, error) {
 		if !ok {
 			return nil, fmt.Errorf("uid %d not found", uid)
 		}
-		followMap.(*FollowMap).lk.RLock()
-		defer followMap.(*FollowMap).lk.RUnlock()
-		followMaps[i] = followMap.(*FollowMap)
+		followMap.lk.RLock()
+		defer followMap.lk.RUnlock()
+		followMaps[i] = followMap
 	}
 
 	// Find the smallest map
@@ -626,9 +611,9 @@ func (g *Graph) IntersectFollowing(uids []uint64) ([]uint64, error) {
 		if !ok {
 			return nil, fmt.Errorf("uid %d not found", uid)
 		}
-		followMap.(*FollowMap).lk.RLock()
-		defer followMap.(*FollowMap).lk.RUnlock()
-		followMaps[i] = followMap.(*FollowMap)
+		followMap.lk.RLock()
+		defer followMap.lk.RUnlock()
+		followMaps[i] = followMap
 	}
 
 	// Find the smallest map
@@ -664,12 +649,12 @@ func (g *Graph) GetFollowing(uid uint64) ([]uint64, error) {
 	if !ok {
 		return nil, fmt.Errorf("uid %d not found", uid)
 	}
-	followMap.(*FollowMap).lk.RLock()
-	defer followMap.(*FollowMap).lk.RUnlock()
+	followMap.lk.RLock()
+	defer followMap.lk.RUnlock()
 
-	following := make([]uint64, len(followMap.(*FollowMap).data))
+	following := make([]uint64, len(followMap.data))
 	i := 0
-	for follower := range followMap.(*FollowMap).data {
+	for follower := range followMap.data {
 		following[i] = follower
 		i++
 	}
@@ -705,9 +690,9 @@ func (g *Graph) DoesFollow(actorUID, targetUID uint64) (bool, error) {
 	if !ok {
 		return false, fmt.Errorf("actor uid %d not found", actorUID)
 	}
-	followMap.(*FollowMap).lk.RLock()
-	defer followMap.(*FollowMap).lk.RUnlock()
+	followMap.lk.RLock()
+	defer followMap.lk.RUnlock()
 
-	_, ok = followMap.(*FollowMap).data[targetUID]
+	_, ok = followMap.data[targetUID]
 	return ok, nil
 }
