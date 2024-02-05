@@ -79,6 +79,24 @@ func (g *Graph) LoadFromFile() error {
 	// Use this buffer to pre-allocate slice capacities when possible
 	buffer := make([]string, 2)
 
+	type job struct {
+		a uint64
+		t uint64
+	}
+
+	jobs := make(chan *job, 10_000_000)
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				g.AddFollow(j.a, j.t)
+			}
+		}()
+	}
+
 	for fileScanner.Scan() {
 		if totalFollows%1_000_000 == 0 {
 			log.Info("loaded follows", "total", totalFollows, "duration", time.Since(start))
@@ -95,10 +113,16 @@ func (g *Graph) LoadFromFile() error {
 		actorUID := g.AcquireDID(buffer[0])
 		targetUID := g.AcquireDID(buffer[1])
 
-		g.AddFollow(actorUID, targetUID)
+		jobs <- &job{
+			a: actorUID,
+			t: targetUID,
+		}
 
 		totalFollows++
 	}
+
+	close(jobs)
+	wg.Wait()
 
 	log.Info("total follows", "total", totalFollows, "duration", time.Since(start))
 	return nil
