@@ -22,7 +22,7 @@ from pythonjsonlogger import jsonlogger
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .models import ImageMeta, ImageResult
-from .object_detection import detect_objects, processor
+from .object_detection import detect_objects, processor, DetectionResult
 
 # Set up JSON logging
 formatter = jsonlogger.JsonFormatter()
@@ -110,6 +110,7 @@ images_processed_successfully = Counter(
 images_failed = Counter("images_failed", "Number of images failed")
 images_submitted = Counter("images_submitted", "Number of images submitted")
 
+tracer = trace.get_tracer("bsky-object-detection")
 
 # Async function to download an image
 async def download_image(
@@ -163,54 +164,47 @@ batch_size_str = os.getenv("BATCH_SIZE")
 if batch_size_str:
     batch_size = int(batch_size_str)
 
+async def preprocess_and_detect(
+    image_pairs: List[Tuple[ImageMeta, Image.Image]]
+) -> List[Tuple[ImageMeta, List[DetectionResult]]]:  # Replace 'any' with the actual type of your detection result
+    detection_results = []
+    if image_pairs:
+        try:
+            with tracer.start_as_current_span("preprocess_images") as span:
+                batch = processor(images=[img for _, img in image_pairs], return_tensors="pt")
+            # Assume detect_objects is an async function or wrap it with asyncio.to_thread if it's not
+            detection_results = await detect_objects(batch=batch, image_pairs=image_pairs)
+        except Exception as e:
+            logging.error(f"Error detecting objects: {e}", extra={"error": e, "successful": image_pairs})
+    return detection_results
 
 @app.post("/detect_objects", response_model=List[ImageResult])
 async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     image_results: List[ImageResult] = []
     images_submitted.inc(len(image_metas))
-    tracer = trace.get_tracer("bsky-object-detection")
 
-    start = time()
+    detection_tasks = []
     async with aiohttp.ClientSession() as session:
         async for pil_images in batched_downloads(session, image_metas, batch_size):
-            batch_start = time()
-
-            # Log failed downloads
-            failed = [img_pair[0] for img_pair in pil_images if not img_pair[1]]
-            for image_meta in failed:
-                images_failed.inc()
-                image_results.append(ImageResult(meta=image_meta, results=[]))
-
-            # Detect objects on successful downloads
+            # Separate successful downloads for processing
             successful = [(image_meta, pil_image) for image_meta, pil_image in pil_images if pil_image]
-            detection_results = []
-            if successful:
-                try:
-                    # Preprocess images
-                    with tracer.start_as_current_span("preprocess_images") as span:
-                        batch = processor(images=[img for _, img in successful], return_tensors="pt")
-                    detection_results = detect_objects(batch=batch, image_pairs=successful)
-                except Exception as e:
-                    logging.error(
-                        f"Error detecting objects: {e}",
-                        extra={"error": e, "successful": successful},
-                    )
-                finally:
-                    detection_done = time()
-                    logging.info(
-                        {
-                            "message": "Batch processing complete",
-                            "batch_size": len(successful),
-                            "batch_start_offset": batch_start - start,
-                            "batch_processing_time": detection_done - batch_start,
-                        }
-                    )
 
-            # Populate image results
-            for image_meta, detection_result in detection_results:
-                images_processed_successfully.inc()
-                image_results.append(
-                    ImageResult(meta=image_meta, results=detection_result)
-                )
+            # Initiate detection on successful downloads in the background
+            if successful:
+                task = asyncio.create_task(preprocess_and_detect(successful))
+                detection_tasks.append(task)
+
+            # Immediately handle failed downloads
+            for img_pair in pil_images:
+                if not img_pair[1]:  # No image returned
+                    images_failed.inc()
+                    image_results.append(ImageResult(meta=img_pair[0], results=[]))
+
+    # Await all detection tasks
+    for task in detection_tasks:
+        detection_result = await task
+        for image_meta, detection in detection_result:
+            images_processed_successfully.inc()
+            image_results.append(ImageResult(meta=image_meta, results=detection))
 
     return image_results

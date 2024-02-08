@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import time
@@ -21,19 +22,24 @@ processor = DetrImageProcessor.from_pretrained(MODEL)
 model = DetrForObjectDetection.from_pretrained(MODEL).to(device)
 model.save_pretrained(f"{os.getcwd()}/{MODEL}")
 
-# raw_inputs = processor(images=images, return_tensors="pt")
+tracer = trace.get_tracer("bsky-object-detection")
 
-def detect_objects(
+async def detect_objects(
     batch: BatchFeature,
     image_pairs: List[Tuple[ImageMeta, Image.Image]]
 ) -> List[Tuple[ImageMeta, List[DetectionResult]]]:
-    tracer = trace.get_tracer("bsky-object-detection")
     with tracer.start_as_current_span("detect_objects") as span:
         start = time.time()        
         span.add_event("loadImagesToGPU")
         inputs = batch.to(device)
-        with tracer.start_as_current_span("model_inference"):
-            outputs = model(**inputs)
+
+        async def perform_inference():
+            with tracer.start_as_current_span("model_inference"):
+                outputs = model(**inputs)
+            return outputs
+
+        # Perform model inference in a separate thread to avoid blocking the asyncio event loop
+        outputs = await asyncio.to_thread(perform_inference)
 
         # convert outputs (bounding boxes and class logits) to COCO API
         # let's only keep detections with score > 0.5
