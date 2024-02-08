@@ -169,7 +169,7 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     image_results: List[ImageResult] = []
     images_submitted.inc(len(image_metas))
     tracer = trace.get_tracer("bsky-object-detection")
-    
+
     start = time()
     async with aiohttp.ClientSession() as session:
         async for pil_images in batched_downloads(session, image_metas, batch_size):
@@ -188,7 +188,7 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
                 try:
                     # Preprocess images
                     with tracer.start_as_current_span("preprocess_images") as span:
-                        batch = processor(images=[img for _, img in image_pairs], return_tensors="pt")
+                        batch = processor(images=[img for _, img in successful], return_tensors="pt")
                     detection_results = detect_objects(batch=batch, image_pairs=successful)
                 except Exception as e:
                     logging.error(
