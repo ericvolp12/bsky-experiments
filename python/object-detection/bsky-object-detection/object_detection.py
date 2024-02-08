@@ -7,7 +7,6 @@ import torch
 from opentelemetry import trace
 from PIL import Image
 from transformers import DetrForObjectDetection, DetrImageProcessor
-from optimum.bettertransformer import BetterTransformer
 
 from .models import DetectionResult, ImageMeta
 
@@ -21,7 +20,6 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 processor = DetrImageProcessor.from_pretrained(MODEL)
 model = DetrForObjectDetection.from_pretrained(MODEL).to(device)
 model.save_pretrained(f"{os.getcwd()}/{MODEL}")
-model = BetterTransformer.transform(model)
 
 def detect_objects(
     image_pairs: List[Tuple[ImageMeta, Image.Image]]
