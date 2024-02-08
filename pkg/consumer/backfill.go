@@ -87,18 +87,17 @@ func (c *Consumer) BackfillProcessor(ctx context.Context) {
 
 		// Get the next backfill
 		var backfill *BackfillRepoStatus
-		c.statusLock.RLock()
-		for _, b := range c.BackfillStatus {
+		c.BackfillStatus.Range(func(repo string, b *BackfillRepoStatus) bool {
 			b.lk.Lock()
 			if b.State == "enqueued" {
 				backfill = b
 				b.State = "in_progress"
 				b.lk.Unlock()
-				break
+				return false
 			}
 			b.lk.Unlock()
-		}
-		c.statusLock.RUnlock()
+			return true
+		})
 
 		if backfill == nil {
 			time.Sleep(1 * time.Second)
@@ -177,9 +176,7 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 		return
 	}
 
-	c.statusLock.RLock()
-	bf := c.BackfillStatus[repoDID]
-	c.statusLock.RUnlock()
+	bf, _ := c.BackfillStatus.Load(repoDID)
 
 	if resp.StatusCode != http.StatusOK {
 		log.Errorf("Error response: %v", resp.StatusCode)
@@ -218,9 +215,7 @@ func (c *Consumer) ProcessBackfill(ctx context.Context, repoDID string) {
 	if err != nil {
 		log.Errorf("Error reading repo: %v", err)
 		// Mark the backfill as "failed"
-		c.statusLock.RLock()
-		bf := c.BackfillStatus[repoDID]
-		c.statusLock.RUnlock()
+		bf, _ := c.BackfillStatus.Load(repoDID)
 
 		state := "failed (couldn't read repo CAR from response body)"
 

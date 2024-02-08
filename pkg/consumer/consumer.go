@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	"github.com/labstack/gommon/log"
+	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/redis/go-redis/v9"
 	"github.com/sqlc-dev/pqtype"
 	typegen "github.com/whyrusleeping/cbor-gen"
@@ -46,8 +47,7 @@ type Consumer struct {
 
 	Store *store.Store
 
-	BackfillStatus map[string]*BackfillRepoStatus
-	statusLock     sync.RWMutex
+	BackfillStatus *xsync.MapOf[string, *BackfillRepoStatus]
 	SyncLimiter    *rate.Limiter
 
 	magicHeaderKey string
@@ -154,7 +154,7 @@ func NewConsumer(
 		ProgressKey: fmt.Sprintf("%s:progress", redisPrefix),
 		Store:       store,
 
-		BackfillStatus: map[string]*BackfillRepoStatus{},
+		BackfillStatus: xsync.NewMapOf[string, *BackfillRepoStatus](),
 		SyncLimiter:    rate.NewLimiter(2, 1),
 
 		magicHeaderKey: magicHeaderKey,
@@ -195,12 +195,12 @@ func NewConsumer(
 		}
 
 		for _, backfillRecord := range records {
-			c.BackfillStatus[backfillRecord.Repo] = &BackfillRepoStatus{
+			c.BackfillStatus.Store(backfillRecord.Repo, &BackfillRepoStatus{
 				RepoDid:      backfillRecord.Repo,
 				Seq:          backfillRecord.SeqStarted,
 				State:        backfillRecord.State,
 				DeleteBuffer: []*Delete{},
-			}
+			})
 			if backfillRecord.State == "enqueued" {
 				backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
 			}
@@ -326,34 +326,30 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 
 	log := c.Logger.With("repo", evt.Repo, "seq", evt.Seq, "commit", evt.Commit)
 
-	span.AddEvent("Acquire Status RLock")
-	c.statusLock.RLock()
-	span.AddEvent("Acquired Status RLock")
-	backfill, ok := c.BackfillStatus[evt.Repo]
-	c.statusLock.RUnlock()
-
+	backfill, ok := c.BackfillStatus.Load(evt.Repo)
 	if !ok {
 		span.SetAttributes(attribute.Bool("new_backfill_enqueued", true))
 		log.Infof("backfill not in progress, adding repo %s to queue", evt.Repo)
 
+		state := "enqueued"
+		if evt.Prev == nil {
+			state = "complete"
+		}
+
 		backfill = &BackfillRepoStatus{
 			RepoDid:      evt.Repo,
 			Seq:          evt.Seq,
-			State:        "enqueued",
+			State:        state,
 			DeleteBuffer: []*Delete{},
 		}
 
-		span.AddEvent("Acquire Status Lock")
-		c.statusLock.Lock()
-		span.AddEvent("Acquired Status Lock")
-		c.BackfillStatus[evt.Repo] = backfill
-		c.statusLock.Unlock()
+		c.BackfillStatus.Store(evt.Repo, backfill)
 
 		err := c.Store.Queries.CreateRepoBackfillRecord(ctx, store_queries.CreateRepoBackfillRecordParams{
 			Repo:         evt.Repo,
 			LastBackfill: time.Now(),
 			SeqStarted:   evt.Seq,
-			State:        "enqueued",
+			State:        state,
 		})
 		if err != nil {
 			log.Errorf("failed to create repo backfill record: %+v", err)
@@ -1246,6 +1242,9 @@ func (c *Consumer) HandleCreateRecord(
 	case *bsky.FeedThreadgate:
 		span.SetAttributes(attribute.String("record_type", "feed_threadgate"))
 		recordsProcessedCounter.WithLabelValues("feed_threadgate", c.SocketURL).Inc()
+	case *bsky.GraphListblock:
+		span.SetAttributes(attribute.String("record_type", "graph_listblock"))
+		recordsProcessedCounter.WithLabelValues("graph_listblock", c.SocketURL).Inc()
 	default:
 		span.SetAttributes(attribute.String("record_type", "unknown"))
 		log.Warnf("unknown record type: %+v", rec)

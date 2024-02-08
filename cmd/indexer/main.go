@@ -849,7 +849,7 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 			PostID:    image.PostID,
 			ActorDID:  image.AuthorDID,
 			CID:       image.CID,
-			URL:       image.FullsizeURL,
+			URL:       fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", image.AuthorDID, image.CID),
 			MimeType:  image.MimeType,
 			CreatedAt: image.CreatedAt,
 		}
