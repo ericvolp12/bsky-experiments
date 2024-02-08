@@ -21,6 +21,7 @@ processor = DetrImageProcessor.from_pretrained(MODEL)
 model = DetrForObjectDetection.from_pretrained(MODEL).to(device)
 model.save_pretrained(f"{os.getcwd()}/{MODEL}")
 
+
 def detect_objects(
     image_pairs: List[Tuple[ImageMeta, Image.Image]]
 ) -> List[Tuple[ImageMeta, List[DetectionResult]]]:
@@ -30,7 +31,10 @@ def detect_objects(
 
         images = [img for _, img in image_pairs]
 
-        inputs = processor(images=images, return_tensors="pt").to(device)
+        span.add_event("preprocessImages")
+        raw_inputs = processor(images=images, return_tensors="pt")
+        span.add_event("loadImagesToGPU")
+        inputs = raw_inputs.to(device)
         with tracer.start_as_current_span("model_inference"):
             outputs = model(**inputs)
 
