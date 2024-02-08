@@ -32,8 +32,8 @@ async def detect_objects(
         start = time.time()        
         span.add_event("loadImagesToGPU")
         inputs = batch.to(device)
-
-        async def perform_inference():
+        
+        def perform_inference():
             with tracer.start_as_current_span("model_inference"):
                 outputs = model(**inputs)
             return outputs
