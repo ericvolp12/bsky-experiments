@@ -170,10 +170,12 @@ async def preprocess_and_detect(
     detection_results = []
     if image_pairs:
         try:
-            with tracer.start_as_current_span("preprocess_images") as span:
-                batch = processor(images=[img for _, img in image_pairs], return_tensors="pt")
-            # Assume detect_objects is an async function or wrap it with asyncio.to_thread if it's not
-            detection_results = await detect_objects(batch=batch, image_pairs=image_pairs)
+            def preprocess_batch():
+                with tracer.start_as_current_span("preprocess_images") as span:
+                    batch = processor(images=[img for _, img in image_pairs], return_tensors="pt")
+                    return batch
+            batch = await asyncio.to_thread(preprocess_batch)
+            detection_results = detect_objects(batch=batch, image_pairs=image_pairs)
         except Exception as e:
             logging.error(f"Error detecting objects: {e}", extra={"error": e, "successful": image_pairs})
     return detection_results
