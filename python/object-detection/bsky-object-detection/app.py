@@ -22,7 +22,7 @@ from pythonjsonlogger import jsonlogger
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .models import ImageMeta, ImageResult
-from .object_detection import detect_objects
+from .object_detection import detect_objects, processor
 
 # Set up JSON logging
 formatter = jsonlogger.JsonFormatter()
@@ -185,7 +185,9 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
             detection_results = []
             if successful:
                 try:
-                    detection_results = detect_objects(image_pairs=successful)
+                    # Preprocess images
+                    batch = processor(images=[img for _, img in image_pairs], return_tensors="pt")
+                    detection_results = detect_objects(batch=batch, image_pairs=successful)
                 except Exception as e:
                     logging.error(
                         f"Error detecting objects: {e}",

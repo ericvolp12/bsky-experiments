@@ -6,7 +6,7 @@ from typing import List, Tuple
 import torch
 from opentelemetry import trace
 from PIL import Image
-from transformers import DetrForObjectDetection, DetrImageProcessor
+from transformers import DetrForObjectDetection, DetrImageProcessor, BatchFeature
 
 from .models import DetectionResult, ImageMeta
 
@@ -21,26 +21,23 @@ processor = DetrImageProcessor.from_pretrained(MODEL)
 model = DetrForObjectDetection.from_pretrained(MODEL).to(device)
 model.save_pretrained(f"{os.getcwd()}/{MODEL}")
 
+# raw_inputs = processor(images=images, return_tensors="pt")
 
 def detect_objects(
+    batch: BatchFeature,
     image_pairs: List[Tuple[ImageMeta, Image.Image]]
 ) -> List[Tuple[ImageMeta, List[DetectionResult]]]:
     tracer = trace.get_tracer("bsky-object-detection")
     with tracer.start_as_current_span("detect_objects") as span:
-        start = time.time()
-
-        images = [img for _, img in image_pairs]
-
-        span.add_event("preprocessImages")
-        raw_inputs = processor(images=images, return_tensors="pt")
+        start = time.time()        
         span.add_event("loadImagesToGPU")
-        inputs = raw_inputs.to(device)
+        inputs = batch.to(device)
         with tracer.start_as_current_span("model_inference"):
             outputs = model(**inputs)
 
         # convert outputs (bounding boxes and class logits) to COCO API
         # let's only keep detections with score > 0.5
-        target_sizes = torch.tensor([img.size[::-1] for img in images])
+        target_sizes = torch.tensor([img.size[::-1] for _, img in image_pairs])
         model_results = processor.post_process_object_detection(
             outputs, target_sizes=target_sizes, threshold=0.5
         )
