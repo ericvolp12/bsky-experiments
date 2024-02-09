@@ -123,12 +123,12 @@ async def fetch_and_batch_images(
 ) -> AsyncGenerator[List[ImageMeta], None]:
     last_id = "0-0"  # Starting point for the stream
     while True:
-        messages = await redis.xread(
+        streams = await redis.xread(
             {IMAGE_STREAM: last_id}, count=batch_size, block=1000
         )
-        if messages and len(messages) > 0:
-            messages = messages[0]
-            image_metas = [ImageMeta(**message[1]) for _, message in messages]
+        if streams and len(streams) > 0:
+            messages = streams[0]
+            image_metas = [ImageMeta(**message) for _, message in messages]
             yield image_metas
             last_id = messages[-1][0]
 
