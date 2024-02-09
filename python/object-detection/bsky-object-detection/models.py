@@ -33,5 +33,6 @@ class ImageResult(BaseModel):
     results: List[DetectionResult]
 
     def to_dict(self):
-        # Utilize the built-in `.dict()` method and customize it if necessary
-        return self.dict(by_alias=True, exclude_none=True)
+        as_dict = self.dict(by_alias=True, exclude_none=True)
+        as_dict["meta"] = self.meta.to_dict()
+        return as_dict
