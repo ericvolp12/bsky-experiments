@@ -18,7 +18,7 @@ class ImageMeta(BaseModel):
         as_dict = self.dict(by_alias=True, exclude_none=True)
         as_dict["created_at"] = created_at
         # clear out data
-        as_dict.pop("data")
+        as_dict["data"] = ""
         return as_dict
 
 
