@@ -26,7 +26,6 @@ type ImageMeta struct {
 	CID      string `json:"cid"`
 	MimeType string `json:"mime_type"`
 	AltText  string `json:"alt_text"`
-	URL      string `json:"fullsize_url"`
 }
 
 func (bsky *BSky) worker(ctx context.Context, workerID int) {
@@ -214,7 +213,6 @@ func (bsky *BSky) ProcessRepoRecord(
 				CID:      imageCID,
 				MimeType: image.Image.MimeType,
 				AltText:  image.Alt,
-				URL:      fmt.Sprintf("https://cdn.bsky.app/img/feed_fullsize/plain/%s/%s@jpeg", authorDID, imageCID),
 			})
 		}
 
@@ -265,13 +263,12 @@ func (bsky *BSky) ProcessRepoRecord(
 			for _, image := range images {
 				altText := image.AltText
 				registryImage := search.Image{
-					CID:         image.CID,
-					PostID:      postID,
-					AuthorDID:   authorDID,
-					MimeType:    image.MimeType,
-					AltText:     &altText,
-					FullsizeURL: image.URL,
-					CreatedAt:   t,
+					CID:       image.CID,
+					PostID:    postID,
+					AuthorDID: authorDID,
+					MimeType:  image.MimeType,
+					AltText:   &altText,
+					CreatedAt: t,
 				}
 				span.AddEvent("AddImageToRegistry")
 				err = bsky.PostRegistry.AddImage(ctx, &registryImage)

@@ -63,17 +63,15 @@ type Cluster struct {
 }
 
 type Image struct {
-	Cid          string                `json:"cid"`
-	PostID       string                `json:"post_id"`
-	AuthorDid    string                `json:"author_did"`
-	AltText      sql.NullString        `json:"alt_text"`
-	MimeType     string                `json:"mime_type"`
-	FullsizeUrl  string                `json:"fullsize_url"`
-	ThumbnailUrl string                `json:"thumbnail_url"`
-	CreatedAt    time.Time             `json:"created_at"`
-	CvCompleted  bool                  `json:"cv_completed"`
-	CvRunAt      sql.NullTime          `json:"cv_run_at"`
-	CvClasses    pqtype.NullRawMessage `json:"cv_classes"`
+	Cid         string                `json:"cid"`
+	PostID      string                `json:"post_id"`
+	AuthorDid   string                `json:"author_did"`
+	AltText     sql.NullString        `json:"alt_text"`
+	MimeType    string                `json:"mime_type"`
+	CreatedAt   time.Time             `json:"created_at"`
+	CvCompleted bool                  `json:"cv_completed"`
+	CvRunAt     sql.NullTime          `json:"cv_run_at"`
+	CvClasses   pqtype.NullRawMessage `json:"cv_classes"`
 }
 
 type Label struct {

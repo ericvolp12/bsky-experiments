@@ -10,9 +10,18 @@ import (
 )
 
 const getImage = `-- name: GetImage :one
-SELECT cid, post_id, author_did, alt_text, mime_type, fullsize_url, thumbnail_url, created_at, cv_completed, cv_run_at, cv_classes
+SELECT cid,
+    post_id,
+    author_did,
+    alt_text,
+    mime_type,
+    created_at,
+    cv_completed,
+    cv_run_at,
+    cv_classes
 FROM images
-WHERE cid = $1 AND post_id = $2
+WHERE cid = $1
+    AND post_id = $2
 `
 
 type GetImageParams struct {
@@ -29,8 +38,6 @@ func (q *Queries) GetImage(ctx context.Context, arg GetImageParams) (Image, erro
 		&i.AuthorDid,
 		&i.AltText,
 		&i.MimeType,
-		&i.FullsizeUrl,
-		&i.ThumbnailUrl,
 		&i.CreatedAt,
 		&i.CvCompleted,
 		&i.CvRunAt,

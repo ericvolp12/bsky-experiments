@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import io
 import logging
 import os
@@ -116,40 +117,25 @@ tracer = trace.get_tracer("bsky-object-detection")
 AioHttpClientInstrumentor().instrument()
 
 
-# Async function to download an image
-async def download_image(
-    session: aiohttp.ClientSession, image_meta: ImageMeta
-) -> Tuple[ImageMeta, Image.Image | None]:
-    with tracer.start_as_current_span("download_image") as span:
-        span.add_event("Download image")
-        async with session.get(image_meta.url) as resp:
-            # If the response is not 200, log an error and continue to the next image
-            if resp.status != 200:
-                logging.error(
-                    f"Error fetching image from {image_meta.url} - {resp.status}"
-                )
-                span.set_attribute("error", True)
-                span.set_attribute(
-                    "error.message", f"Error fetching image: {resp.status}"
-                )
-                return image_meta, None
-            span.add_event("Read image data")
-            imageData = await resp.read()
-            img = Image.open(io.BytesIO(imageData)).convert("RGB")
-            if img.width < 100 or img.height < 100:
-                logging.error(
-                    f"Image from {image_meta.url} is too small ({img.width}x{img.height})"
-                )
-                span.set_attribute("error", True)
-                span.set_attribute("error.message", "Image too small")
-                return image_meta, None
-            return image_meta, img
+async def decode_image(
+    image_meta: ImageMeta,
+) -> Tuple[ImageMeta, Optional[Image.Image]]:
+    try:
+        # Decode the image from the base64 string
+        image = Image.open(io.BytesIO(base64.b64decode(image_meta.data)))
+        return image_meta, image
+    except Exception as e:
+        logging.error(
+            f"Error decoding image: {e}",
+            extra={"error": e, "image_meta": image_meta},
+        )
+        return image_meta, None
 
 
-async def batched_downloads(
-    session: aiohttp.ClientSession, image_metas: List[ImageMeta], batch_size: int
+async def batched_images(
+    image_metas: List[ImageMeta], batch_size: int
 ) -> AsyncGenerator[List[Tuple[ImageMeta, Optional[Image.Image]]], None]:
-    tasks = [download_image(session, img) for img in image_metas]
+    tasks = [decode_image(img) for img in image_metas]
     buffer = []
 
     for coro in asyncio.as_completed(tasks):
@@ -202,25 +188,22 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     images_submitted.inc(len(image_metas))
 
     detection_tasks = []
-    async with aiohttp.ClientSession() as session:
-        async for pil_images in batched_downloads(session, image_metas, batch_size):
-            # Separate successful downloads for processing
-            successful = [
-                (image_meta, pil_image)
-                for image_meta, pil_image in pil_images
-                if pil_image
-            ]
+    async for pil_images in batched_images(image_metas, batch_size):
+        # Separate successful downloads for processing
+        successful = [
+            (image_meta, pil_image) for image_meta, pil_image in pil_images if pil_image
+        ]
 
-            # Initiate detection on successful downloads in the background
-            if successful:
-                task = asyncio.create_task(preprocess_and_detect(successful))
-                detection_tasks.append(task)
+        # Initiate detection on successful downloads in the background
+        if successful:
+            task = asyncio.create_task(preprocess_and_detect(successful))
+            detection_tasks.append(task)
 
-            # Immediately handle failed downloads
-            for img_pair in pil_images:
-                if not img_pair[1]:  # No image returned
-                    images_failed.inc()
-                    image_results.append(ImageResult(meta=img_pair[0], results=[]))
+        # Immediately handle failed downloads
+        for img_pair in pil_images:
+            if not img_pair[1]:  # No image returned
+                images_failed.inc()
+                image_results.append(ImageResult(meta=img_pair[0], results=[]))
 
     # Await all detection tasks
     for task in detection_tasks:

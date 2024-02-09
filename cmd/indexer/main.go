@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -41,6 +43,8 @@ type Index struct {
 
 	PositiveConfidenceThreshold float64
 	NegativeConfidenceThreshold float64
+
+	imageClient *http.Client
 
 	Limiter *rate.Limiter
 }
@@ -218,6 +222,11 @@ func Indexer(cctx *cli.Context) error {
 		logger.Info("metrics server shut down")
 	}()
 
+	imageClient := &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+		Timeout:   10 * time.Second,
+	}
+
 	index := &Index{
 		Detection:                   detection,
 		Sentiment:                   sentiment,
@@ -225,6 +234,7 @@ func Indexer(cctx *cli.Context) error {
 		NegativeConfidenceThreshold: cctx.Float64("negative-confidence-threshold"),
 		Logger:                      logger,
 		Limiter:                     rate.NewLimiter(rate.Limit(4), 1),
+		imageClient:                 imageClient,
 	}
 
 	if st != nil {
@@ -817,6 +827,36 @@ var failedToIndexImagesCounter = promauto.NewCounter(prometheus.CounterOpts{
 	Help: "The total number of images failed to index",
 })
 
+func (index *Index) DownloadImage(ctx context.Context, url string) (*string, error) {
+	ctx, span := tracer.Start(ctx, "DownloadImage")
+	defer span.End()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := index.imageClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get image: %w", err)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read image: %w", err)
+	}
+
+	// Encode as a base64 string
+	dataStr := base64.StdEncoding.EncodeToString([]byte(data))
+
+	return &dataStr, nil
+}
+
 func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 	ctx, span := tracer.Start(ctx, "IndexImages")
 	defer span.End()
@@ -843,15 +883,43 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 
 	imagesIndexedCounter.Add(float64(len(unprocessedImages)))
 
+	// Fetch the images in parallel
+	wg := sync.WaitGroup{}
+	errs := make([]error, len(unprocessedImages))
+	dataStrings := make([]*string, len(unprocessedImages))
+
+	for i := range unprocessedImages {
+		wg.Add(1)
+		go func(i int, image *search.Image) {
+			defer wg.Done()
+			url := fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", image.AuthorDID, image.CID)
+			data, err := index.DownloadImage(ctx, url)
+			errs[i] = err
+			dataStrings[i] = data
+		}(i, unprocessedImages[i])
+	}
+
+	wg.Wait()
+
 	imageMetas := make([]*objectdetection.ImageMeta, len(unprocessedImages))
 	for i, image := range unprocessedImages {
+		if errs[i] != nil {
+			log.Errorf("Failed to download image: %v", errs[i])
+			continue
+		}
+
+		if dataStrings[i] == nil {
+			log.Errorf("Failed to download image: data is nil")
+			continue
+		}
+
 		imageMetas[i] = &objectdetection.ImageMeta{
 			PostID:    image.PostID,
 			ActorDID:  image.AuthorDID,
 			CID:       image.CID,
-			URL:       fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", image.AuthorDID, image.CID),
 			MimeType:  image.MimeType,
 			CreatedAt: image.CreatedAt,
+			Data:      *dataStrings[i],
 		}
 	}
 
