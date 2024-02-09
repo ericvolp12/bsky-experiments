@@ -23,15 +23,15 @@ model.save_pretrained(f"{os.getcwd()}/{MODEL}")
 
 tracer = trace.get_tracer("bsky-object-detection")
 
-
 def detect_objects(
-    batch: BatchFeature, image_pairs: List[Tuple[ImageMeta, Image.Image]]
+    batch: BatchFeature,
+    image_pairs: List[Tuple[ImageMeta, Image.Image]]
 ) -> List[Tuple[ImageMeta, List[DetectionResult]]]:
     with tracer.start_as_current_span("detect_objects") as span:
-        start = time.time()
+        start = time.time()        
         span.add_event("loadImagesToGPU")
         inputs = batch.to(device)
-
+        
         with tracer.start_as_current_span("model_inference"):
             outputs = model(**inputs)
 

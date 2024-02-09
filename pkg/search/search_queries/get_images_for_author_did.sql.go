@@ -10,15 +10,7 @@ import (
 )
 
 const getImagesForAuthorDID = `-- name: GetImagesForAuthorDID :many
-SELECT cid,
-    post_id,
-    author_did,
-    alt_text,
-    mime_type,
-    created_at,
-    cv_completed,
-    cv_run_at,
-    cv_classes
+SELECT cid, post_id, author_did, alt_text, mime_type, fullsize_url, thumbnail_url, created_at, cv_completed, cv_run_at, cv_classes
 FROM images
 WHERE author_did = $1
 `
@@ -38,6 +30,8 @@ func (q *Queries) GetImagesForAuthorDID(ctx context.Context, authorDid string) (
 			&i.AuthorDid,
 			&i.AltText,
 			&i.MimeType,
+			&i.FullsizeUrl,
+			&i.ThumbnailUrl,
 			&i.CreatedAt,
 			&i.CvCompleted,
 			&i.CvRunAt,

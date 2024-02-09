@@ -16,15 +16,17 @@ import (
 )
 
 type Image struct {
-	CID         string           `json:"cid"`
-	PostID      string           `json:"post_id"`
-	AuthorDID   string           `json:"author_did"`
-	AltText     *string          `json:"alt_text"`
-	MimeType    string           `json:"mime_type"`
-	CreatedAt   time.Time        `json:"created_at"`
-	CVCompleted bool             `json:"cv_completed"`
-	CVRunAt     *time.Time       `json:"cv_run_at"`
-	CVClasses   *json.RawMessage `json:"cv_classes"`
+	CID          string           `json:"cid"`
+	PostID       string           `json:"post_id"`
+	AuthorDID    string           `json:"author_did"`
+	AltText      *string          `json:"alt_text"`
+	MimeType     string           `json:"mime_type"`
+	FullsizeURL  string           `json:"fullsize_url"`
+	ThumbnailURL string           `json:"thumbnail_url"`
+	CreatedAt    time.Time        `json:"created_at"`
+	CVCompleted  bool             `json:"cv_completed"`
+	CVRunAt      *time.Time       `json:"cv_run_at"`
+	CVClasses    *json.RawMessage `json:"cv_classes"`
 }
 
 func (pr *PostRegistry) AddImage(ctx context.Context, image *Image) error {
@@ -63,15 +65,17 @@ func (pr *PostRegistry) AddImage(ctx context.Context, image *Image) error {
 	}
 
 	err := pr.queries.AddImage(ctx, search_queries.AddImageParams{
-		Cid:         image.CID,
-		PostID:      image.PostID,
-		AuthorDid:   image.AuthorDID,
-		AltText:     altText,
-		MimeType:    image.MimeType,
-		CreatedAt:   image.CreatedAt,
-		CvCompleted: image.CVCompleted,
-		CvRunAt:     cvRunAt,
-		CvClasses:   cvClasses,
+		Cid:          image.CID,
+		PostID:       image.PostID,
+		AuthorDid:    image.AuthorDID,
+		AltText:      altText,
+		MimeType:     image.MimeType,
+		FullsizeUrl:  image.FullsizeURL,
+		ThumbnailUrl: image.ThumbnailURL,
+		CreatedAt:    image.CreatedAt,
+		CvCompleted:  image.CVCompleted,
+		CvRunAt:      cvRunAt,
+		CvClasses:    cvClasses,
 	})
 
 	return err
@@ -101,15 +105,17 @@ func (pr *PostRegistry) AddCVDataToImage(ctx context.Context, cid string, postID
 	}
 
 	err = pr.queries.UpdateImage(ctx, search_queries.UpdateImageParams{
-		Cid:         image.Cid,
-		PostID:      image.PostID,
-		AuthorDid:   image.AuthorDid,
-		AltText:     image.AltText,
-		MimeType:    image.MimeType,
-		CreatedAt:   image.CreatedAt,
-		CvCompleted: true,
-		CvRunAt:     cvRunAtNullTime,
-		CvClasses:   cvClassesNullRawMessage,
+		Cid:          image.Cid,
+		PostID:       image.PostID,
+		AuthorDid:    image.AuthorDid,
+		AltText:      image.AltText,
+		MimeType:     image.MimeType,
+		FullsizeUrl:  image.FullsizeUrl,
+		ThumbnailUrl: image.ThumbnailUrl,
+		CreatedAt:    image.CreatedAt,
+		CvCompleted:  true,
+		CvRunAt:      cvRunAtNullTime,
+		CvClasses:    cvClassesNullRawMessage,
 	})
 
 	return err
@@ -150,15 +156,17 @@ func (pr *PostRegistry) GetImage(ctx context.Context, imageCID string, postID st
 	}
 
 	return &Image{
-		CID:         image.Cid,
-		PostID:      image.PostID,
-		AuthorDID:   image.AuthorDid,
-		AltText:     altTextPtr,
-		MimeType:    image.MimeType,
-		CreatedAt:   image.CreatedAt,
-		CVCompleted: image.CvCompleted,
-		CVRunAt:     cvRunAtPtr,
-		CVClasses:   cvClassesPtr,
+		CID:          image.Cid,
+		PostID:       image.PostID,
+		AuthorDID:    image.AuthorDid,
+		AltText:      altTextPtr,
+		MimeType:     image.MimeType,
+		FullsizeURL:  image.FullsizeUrl,
+		ThumbnailURL: image.ThumbnailUrl,
+		CreatedAt:    image.CreatedAt,
+		CVCompleted:  image.CvCompleted,
+		CVRunAt:      cvRunAtPtr,
+		CVClasses:    cvClassesPtr,
 	}, nil
 }
 
@@ -198,15 +206,17 @@ func (pr *PostRegistry) GetImagesForPost(ctx context.Context, postID string) ([]
 		}
 
 		retImages[i] = &Image{
-			CID:         image.Cid,
-			PostID:      image.PostID,
-			AuthorDID:   image.AuthorDid,
-			AltText:     altTextPtr,
-			MimeType:    image.MimeType,
-			CreatedAt:   image.CreatedAt,
-			CVCompleted: image.CvCompleted,
-			CVRunAt:     cvRunAtPtr,
-			CVClasses:   cvClassesPtr,
+			CID:          image.Cid,
+			PostID:       image.PostID,
+			AuthorDID:    image.AuthorDid,
+			AltText:      altTextPtr,
+			MimeType:     image.MimeType,
+			FullsizeURL:  image.FullsizeUrl,
+			ThumbnailURL: image.ThumbnailUrl,
+			CreatedAt:    image.CreatedAt,
+			CVCompleted:  image.CvCompleted,
+			CVRunAt:      cvRunAtPtr,
+			CVClasses:    cvClassesPtr,
 		}
 	}
 
@@ -247,15 +257,17 @@ func (pr *PostRegistry) GetUnprocessedImages(ctx context.Context, limit int32) (
 		}
 
 		retImages[i] = &Image{
-			CID:         image.Cid,
-			PostID:      image.PostID,
-			AuthorDID:   image.AuthorDid,
-			AltText:     altTextPtr,
-			MimeType:    image.MimeType,
-			CreatedAt:   image.CreatedAt,
-			CVCompleted: image.CvCompleted,
-			CVRunAt:     cvRunAtPtr,
-			CVClasses:   cvClassesPtr,
+			CID:          image.Cid,
+			PostID:       image.PostID,
+			AuthorDID:    image.AuthorDid,
+			AltText:      altTextPtr,
+			MimeType:     image.MimeType,
+			FullsizeURL:  image.FullsizeUrl,
+			ThumbnailURL: image.ThumbnailUrl,
+			CreatedAt:    image.CreatedAt,
+			CVCompleted:  image.CvCompleted,
+			CVRunAt:      cvRunAtPtr,
+			CVClasses:    cvClassesPtr,
 		}
 	}
 

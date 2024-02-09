@@ -1,12 +1,14 @@
 package objectdetection
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 )
 
@@ -14,9 +16,9 @@ type ImageMeta struct {
 	PostID    string    `json:"post_id"`
 	ActorDID  string    `json:"actor_did"`
 	CID       string    `json:"cid"`
+	URL       string    `json:"url"`
 	MimeType  string    `json:"mime_type"`
 	CreatedAt time.Time `json:"created_at"`
-	Data      string    `json:"data"`
 }
 
 type DetectionResult struct {
@@ -31,77 +33,55 @@ type ImageResult struct {
 }
 
 type ImageProcessor interface {
-	SubmitImages(ctx context.Context, imageMetas []*ImageMeta) error
-	ReapResults(ctx context.Context, count int64) ([]*ImageResult, error)
+	ProcessImages([]*ImageMeta) ([]*ImageResult, error)
 }
 
 type ObjectDetectionImpl struct {
-	RedisClient  *redis.Client
-	WorkStream   string
-	ResultStream string
+	ObjectDetectionServiceHost string
+	Client                     *http.Client
 }
 
-func NewObjectDetection(redisAddr, workStream, resultStream string) *ObjectDetectionImpl {
-	rdb := redis.NewClient(&redis.Options{
-		Addr: redisAddr, // e.g., "localhost:6379"
-	})
+func NewObjectDetection(objectDetectionServiceHost string) *ObjectDetectionImpl {
+	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
 
 	return &ObjectDetectionImpl{
-		RedisClient:  rdb,
-		WorkStream:   workStream,
-		ResultStream: resultStream,
+		ObjectDetectionServiceHost: objectDetectionServiceHost,
+		Client:                     &client,
 	}
 }
 
-// SubmitImages submits image metadata to the Redis work stream
-func (o *ObjectDetectionImpl) SubmitImages(ctx context.Context, imageMetas []*ImageMeta) error {
+func (o *ObjectDetectionImpl) ProcessImages(ctx context.Context, imageMetas []*ImageMeta) ([]*ImageResult, error) {
 	tracer := otel.Tracer("ObjectDetection")
-	ctx, span := tracer.Start(ctx, "SubmitImages")
+	ctx, span := tracer.Start(ctx, "ProcessImages")
 	defer span.End()
 
-	for _, imgMeta := range imageMetas {
-		jsonImgMeta, err := json.Marshal(imgMeta)
-		if err != nil {
-			return fmt.Errorf("failed to marshal ImageMeta: %w", err)
-		}
-		_, err = o.RedisClient.XAdd(ctx, &redis.XAddArgs{
-			Stream: o.WorkStream,
-			Values: map[string]interface{}{"image_meta": jsonImgMeta},
-		}).Result()
+	url := fmt.Sprintf("%s/detect_objects", o.ObjectDetectionServiceHost)
 
-		if err != nil {
-			return fmt.Errorf("failed to write ImageMeta to Redis stream: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// ReapResults reads processed image results from the Redis result stream
-func (o *ObjectDetectionImpl) ReapResults(ctx context.Context, count int64) ([]*ImageResult, error) {
-	tracer := otel.Tracer("ObjectDetection")
-	ctx, span := tracer.Start(ctx, "ReapResults")
-	defer span.End()
-
-	result, err := o.RedisClient.XRead(ctx, &redis.XReadArgs{
-		Streams: []string{o.ResultStream, "0"},
-		Count:   count,
-		Block:   100,
-	}).Result()
-
+	reqBody := imageMetas
+	jsonReqBody, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read from result stream: %w", err)
+		return nil, fmt.Errorf("failed to marshal object-detection request body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonReqBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create object-detection request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := o.Client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send object-detection request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("object-detection request failed with status code %d", resp.StatusCode)
 	}
 
 	var imageResults []*ImageResult
-	for _, stream := range result {
-		for _, message := range stream.Messages {
-			var imgResult ImageResult
-			if err := json.Unmarshal([]byte(message.Values["result"].(string)), &imgResult); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal ImageResult: %w", err)
-			}
-			imageResults = append(imageResults, &imgResult)
-		}
+	if err := json.NewDecoder(resp.Body).Decode(&imageResults); err != nil {
+		return nil, fmt.Errorf("failed to decode object-detection response body: %w", err)
 	}
 
 	return imageResults, nil

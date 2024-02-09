@@ -1,17 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"image"
-	_ "image/jpeg"
-	_ "image/png"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -48,8 +42,6 @@ type Index struct {
 	PositiveConfidenceThreshold float64
 	NegativeConfidenceThreshold float64
 
-	imageClient *http.Client
-
 	Limiter *rate.Limiter
 }
 
@@ -57,7 +49,7 @@ func main() {
 	app := cli.App{
 		Name:    "indexer",
 		Usage:   "atproto post indexer",
-		Version: "0.0.2",
+		Version: "0.0.1",
 	}
 
 	app.Flags = []cli.Flag{
@@ -98,11 +90,10 @@ func main() {
 			EnvVars:  []string{"STORE_POSTGRES_URL"},
 		},
 		&cli.StringFlag{
-			Name:     "redis-address",
-			Usage:    "url for redis",
-			Value:    "localhost:6379",
-			EnvVars:  []string{"REDIS_ADDRESS"},
-			Required: true,
+			Name:    "object-detection-service-host",
+			Usage:   "host for object detection service",
+			Value:   "localhost:8081",
+			EnvVars: []string{"OBJECT_DETECTION_SERVICE_HOST"},
 		},
 		&cli.StringFlag{
 			Name:    "sentiment-service-host",
@@ -183,7 +174,11 @@ func Indexer(cctx *cli.Context) error {
 		defer st.Close()
 	}
 
-	detection := objectdetection.NewObjectDetection(cctx.String("redis-address"), "object_detection_images", "object_detection_results")
+	if cctx.String("object-detection-service-host") == "" {
+		return fmt.Errorf("object detection service host is required")
+	}
+
+	detection := objectdetection.NewObjectDetection(cctx.String("object-detection-service-host"))
 
 	if cctx.String("sentiment-service-host") == "" {
 		return fmt.Errorf("sentiment service host is required")
@@ -223,11 +218,6 @@ func Indexer(cctx *cli.Context) error {
 		logger.Info("metrics server shut down")
 	}()
 
-	imageClient := &http.Client{
-		Transport: otelhttp.NewTransport(http.DefaultTransport),
-		Timeout:   10 * time.Second,
-	}
-
 	index := &Index{
 		Detection:                   detection,
 		Sentiment:                   sentiment,
@@ -235,7 +225,6 @@ func Indexer(cctx *cli.Context) error {
 		NegativeConfidenceThreshold: cctx.Float64("negative-confidence-threshold"),
 		Logger:                      logger,
 		Limiter:                     rate.NewLimiter(rate.Limit(4), 1),
-		imageClient:                 imageClient,
 	}
 
 	if st != nil {
@@ -247,54 +236,26 @@ func Indexer(cctx *cli.Context) error {
 
 	// Start the Image Indexing loop
 	shutdownImages := make(chan struct{})
-	imageSubmissionShutdown := make(chan struct{})
-	imageResultsShutdown := make(chan struct{})
+	imagesShutdown := make(chan struct{})
 	go func() {
 		logger := logger.With("source", "image_indexer")
 		if index.PostRegistry == nil {
 			logger.Info("no post registry, skipping image indexing loop...")
-			close(imageSubmissionShutdown)
+			close(imagesShutdown)
 			return
 		}
 
 		logger.Info("Starting image indexing loop...")
 		for {
 			ctx := context.Background()
-			goFast := index.IndexImages(ctx, int32(cctx.Int("image-page-size")))
+			index.IndexImages(ctx, int32(cctx.Int("image-page-size")))
 			select {
 			case <-shutdownImages:
 				logger.Info("Shutting down image indexing loop...")
-				close(imageSubmissionShutdown)
+				close(imagesShutdown)
 				return
 			default:
-				if !goFast {
-					time.Sleep(1 * time.Second)
-				}
-			}
-		}
-	}()
-
-	go func() {
-		logger := logger.With("source", "image_results_processor")
-		if index.PostRegistry == nil {
-			logger.Info("no post registry, skipping image indexing loop...")
-			close(imageSubmissionShutdown)
-			return
-		}
-
-		logger.Info("Starting image result processing loop...")
-		for {
-			ctx := context.Background()
-			err := index.ProcessImageResults(ctx, int32(cctx.Int("image-page-size")))
-			if err != nil {
-				logger.Error("failed to process image results: %+v", err)
-			}
-			select {
-			case <-shutdownImages:
-				logger.Info("Shutting down image indexing loop...")
-				close(imageSubmissionShutdown)
-				return
-			default:
+				time.Sleep(1 * time.Second)
 			}
 		}
 	}()
@@ -353,31 +314,31 @@ func Indexer(cctx *cli.Context) error {
 	}()
 
 	// Start the actor profile picture indexing loop
-	// shutdownProfilePictures := make(chan struct{})
-	// profilePicturesShutdown := make(chan struct{})
-	// go func() {
-	// 	logger := logger.With("source", "profile_picture_indexer")
-	// 	if index.Store == nil {
-	// 		logger.Info("no store, skipping profile picture indexing loop...")
-	// 		close(profilePicturesShutdown)
-	// 		return
-	// 	}
-	// 	logger.Info("Starting profile picture indexing loop...")
-	// 	for {
-	// 		ctx := context.Background()
-	// 		gofast := index.IndexActorProfilePictures(ctx, int32(cctx.Int("actor-page-size")))
-	// 		select {
-	// 		case <-shutdownProfilePictures:
-	// 			logger.Info("Shutting down profile picture indexing loop...")
-	// 			close(profilePicturesShutdown)
-	// 			return
-	// 		default:
-	// 			if !gofast {
-	// 				time.Sleep(1 * time.Second)
-	// 			}
-	// 		}
-	// 	}
-	// }()
+	shutdownProfilePictures := make(chan struct{})
+	profilePicturesShutdown := make(chan struct{})
+	go func() {
+		logger := logger.With("source", "profile_picture_indexer")
+		if index.Store == nil {
+			logger.Info("no store, skipping profile picture indexing loop...")
+			close(profilePicturesShutdown)
+			return
+		}
+		logger.Info("Starting profile picture indexing loop...")
+		for {
+			ctx := context.Background()
+			gofast := index.IndexActorProfilePictures(ctx, int32(cctx.Int("actor-page-size")))
+			select {
+			case <-shutdownProfilePictures:
+				logger.Info("Shutting down profile picture indexing loop...")
+				close(profilePicturesShutdown)
+				return
+			default:
+				if !gofast {
+					time.Sleep(1 * time.Second)
+				}
+			}
+		}
+	}()
 
 	select {
 	case <-signals:
@@ -394,8 +355,7 @@ func Indexer(cctx *cli.Context) error {
 	close(shutdownMetrics)
 	close(shutdownNewSentiments)
 
-	<-imageSubmissionShutdown
-	<-imageResultsShutdown
+	<-imagesShutdown
 	<-sentimentsShutdown
 	<-metricsShutdown
 	<-newSentimentsShutdown
@@ -857,48 +817,7 @@ var failedToIndexImagesCounter = promauto.NewCounter(prometheus.CounterOpts{
 	Help: "The total number of images failed to index",
 })
 
-func (index *Index) DownloadImage(ctx context.Context, url string) (*string, error) {
-	ctx, span := tracer.Start(ctx, "DownloadImage")
-	defer span.End()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := index.imageClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get image: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get image, status: %d", resp.StatusCode)
-	}
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read image: %w", err)
-	}
-
-	// Check that the data is a valid image
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode image: %w", err)
-	}
-
-	// Check that the image is at least 100x100
-	if img.Bounds().Dx() < 100 || img.Bounds().Dy() < 100 {
-		return nil, fmt.Errorf("image is too small: %dx%d", img.Bounds().Dx(), img.Bounds().Dy())
-	}
-
-	// Encode as a base64 string
-	dataStr := base64.StdEncoding.EncodeToString(data)
-
-	return &dataStr, nil
-}
-
-func (index *Index) IndexImages(ctx context.Context, pageSize int32) bool {
+func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 	ctx, span := tracer.Start(ctx, "IndexImages")
 	defer span.End()
 
@@ -914,129 +833,32 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) bool {
 		} else {
 			log.Errorf("Failed to get unprocessed images, skipping process cycle: %v", err)
 		}
-		return false
+		return
 	}
 
 	if len(unprocessedImages) == 0 {
 		log.Info("No unprocessed images found, skipping process cycle...")
-		return false
+		return
 	}
 
 	imagesIndexedCounter.Add(float64(len(unprocessedImages)))
 
-	// Fetch the images in parallel
-	wg := sync.WaitGroup{}
-	errs := make([]error, len(unprocessedImages))
-	dataStrings := make([]*string, len(unprocessedImages))
-	sem := semaphore.NewWeighted(50)
-
-	for i := range unprocessedImages {
-		wg.Add(1)
-		sem.Acquire(ctx, 1)
-		go func(i int, image *search.Image) {
-			defer wg.Done()
-			defer sem.Release(1)
-			url := fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", image.AuthorDID, image.CID)
-			// Limit the number of concurrent requests
-			data, err := index.DownloadImage(ctx, url)
-			errs[i] = err
-			dataStrings[i] = data
-		}(i, unprocessedImages[i])
-	}
-
-	wg.Wait()
-
-	results := []*objectdetection.ImageResult{}
-
-	imageMetas := []*objectdetection.ImageMeta{}
+	imageMetas := make([]*objectdetection.ImageMeta, len(unprocessedImages))
 	for i, image := range unprocessedImages {
-		meta := objectdetection.ImageMeta{
+		imageMetas[i] = &objectdetection.ImageMeta{
 			PostID:    image.PostID,
 			ActorDID:  image.AuthorDID,
 			CID:       image.CID,
+			URL:       fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", image.AuthorDID, image.CID),
 			MimeType:  image.MimeType,
 			CreatedAt: image.CreatedAt,
 		}
-
-		// If we got the image, add it to the list of images to process
-		if dataStrings[i] != nil {
-			meta.Data = *dataStrings[i]
-			imageMetas = append(imageMetas, &meta)
-			continue
-		}
-
-		// Otherwise log the error and set an empty result
-		if errs[i] != nil {
-			log.Errorf("Failed to download image: %v", errs[i])
-		}
-
-		results = append(results, &objectdetection.ImageResult{
-			Meta:    meta,
-			Results: []objectdetection.DetectionResult{},
-		})
 	}
 
-	// Submit images for processing
-	err = index.Detection.SubmitImages(ctx, imageMetas)
+	results, err := index.Detection.ProcessImages(ctx, imageMetas)
 	if err != nil {
-		log.Errorf("Failed to submit images: %v", err)
-		return false
-	}
-
-	executionTime := time.Now()
-
-	// Set the results for images that failed to download
-	for _, result := range results {
-		cvClasses, err := json.Marshal(result.Results)
-		if err != nil {
-			log.Errorf("Failed to marshal classes: %v", err)
-			continue
-		}
-
-		err = index.PostRegistry.AddCVDataToImage(
-			ctx,
-			result.Meta.CID,
-			result.Meta.PostID,
-			executionTime,
-			cvClasses,
-		)
-		if err != nil {
-			log.Errorf("Failed to update image: %v", err)
-			continue
-		}
-	}
-
-	failedToIndexImagesCounter.Add(float64(len(results)))
-
-	span.SetAttributes(
-		attribute.Int("batch_size", len(unprocessedImages)),
-		attribute.String("processing_time", time.Since(start).String()),
-	)
-
-	log.Infow("Finished submitting images...",
-		"batch_size", len(unprocessedImages),
-		"processing_time", time.Since(start),
-	)
-
-	if len(unprocessedImages) < int(pageSize) {
-		return false
-	}
-
-	return true
-}
-
-func (index *Index) ProcessImageResults(ctx context.Context, pageSize int32) error {
-	ctx, span := tracer.Start(ctx, "ProcessImageResults")
-	defer span.End()
-
-	log := index.Logger.With("source", "image_processor")
-	log.Info("Processing images...")
-
-	start := time.Now()
-
-	results, err := index.Detection.ReapResults(ctx, int64(pageSize))
-	if err != nil {
-		return fmt.Errorf("failed to reap results: %w", err)
+		log.Errorf("Failed to process images: %v", err)
+		return
 	}
 
 	executionTime := time.Now()
@@ -1084,16 +906,17 @@ func (index *Index) ProcessImageResults(ctx context.Context, pageSize int32) err
 	}
 
 	successfullyIndexedImagesCounter.Add(float64(successCount))
+	failedToIndexImagesCounter.Add(float64(len(unprocessedImages) - successCount))
 
 	span.SetAttributes(
+		attribute.Int("batch_size", len(unprocessedImages)),
 		attribute.Int("successful_image_count", successCount),
 		attribute.String("processing_time", time.Since(start).String()),
 	)
 
 	log.Infow("Finished processing images...",
+		"batch_size", len(unprocessedImages),
 		"successfully_processed_image_count", successCount,
 		"processing_time", time.Since(start),
 	)
-
-	return nil
 }

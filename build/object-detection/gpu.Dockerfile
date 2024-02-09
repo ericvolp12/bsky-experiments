@@ -32,4 +32,4 @@ COPY python/object-detection/bsky-object-detection /app/bsky-object-detection
 
 ENV PYTHONPATH=/app
 
-CMD ["python3", "-m", "bsky-object-detection.app"]
+CMD ["uvicorn", "bsky-object-detection.app:app", "--host", "0.0.0.0", "--port", "8093"]
