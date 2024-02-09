@@ -152,9 +152,10 @@ async def process_images(redis: aioredis.Redis):
         detection_results = await preprocess_and_detect(successful)
         # Publish results to the result topic
         for image_meta, detection in detection_results:
-            await redis.xadd(
-                RESULT_TOPIC, ImageResult(meta=image_meta, results=detection).to_dict()
-            )
+            res = ImageResult(meta=image_meta, results=detection)
+            # Convert the result to a JSON string
+            res_str = json.dumps(res.to_dict())
+            await redis.xadd(RESULT_TOPIC, {"result": res_str})
         images_processed_successfully.inc(len(detection_results))
         images_processed_time = time() - start
         logging.info(
