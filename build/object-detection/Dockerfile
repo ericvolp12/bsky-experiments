@@ -32,4 +32,4 @@ COPY python/object-detection/bsky-object-detection /app/bsky-object-detection
 
 ENV PYTHONPATH=/app
 
-CMD ["python3", "bsky-object-detection/worker.py"]
+CMD ["python3", "bsky-object-detection/app.py"]
