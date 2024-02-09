@@ -48,8 +48,7 @@ type Index struct {
 	PositiveConfidenceThreshold float64
 	NegativeConfidenceThreshold float64
 
-	imageClient  *http.Client
-	imageLimiter *rate.Limiter
+	imageClient *http.Client
 
 	Limiter *rate.Limiter
 }
@@ -58,7 +57,7 @@ func main() {
 	app := cli.App{
 		Name:    "indexer",
 		Usage:   "atproto post indexer",
-		Version: "0.0.1",
+		Version: "0.0.2",
 	}
 
 	app.Flags = []cli.Flag{
@@ -240,7 +239,6 @@ func Indexer(cctx *cli.Context) error {
 		Logger:                      logger,
 		Limiter:                     rate.NewLimiter(rate.Limit(4), 1),
 		imageClient:                 imageClient,
-		imageLimiter:                rate.NewLimiter(rate.Limit(50), 1),
 	}
 
 	if st != nil {
@@ -264,14 +262,16 @@ func Indexer(cctx *cli.Context) error {
 		logger.Info("Starting image indexing loop...")
 		for {
 			ctx := context.Background()
-			index.IndexImages(ctx, int32(cctx.Int("image-page-size")))
+			goFast := index.IndexImages(ctx, int32(cctx.Int("image-page-size")))
 			select {
 			case <-shutdownImages:
 				logger.Info("Shutting down image indexing loop...")
 				close(imagesShutdown)
 				return
 			default:
-				time.Sleep(1 * time.Second)
+				if !goFast {
+					time.Sleep(1 * time.Second)
+				}
 			}
 		}
 	}()
@@ -330,31 +330,31 @@ func Indexer(cctx *cli.Context) error {
 	}()
 
 	// Start the actor profile picture indexing loop
-	shutdownProfilePictures := make(chan struct{})
-	profilePicturesShutdown := make(chan struct{})
-	go func() {
-		logger := logger.With("source", "profile_picture_indexer")
-		if index.Store == nil {
-			logger.Info("no store, skipping profile picture indexing loop...")
-			close(profilePicturesShutdown)
-			return
-		}
-		logger.Info("Starting profile picture indexing loop...")
-		for {
-			ctx := context.Background()
-			gofast := index.IndexActorProfilePictures(ctx, int32(cctx.Int("actor-page-size")))
-			select {
-			case <-shutdownProfilePictures:
-				logger.Info("Shutting down profile picture indexing loop...")
-				close(profilePicturesShutdown)
-				return
-			default:
-				if !gofast {
-					time.Sleep(1 * time.Second)
-				}
-			}
-		}
-	}()
+	// shutdownProfilePictures := make(chan struct{})
+	// profilePicturesShutdown := make(chan struct{})
+	// go func() {
+	// 	logger := logger.With("source", "profile_picture_indexer")
+	// 	if index.Store == nil {
+	// 		logger.Info("no store, skipping profile picture indexing loop...")
+	// 		close(profilePicturesShutdown)
+	// 		return
+	// 	}
+	// 	logger.Info("Starting profile picture indexing loop...")
+	// 	for {
+	// 		ctx := context.Background()
+	// 		gofast := index.IndexActorProfilePictures(ctx, int32(cctx.Int("actor-page-size")))
+	// 		select {
+	// 		case <-shutdownProfilePictures:
+	// 			logger.Info("Shutting down profile picture indexing loop...")
+	// 			close(profilePicturesShutdown)
+	// 			return
+	// 		default:
+	// 			if !gofast {
+	// 				time.Sleep(1 * time.Second)
+	// 			}
+	// 		}
+	// 	}
+	// }()
 
 	select {
 	case <-signals:
@@ -858,9 +858,14 @@ func (index *Index) DownloadImage(ctx context.Context, url string) (*string, err
 	}
 
 	// Check that the data is a valid image
-	_, _, err = image.Decode(bytes.NewReader(data))
+	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode image: %w", err)
+	}
+
+	// Check that the image is at least 100x100
+	if img.Bounds().Dx() < 100 || img.Bounds().Dy() < 100 {
+		return nil, fmt.Errorf("image is too small: %dx%d", img.Bounds().Dx(), img.Bounds().Dy())
 	}
 
 	// Encode as a base64 string
@@ -869,7 +874,7 @@ func (index *Index) DownloadImage(ctx context.Context, url string) (*string, err
 	return &dataStr, nil
 }
 
-func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
+func (index *Index) IndexImages(ctx context.Context, pageSize int32) bool {
 	ctx, span := tracer.Start(ctx, "IndexImages")
 	defer span.End()
 
@@ -885,12 +890,12 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 		} else {
 			log.Errorf("Failed to get unprocessed images, skipping process cycle: %v", err)
 		}
-		return
+		return false
 	}
 
 	if len(unprocessedImages) == 0 {
 		log.Info("No unprocessed images found, skipping process cycle...")
-		return
+		return false
 	}
 
 	imagesIndexedCounter.Add(float64(len(unprocessedImages)))
@@ -899,14 +904,16 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 	wg := sync.WaitGroup{}
 	errs := make([]error, len(unprocessedImages))
 	dataStrings := make([]*string, len(unprocessedImages))
+	sem := semaphore.NewWeighted(50)
 
 	for i := range unprocessedImages {
 		wg.Add(1)
+		sem.Acquire(ctx, 1)
 		go func(i int, image *search.Image) {
 			defer wg.Done()
+			defer sem.Release(1)
 			url := fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", image.AuthorDID, image.CID)
 			// Limit the number of concurrent requests
-			index.imageLimiter.Wait(ctx)
 			data, err := index.DownloadImage(ctx, url)
 			errs[i] = err
 			dataStrings[i] = data
@@ -915,33 +922,43 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 
 	wg.Wait()
 
+	results := []*objectdetection.ImageResult{}
+
 	imageMetas := []*objectdetection.ImageMeta{}
 	for i, image := range unprocessedImages {
-		if errs[i] != nil {
-			log.Errorf("Failed to download image: %v", errs[i])
-			continue
-		}
-
-		if dataStrings[i] == nil {
-			log.Errorf("Failed to download image: data is nil")
-			continue
-		}
-
-		imageMetas = append(imageMetas, &objectdetection.ImageMeta{
+		meta := objectdetection.ImageMeta{
 			PostID:    image.PostID,
 			ActorDID:  image.AuthorDID,
 			CID:       image.CID,
 			MimeType:  image.MimeType,
 			CreatedAt: image.CreatedAt,
-			Data:      *dataStrings[i],
+		}
+
+		// If we got the image, add it to the list of images to process
+		if dataStrings[i] != nil {
+			meta.Data = *dataStrings[i]
+			imageMetas = append(imageMetas, &meta)
+			continue
+		}
+
+		// Otherwise log the error and set an empty result
+		if errs[i] != nil {
+			log.Errorf("Failed to download image: %v", errs[i])
+		}
+
+		results = append(results, &objectdetection.ImageResult{
+			Meta:    meta,
+			Results: []objectdetection.DetectionResult{},
 		})
 	}
 
-	results, err := index.Detection.ProcessImages(ctx, imageMetas)
+	resultsFromDetection, err := index.Detection.ProcessImages(ctx, imageMetas)
 	if err != nil {
 		log.Errorf("Failed to process images: %v", err)
-		return
+		return false
 	}
+
+	results = append(results, resultsFromDetection...)
 
 	executionTime := time.Now()
 
@@ -1001,4 +1018,10 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 		"successfully_processed_image_count", successCount,
 		"processing_time", time.Since(start),
 	)
+
+	if len(unprocessedImages) < int(pageSize) {
+		return false
+	}
+
+	return true
 }
