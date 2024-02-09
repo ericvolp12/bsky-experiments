@@ -126,8 +126,8 @@ async def fetch_and_batch_images(
         messages = await redis.xread(
             {IMAGE_STREAM: last_id}, count=batch_size, block=1000
         )
-        if messages:
-            logging.info(f"Received {len(messages)} messages: {messages.keys()}")
+        if messages and len(messages) > 0:
+            messages = messages[0]
             image_metas = [ImageMeta(**message[1]) for _, message in messages]
             yield image_metas
             last_id = messages[-1][0]
