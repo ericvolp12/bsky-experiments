@@ -128,6 +128,7 @@ async def fetch_and_batch_images(
         )
         if streams and len(streams) > 0:
             messages = streams[0]
+            logging.info(f"Messages: {messages}")
             image_metas = [ImageMeta(**message) for _, message in messages]
             yield image_metas
             last_id = messages[-1][0]
