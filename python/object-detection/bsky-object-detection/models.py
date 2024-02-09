@@ -11,6 +11,14 @@ class ImageMeta(BaseModel):
     created_at: datetime
     data: str
 
+    def to_dict(self):
+        # Format datetime to a RFC 3339 string
+        created_at = self.created_at.isoformat()
+        # Utilize the built-in `.dict()` method and customize it if necessary
+        as_dict = self.dict(by_alias=True, exclude_none=True)
+        as_dict["created_at"] = created_at
+        return as_dict
+
 
 class DetectionResult(BaseModel):
     label: str
