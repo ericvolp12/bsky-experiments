@@ -98,10 +98,11 @@ func main() {
 			EnvVars:  []string{"STORE_POSTGRES_URL"},
 		},
 		&cli.StringFlag{
-			Name:    "object-detection-service-host",
-			Usage:   "host for object detection service",
-			Value:   "localhost:8081",
-			EnvVars: []string{"OBJECT_DETECTION_SERVICE_HOST"},
+			Name:     "redis-address",
+			Usage:    "url for redis",
+			Value:    "localhost:6379",
+			EnvVars:  []string{"REDIS_ADDRESS"},
+			Required: true,
 		},
 		&cli.StringFlag{
 			Name:    "sentiment-service-host",
@@ -182,11 +183,7 @@ func Indexer(cctx *cli.Context) error {
 		defer st.Close()
 	}
 
-	if cctx.String("object-detection-service-host") == "" {
-		return fmt.Errorf("object detection service host is required")
-	}
-
-	detection := objectdetection.NewObjectDetection(cctx.String("object-detection-service-host"))
+	detection := objectdetection.NewObjectDetection(cctx.String("redis-address"), "object_detection_images", "object_detection_results")
 
 	if cctx.String("sentiment-service-host") == "" {
 		return fmt.Errorf("sentiment service host is required")
@@ -250,12 +247,13 @@ func Indexer(cctx *cli.Context) error {
 
 	// Start the Image Indexing loop
 	shutdownImages := make(chan struct{})
-	imagesShutdown := make(chan struct{})
+	imageSubmissionShutdown := make(chan struct{})
+	imageResultsShutdown := make(chan struct{})
 	go func() {
 		logger := logger.With("source", "image_indexer")
 		if index.PostRegistry == nil {
 			logger.Info("no post registry, skipping image indexing loop...")
-			close(imagesShutdown)
+			close(imageSubmissionShutdown)
 			return
 		}
 
@@ -266,12 +264,37 @@ func Indexer(cctx *cli.Context) error {
 			select {
 			case <-shutdownImages:
 				logger.Info("Shutting down image indexing loop...")
-				close(imagesShutdown)
+				close(imageSubmissionShutdown)
 				return
 			default:
 				if !goFast {
 					time.Sleep(1 * time.Second)
 				}
+			}
+		}
+	}()
+
+	go func() {
+		logger := logger.With("source", "image_results_processor")
+		if index.PostRegistry == nil {
+			logger.Info("no post registry, skipping image indexing loop...")
+			close(imageSubmissionShutdown)
+			return
+		}
+
+		logger.Info("Starting image result processing loop...")
+		for {
+			ctx := context.Background()
+			err := index.ProcessImageResults(ctx, int32(cctx.Int("image-page-size")))
+			if err != nil {
+				logger.Error("failed to process image results: %+v", err)
+			}
+			select {
+			case <-shutdownImages:
+				logger.Info("Shutting down image indexing loop...")
+				close(imageSubmissionShutdown)
+				return
+			default:
 			}
 		}
 	}()
@@ -371,7 +394,8 @@ func Indexer(cctx *cli.Context) error {
 	close(shutdownMetrics)
 	close(shutdownNewSentiments)
 
-	<-imagesShutdown
+	<-imageSubmissionShutdown
+	<-imageResultsShutdown
 	<-sentimentsShutdown
 	<-metricsShutdown
 	<-newSentimentsShutdown
@@ -952,13 +976,68 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) bool {
 		})
 	}
 
-	resultsFromDetection, err := index.Detection.ProcessImages(ctx, imageMetas)
+	// Submit images for processing
+	err = index.Detection.SubmitImages(ctx, imageMetas)
 	if err != nil {
-		log.Errorf("Failed to process images: %v", err)
+		log.Errorf("Failed to submit images: %v", err)
 		return false
 	}
 
-	results = append(results, resultsFromDetection...)
+	executionTime := time.Now()
+
+	// Set the results for images that failed to download
+	for _, result := range results {
+		cvClasses, err := json.Marshal(result.Results)
+		if err != nil {
+			log.Errorf("Failed to marshal classes: %v", err)
+			continue
+		}
+
+		err = index.PostRegistry.AddCVDataToImage(
+			ctx,
+			result.Meta.CID,
+			result.Meta.PostID,
+			executionTime,
+			cvClasses,
+		)
+		if err != nil {
+			log.Errorf("Failed to update image: %v", err)
+			continue
+		}
+	}
+
+	failedToIndexImagesCounter.Add(float64(len(results)))
+
+	span.SetAttributes(
+		attribute.Int("batch_size", len(unprocessedImages)),
+		attribute.String("processing_time", time.Since(start).String()),
+	)
+
+	log.Infow("Finished submitting images...",
+		"batch_size", len(unprocessedImages),
+		"processing_time", time.Since(start),
+	)
+
+	if len(unprocessedImages) < int(pageSize) {
+		return false
+	}
+
+	return true
+}
+
+func (index *Index) ProcessImageResults(ctx context.Context, pageSize int32) error {
+	ctx, span := tracer.Start(ctx, "ProcessImageResults")
+	defer span.End()
+
+	log := index.Logger.With("source", "image_processor")
+	log.Info("Processing images...")
+
+	start := time.Now()
+
+	results, err := index.Detection.ReapResults(ctx, int64(pageSize))
+	if err != nil {
+		return fmt.Errorf("failed to reap results: %w", err)
+	}
 
 	executionTime := time.Now()
 
@@ -1005,23 +1084,16 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) bool {
 	}
 
 	successfullyIndexedImagesCounter.Add(float64(successCount))
-	failedToIndexImagesCounter.Add(float64(len(unprocessedImages) - successCount))
 
 	span.SetAttributes(
-		attribute.Int("batch_size", len(unprocessedImages)),
 		attribute.Int("successful_image_count", successCount),
 		attribute.String("processing_time", time.Since(start).String()),
 	)
 
 	log.Infow("Finished processing images...",
-		"batch_size", len(unprocessedImages),
 		"successfully_processed_image_count", successCount,
 		"processing_time", time.Since(start),
 	)
 
-	if len(unprocessedImages) < int(pageSize) {
-		return false
-	}
-
-	return true
+	return nil
 }
