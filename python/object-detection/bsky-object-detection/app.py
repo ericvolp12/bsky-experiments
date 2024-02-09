@@ -95,9 +95,7 @@ BATCH_SIZE = int(os.getenv("BATCH_SIZE", "8"))
 
 async def preprocess_and_detect(
     image_pairs: List[Tuple[ImageMeta, Image.Image]]
-) -> List[
-    Tuple[ImageMeta, List[DetectionResult]]
-]:  # Replace 'any' with the actual type of your detection result
+) -> List[Tuple[ImageMeta, List[DetectionResult]]]:
     detection_results = []
     if image_pairs:
         try:
@@ -122,20 +120,17 @@ async def preprocess_and_detect(
 async def fetch_and_batch_images(
     redis: aioredis.Redis, batch_size: int
 ) -> AsyncGenerator[List[ImageMeta], None]:
-    last_id = "0-0"  # Starting point for the stream
+    last_id = "0-0"
     while True:
         streams = await redis.xread(
             {IMAGE_STREAM: last_id}, count=batch_size, block=1000
         )
         if streams and len(streams) > 0:
             messages = streams[0][1]
-            image_metas = []
-            for message in messages:
-                _, msg_obj = message
-                image_meta_bytes = msg_obj[b"image_meta"]
-                # Convert the bytes to a map
-                image_meta_dict = json.loads(image_meta_bytes)
-                image_metas.append(ImageMeta(**image_meta_dict))
+            image_metas = [
+                ImageMeta(**json.loads(msg_obj[b"image_meta"]))
+                for _, msg_obj in messages
+            ]
             yield image_metas
             last_id = messages[-1][0]
 
@@ -143,20 +138,16 @@ async def fetch_and_batch_images(
 async def process_images(redis: aioredis.Redis):
     async for image_metas in fetch_and_batch_images(redis, BATCH_SIZE):
         start = time()
-        pil_images = await asyncio.gather(
-            *[decode_image(img_meta) for img_meta in image_metas]
-        )
-        successful = [
-            (img_meta, pil_image) for img_meta, pil_image in pil_images if pil_image
-        ]
-        detection_results = await preprocess_and_detect(successful)
-        # Publish results to the result topic
-        for image_meta, detection in detection_results:
-            res = ImageResult(meta=image_meta, results=detection)
-            # Convert the result to a JSON string
-            res_str = json.dumps(res.to_dict(), default=str)
-            await redis.xadd(RESULT_TOPIC, {"result": res_str})
-        images_processed_successfully.inc(len(detection_results))
+        async for batch in batched_images(image_metas, BATCH_SIZE):
+            successful = [
+                (img_meta, pil_image) for img_meta, pil_image in batch if pil_image
+            ]
+            detection_results = await preprocess_and_detect(successful)
+            for image_meta, detection in detection_results:
+                res = ImageResult(meta=image_meta, results=detection)
+                res_str = json.dumps(res.to_dict(), default=str)
+                await redis.xadd(RESULT_TOPIC, {"result": res_str})
+            images_processed_successfully.inc(len(detection_results))
         images_processed_time = time() - start
         logging.info(
             f"Processed {len(detection_results)} images in {images_processed_time:.3f} seconds"
