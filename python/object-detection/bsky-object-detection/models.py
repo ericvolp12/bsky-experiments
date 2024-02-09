@@ -21,3 +21,7 @@ class DetectionResult(BaseModel):
 class ImageResult(BaseModel):
     meta: ImageMeta
     results: List[DetectionResult]
+
+    def to_dict(self):
+        # Utilize the built-in `.dict()` method and customize it if necessary
+        return self.dict(by_alias=True, exclude_none=True)
