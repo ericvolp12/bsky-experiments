@@ -19,6 +19,7 @@ from pythonjsonlogger import jsonlogger
 
 from .models import ImageMeta, ImageResult
 from .object_detection import DetectionResult, detect_objects, processor
+from transformers import BatchFeature
 
 # Set up JSON logging
 formatter = jsonlogger.JsonFormatter()
@@ -93,28 +94,10 @@ RESULT_TOPIC = os.getenv("RESULT_TOPIC", "object_detection_results")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "8"))
 
 
-async def preprocess_and_detect(
-    image_pairs: List[Tuple[ImageMeta, Image.Image]]
-) -> List[Tuple[ImageMeta, List[DetectionResult]]]:
-    detection_results = []
-    if image_pairs:
-        try:
-
-            def preprocess_batch():
-                with tracer.start_as_current_span("preprocess_images"):
-                    batch = processor(
-                        images=[img for _, img in image_pairs], return_tensors="pt"
-                    )
-                    return batch
-
-            batch = await asyncio.to_thread(preprocess_batch)
-            detection_results = detect_objects(batch=batch, image_pairs=image_pairs)
-        except Exception as e:
-            logging.error(
-                f"Error detecting objects: {e}",
-                extra={"error": e, "successful": image_pairs},
-            )
-    return detection_results
+async def preprocess(image_pairs: List[Tuple[ImageMeta, Image.Image]]) -> BatchFeature:
+    with tracer.start_as_current_span("preprocess_images"):
+        batch = processor(images=[img for _, img in image_pairs], return_tensors="pt")
+        return batch
 
 
 async def fetch_and_batch_images(
@@ -142,7 +125,12 @@ async def process_images(redis: aioredis.Redis):
             successful = [
                 (img_meta, pil_image) for img_meta, pil_image in batch if pil_image
             ]
-            detection_results = await preprocess_and_detect(successful)
+            preprocessed_images = await asyncio.to_thread(preprocess, successful)
+
+            detection_results = detect_objects(
+                batch=preprocessed_images, image_pairs=successful
+            )
+
             for image_meta, detection in detection_results:
                 res = ImageResult(meta=image_meta, results=detection)
                 res_str = json.dumps(res.to_dict(), default=str)
