@@ -127,7 +127,7 @@ async def fetch_and_batch_images(
             {IMAGE_STREAM: last_id}, count=batch_size, block=1000
         )
         if streams and len(streams) > 0:
-            messages = streams[0]
+            messages = streams[0][1]
             logging.info(f"Messages: {messages}")
             image_metas = [ImageMeta(**message) for _, message in messages]
             yield image_metas
