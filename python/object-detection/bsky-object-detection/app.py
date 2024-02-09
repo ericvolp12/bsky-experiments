@@ -118,6 +118,9 @@ async def fetch_and_batch_images(
             last_id = messages[-1][0]
 
 
+detect_objects_semaphore = asyncio.Semaphore(1)
+
+
 async def process_images(redis: aioredis.Redis):
     async for image_metas in fetch_and_batch_images(redis, BATCH_SIZE):
         start = time()
@@ -125,17 +128,21 @@ async def process_images(redis: aioredis.Redis):
             successful = [
                 (img_meta, pil_image) for img_meta, pil_image in batch if pil_image
             ]
+            # Use asyncio.to_thread to offload the preprocessing to another thread
+            # This allows the IO-bound part (decode_image) to run in parallel without blocking
             preprocessed_images = await asyncio.to_thread(preprocess, successful)
 
-            detection_results = detect_objects(
-                batch=preprocessed_images, image_pairs=successful
-            )
+            # Ensure detect_objects runs one at a time using a semaphore
+            async with detect_objects_semaphore:
+                detection_results = detect_objects(
+                    batch=preprocessed_images, image_pairs=successful
+                )
 
-            for image_meta, detection in detection_results:
-                res = ImageResult(meta=image_meta, results=detection)
-                res_str = json.dumps(res.to_dict(), default=str)
-                await redis.xadd(RESULT_TOPIC, {"result": res_str})
-            images_processed_successfully.inc(len(detection_results))
+                for image_meta, detection in detection_results:
+                    res = ImageResult(meta=image_meta, results=detection)
+                    res_str = json.dumps(res.to_dict(), default=str)
+                    await redis.xadd(RESULT_TOPIC, {"result": res_str})
+                images_processed_successfully.inc(len(detection_results))
         images_processed_time = time() - start
         logging.info(
             f"Processed {len(detection_results)} images in {images_processed_time:.3f} seconds"
