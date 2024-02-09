@@ -11,6 +11,7 @@ import aiohttp
 from fastapi import FastAPI, Request
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -22,7 +23,7 @@ from pythonjsonlogger import jsonlogger
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .models import ImageMeta, ImageResult
-from .object_detection import detect_objects, processor, DetectionResult
+from .object_detection import DetectionResult, detect_objects, processor
 
 # Set up JSON logging
 formatter = jsonlogger.JsonFormatter()
@@ -112,11 +113,13 @@ images_submitted = Counter("images_submitted", "Number of images submitted")
 
 tracer = trace.get_tracer("bsky-object-detection")
 
+AioHttpClientInstrumentor().instrument()
+
+
 # Async function to download an image
 async def download_image(
     session: aiohttp.ClientSession, image_meta: ImageMeta
 ) -> Tuple[ImageMeta, Image.Image | None]:
-    tracer = trace.get_tracer("bsky-object-detection")
     with tracer.start_as_current_span("download_image") as span:
         span.add_event("Download image")
         async with session.get(image_meta.url) as resp:
@@ -142,6 +145,7 @@ async def download_image(
                 return image_meta, None
             return image_meta, img
 
+
 async def batched_downloads(
     session: aiohttp.ClientSession, image_metas: List[ImageMeta], batch_size: int
 ) -> AsyncGenerator[List[Tuple[ImageMeta, Optional[Image.Image]]], None]:
@@ -159,26 +163,38 @@ async def batched_downloads(
     if buffer:
         yield buffer
 
+
 batch_size = 8
 batch_size_str = os.getenv("BATCH_SIZE")
 if batch_size_str:
     batch_size = int(batch_size_str)
 
+
 async def preprocess_and_detect(
     image_pairs: List[Tuple[ImageMeta, Image.Image]]
-) -> List[Tuple[ImageMeta, List[DetectionResult]]]:  # Replace 'any' with the actual type of your detection result
+) -> List[
+    Tuple[ImageMeta, List[DetectionResult]]
+]:  # Replace 'any' with the actual type of your detection result
     detection_results = []
     if image_pairs:
         try:
+
             def preprocess_batch():
                 with tracer.start_as_current_span("preprocess_images") as span:
-                    batch = processor(images=[img for _, img in image_pairs], return_tensors="pt")
+                    batch = processor(
+                        images=[img for _, img in image_pairs], return_tensors="pt"
+                    )
                     return batch
+
             batch = await asyncio.to_thread(preprocess_batch)
             detection_results = detect_objects(batch=batch, image_pairs=image_pairs)
         except Exception as e:
-            logging.error(f"Error detecting objects: {e}", extra={"error": e, "successful": image_pairs})
+            logging.error(
+                f"Error detecting objects: {e}",
+                extra={"error": e, "successful": image_pairs},
+            )
     return detection_results
+
 
 @app.post("/detect_objects", response_model=List[ImageResult])
 async def detect_objects_endpoint(image_metas: List[ImageMeta]):
@@ -189,7 +205,11 @@ async def detect_objects_endpoint(image_metas: List[ImageMeta]):
     async with aiohttp.ClientSession() as session:
         async for pil_images in batched_downloads(session, image_metas, batch_size):
             # Separate successful downloads for processing
-            successful = [(image_meta, pil_image) for image_meta, pil_image in pil_images if pil_image]
+            successful = [
+                (image_meta, pil_image)
+                for image_meta, pil_image in pil_images
+                if pil_image
+            ]
 
             # Initiate detection on successful downloads in the background
             if successful:
