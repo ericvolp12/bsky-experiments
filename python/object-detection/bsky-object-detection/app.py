@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import io
+import json
 import logging
 import os
 from time import time
@@ -13,7 +14,7 @@ from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from PIL import Image
-from prometheus_client import start_http_server, Counter
+from prometheus_client import Counter, start_http_server
 from pythonjsonlogger import jsonlogger
 
 from .models import ImageMeta, ImageResult
@@ -131,9 +132,10 @@ async def fetch_and_batch_images(
             image_metas = []
             for message in messages:
                 _, msg_obj = message
-                image_meta_dict = msg_obj[b"image_meta"]
-                image_meta = ImageMeta(**image_meta_dict)
-                image_metas.append(image_meta)
+                image_meta_bytes = msg_obj[b"image_meta"]
+                # Convert the bytes to a map
+                image_meta_dict = json.loads(image_meta_bytes)
+                image_metas.append(ImageMeta(**image_meta_dict))
             yield image_metas
             last_id = messages[-1][0]
 
