@@ -94,7 +94,7 @@ RESULT_TOPIC = os.getenv("RESULT_TOPIC", "object_detection_results")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "8"))
 
 
-async def preprocess(image_pairs: List[Tuple[ImageMeta, Image.Image]]) -> BatchFeature:
+def preprocess(image_pairs: List[Tuple[ImageMeta, Image.Image]]) -> BatchFeature:
     with tracer.start_as_current_span("preprocess_images"):
         batch = processor(images=[img for _, img in image_pairs], return_tensors="pt")
         return batch
