@@ -130,8 +130,9 @@ async def fetch_and_batch_images(
             messages = streams[0][1]
             image_metas = []
             for message in messages:
-                logging.info(f"Received message: {message}")
-                image_meta = ImageMeta(**message[1])
+                _, msg_obj = message
+                image_meta_dict = msg_obj[b"image_meta"]
+                image_meta = ImageMeta(**image_meta_dict)
                 image_metas.append(image_meta)
             yield image_metas
             last_id = messages[-1][0]
