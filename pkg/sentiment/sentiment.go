@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/pemistahl/lingua-go"
 	"github.com/prometheus/client_golang/prometheus"
@@ -40,6 +41,7 @@ type SentimentPost struct {
 	Rkey     string             `json:"rkey"`
 	Text     string             `json:"text"`
 	Decision *sentimentDecision `json:"decision"`
+	Langs    []string           `json:"langs"`
 }
 
 type sentimentResponse struct {
@@ -78,6 +80,7 @@ func (s *Sentiment) GetPostsSentiment(ctx context.Context, posts []*SentimentPos
 		// Record the likely language of each post
 		lang, ok := s.LanguageDetector.DetectLanguageOf(post.Text)
 		if ok {
+			posts[i].Langs = append(posts[i].Langs, strings.ToLower(lang.IsoCode639_1().String()))
 			languagePostCount.WithLabelValues(lang.String()).Inc()
 		} else {
 			languagePostCount.WithLabelValues("unknown").Inc()

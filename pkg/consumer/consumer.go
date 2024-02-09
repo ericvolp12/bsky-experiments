@@ -895,6 +895,7 @@ func (c *Consumer) HandleCreateRecord(
 			RootPostRkey:       sql.NullString{String: rootActorRkey, Valid: rootActorRkey != ""},
 			HasEmbeddedMedia:   rec.Embed != nil && rec.Embed.EmbedImages != nil,
 			CreatedAt:          sql.NullTime{Time: recCreatedAt, Valid: true},
+			Langs:              rec.Langs,
 		}
 
 		if rec.Facets != nil {
@@ -939,6 +940,7 @@ func (c *Consumer) HandleCreateRecord(
 			HasEmbeddedMedia:   createParams.HasEmbeddedMedia,
 			Facets:             createParams.Facets,
 			Embed:              createParams.Embed,
+			Langs:              createParams.Langs,
 			Tags:               createParams.Tags,
 			CreatedAt:          createParams.CreatedAt,
 		})

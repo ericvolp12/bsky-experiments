@@ -27,13 +27,15 @@ INSERT INTO post_sentiments (
         created_at,
         processed_at,
         sentiment,
-        confidence
+        confidence,
+        detected_langs
     )
-VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (actor_did, rkey) DO
+VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (actor_did, rkey) DO
 UPDATE
 SET processed_at = $4,
     sentiment = $5,
-    confidence = $6;
+    confidence = $6,
+    detected_langs = $7;
 -- name: DeleteSentimentJob :exec
 DELETE FROM post_sentiments
 WHERE actor_did = $1

@@ -28,6 +28,7 @@ INSERT INTO recent_posts (
         has_embedded_media,
         facets,
         embed,
+        langs,
         tags,
         created_at
     )
@@ -45,7 +46,8 @@ VALUES (
         $11,
         $12,
         $13,
-        $14
+        $14,
+        $15
     )
 `
 
@@ -62,6 +64,7 @@ type CreateRecentPostParams struct {
 	HasEmbeddedMedia   bool                  `json:"has_embedded_media"`
 	Facets             pqtype.NullRawMessage `json:"facets"`
 	Embed              pqtype.NullRawMessage `json:"embed"`
+	Langs              []string              `json:"langs"`
 	Tags               []string              `json:"tags"`
 	CreatedAt          sql.NullTime          `json:"created_at"`
 }
@@ -80,6 +83,7 @@ func (q *Queries) CreateRecentPost(ctx context.Context, arg CreateRecentPostPara
 		arg.HasEmbeddedMedia,
 		arg.Facets,
 		arg.Embed,
+		pq.Array(arg.Langs),
 		pq.Array(arg.Tags),
 		arg.CreatedAt,
 	)
@@ -103,7 +107,7 @@ func (q *Queries) DeleteRecentPost(ctx context.Context, arg DeleteRecentPostPara
 }
 
 const getRecentPost = `-- name: GetRecentPost :one
-SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, facets, embed, tags, has_embedded_media, created_at, inserted_at
+SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, facets, embed, langs, tags, has_embedded_media, created_at, inserted_at
 FROM recent_posts
 WHERE actor_did = $1
     AND rkey = $2
@@ -129,6 +133,7 @@ func (q *Queries) GetRecentPost(ctx context.Context, arg GetRecentPostParams) (R
 		&i.RootPostRkey,
 		&i.Facets,
 		&i.Embed,
+		pq.Array(&i.Langs),
 		pq.Array(&i.Tags),
 		&i.HasEmbeddedMedia,
 		&i.CreatedAt,
@@ -138,7 +143,7 @@ func (q *Queries) GetRecentPost(ctx context.Context, arg GetRecentPostParams) (R
 }
 
 const getRecentPostsByActor = `-- name: GetRecentPostsByActor :many
-SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, facets, embed, tags, has_embedded_media, created_at, inserted_at
+SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, facets, embed, langs, tags, has_embedded_media, created_at, inserted_at
 FROM recent_posts
 WHERE actor_did = $1
 ORDER BY created_at DESC
@@ -171,6 +176,7 @@ func (q *Queries) GetRecentPostsByActor(ctx context.Context, arg GetRecentPostsB
 			&i.RootPostRkey,
 			&i.Facets,
 			&i.Embed,
+			pq.Array(&i.Langs),
 			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
@@ -195,7 +201,7 @@ WITH followers AS (
     FROM follows
     WHERE target_did = $1
 )
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.tags, p.has_embedded_media, p.created_at, p.inserted_at
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.langs, p.tags, p.has_embedded_media, p.created_at, p.inserted_at
 FROM recent_posts p
     JOIN followers f ON f.actor_did = p.actor_did
 WHERE (p.created_at, p.actor_did, p.rkey) < (
@@ -249,6 +255,7 @@ func (q *Queries) GetRecentPostsByActorsFollowingTarget(ctx context.Context, arg
 			&i.RootPostRkey,
 			&i.Facets,
 			&i.Embed,
+			pq.Array(&i.Langs),
 			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
@@ -286,7 +293,7 @@ non_moots_and_non_spam AS (
         LEFT JOIN following_counts fc ON nm.actor_did = fc.actor_did
     WHERE fc.num_following < 4000
 )
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.tags, p.has_embedded_media, p.created_at, p.inserted_at
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.langs, p.tags, p.has_embedded_media, p.created_at, p.inserted_at
 FROM recent_posts p
     JOIN non_moots_and_non_spam f ON f.actor_did = p.actor_did
 WHERE (p.created_at, p.actor_did, p.rkey) < (
@@ -338,6 +345,7 @@ func (q *Queries) GetRecentPostsFromNonMoots(ctx context.Context, arg GetRecentP
 			&i.RootPostRkey,
 			&i.Facets,
 			&i.Embed,
+			pq.Array(&i.Langs),
 			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
@@ -363,7 +371,7 @@ WITH non_spam AS (
         LEFT JOIN following_counts fc ON nm.actor_did = fc.actor_did
     WHERE fc.num_following < 4000
 )
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.tags, p.has_embedded_media, p.created_at, p.inserted_at
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.langs, p.tags, p.has_embedded_media, p.created_at, p.inserted_at
 FROM recent_posts p
     JOIN non_spam f ON f.actor_did = p.actor_did
 WHERE (p.created_at, p.actor_did, p.rkey) < (
@@ -415,6 +423,7 @@ func (q *Queries) GetRecentPostsFromNonSpamUsers(ctx context.Context, arg GetRec
 			&i.RootPostRkey,
 			&i.Facets,
 			&i.Embed,
+			pq.Array(&i.Langs),
 			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
@@ -434,7 +443,7 @@ func (q *Queries) GetRecentPostsFromNonSpamUsers(ctx context.Context, arg GetRec
 }
 
 const getRecentPostsPageByInsertedAt = `-- name: GetRecentPostsPageByInsertedAt :many
-SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, facets, embed, tags, has_embedded_media, created_at, inserted_at
+SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, facets, embed, langs, tags, has_embedded_media, created_at, inserted_at
 FROM recent_posts
 WHERE inserted_at > $1
 ORDER BY inserted_at ASC
@@ -467,6 +476,7 @@ func (q *Queries) GetRecentPostsPageByInsertedAt(ctx context.Context, arg GetRec
 			&i.RootPostRkey,
 			&i.Facets,
 			&i.Embed,
+			pq.Array(&i.Langs),
 			pq.Array(&i.Tags),
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,

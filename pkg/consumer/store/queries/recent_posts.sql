@@ -12,6 +12,7 @@ INSERT INTO recent_posts (
         has_embedded_media,
         facets,
         embed,
+        langs,
         tags,
         created_at
     )
@@ -29,7 +30,8 @@ VALUES (
         $11,
         $12,
         $13,
-        $14
+        $14,
+        $15
     );
 -- name: DeleteRecentPost :exec
 DELETE FROM recent_posts

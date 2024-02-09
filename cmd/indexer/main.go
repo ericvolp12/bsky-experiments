@@ -27,6 +27,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 	"golang.org/x/time/rate"
@@ -475,13 +476,20 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 			}
 		}
 
+		langs := []string{}
+
+		if result != nil {
+			langs = result.Langs
+		}
+
 		dbSentimentParams = append(dbSentimentParams, store_queries.SetSentimentForPostParams{
-			ActorDid:    job.ActorDid,
-			Rkey:        job.Rkey,
-			CreatedAt:   job.CreatedAt.Time,
-			ProcessedAt: sql.NullTime{Time: time.Now(), Valid: true},
-			Sentiment:   s,
-			Confidence:  confidence,
+			ActorDid:      job.ActorDid,
+			Rkey:          job.Rkey,
+			CreatedAt:     job.CreatedAt.Time,
+			ProcessedAt:   sql.NullTime{Time: time.Now(), Valid: true},
+			Sentiment:     s,
+			Confidence:    confidence,
+			DetectedLangs: langs,
 		})
 	}
 
@@ -863,60 +871,74 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 
 	executionTime := time.Now()
 
-	successCount := 0
+	successCount := atomic.NewInt32(0)
+
+	sem := semaphore.NewWeighted(10)
+	wg := sync.WaitGroup{}
 
 	for _, result := range results {
-		if len(result.Results) > 0 {
-			successCount++
-		}
+		wg.Add(1)
+		sem.Acquire(ctx, 1)
+		go func(result *objectdetection.ImageResult) {
+			defer wg.Done()
+			defer sem.Release(1)
 
-		cvClasses, err := json.Marshal(result.Results)
-		if err != nil {
-			log.Errorf("Failed to marshal classes: %v", err)
-			continue
-		}
-
-		err = index.PostRegistry.AddCVDataToImage(
-			ctx,
-			result.Meta.CID,
-			result.Meta.PostID,
-			executionTime,
-			cvClasses,
-		)
-		if err != nil {
-			log.Errorf("Failed to update image: %v", err)
-			continue
-		}
-
-		imageLabels := []string{}
-		for _, class := range result.Results {
-			if class.Confidence >= 0.75 {
-				imageLabels = append(imageLabels, class.Label)
+			if len(result.Results) > 0 {
+				successCount.Inc()
 			}
-		}
 
-		for _, label := range imageLabels {
-			postLabel := fmt.Sprintf("%s:%s", "cv", label)
-			err = index.PostRegistry.AddPostLabel(ctx, result.Meta.PostID, result.Meta.ActorDID, postLabel)
+			cvClasses, err := json.Marshal(result.Results)
 			if err != nil {
-				log.Errorf("Failed to add label to post: %v", err)
-				continue
+				log.Errorf("Failed to marshal classes: %v", err)
+				return
 			}
-		}
+
+			err = index.PostRegistry.AddCVDataToImage(
+				ctx,
+				result.Meta.CID,
+				result.Meta.PostID,
+				executionTime,
+				cvClasses,
+			)
+			if err != nil {
+				log.Errorf("Failed to update image: %v", err)
+				return
+			}
+
+			imageLabels := []string{}
+			for _, class := range result.Results {
+				if class.Confidence >= 0.75 {
+					imageLabels = append(imageLabels, class.Label)
+				}
+			}
+
+			for _, label := range imageLabels {
+				postLabel := fmt.Sprintf("%s:%s", "cv", label)
+				err = index.PostRegistry.AddPostLabel(ctx, result.Meta.PostID, result.Meta.ActorDID, postLabel)
+				if err != nil {
+					log.Errorf("Failed to add label to post: %v", err)
+					continue
+				}
+			}
+		}(result)
 	}
 
-	successfullyIndexedImagesCounter.Add(float64(successCount))
-	failedToIndexImagesCounter.Add(float64(len(unprocessedImages) - successCount))
+	wg.Wait()
+
+	successes := int(successCount.Load())
+
+	successfullyIndexedImagesCounter.Add(float64(successes))
+	failedToIndexImagesCounter.Add(float64(len(unprocessedImages) - successes))
 
 	span.SetAttributes(
 		attribute.Int("batch_size", len(unprocessedImages)),
-		attribute.Int("successful_image_count", successCount),
+		attribute.Int("successful_image_count", successes),
 		attribute.String("processing_time", time.Since(start).String()),
 	)
 
 	log.Infow("Finished processing images...",
 		"batch_size", len(unprocessedImages),
-		"successfully_processed_image_count", successCount,
+		"successfully_processed_image_count", successes,
 		"processing_time", time.Since(start),
 	)
 }

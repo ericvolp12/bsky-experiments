@@ -6,6 +6,7 @@ CREATE TABLE post_sentiments (
     processed_at TIMESTAMPTZ,
     sentiment TEXT,
     confidence FLOAT,
+    detected_langs TEXT [],
     PRIMARY KEY (actor_did, rkey)
 );
 CREATE INDEX post_sentiments_actor_did_created_at_idx ON post_sentiments (actor_did, created_at DESC);

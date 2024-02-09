@@ -12,6 +12,7 @@ INSERT INTO posts (
         has_embedded_media,
         facets,
         embed,
+        langs,
         tags,
         created_at
     )
@@ -29,7 +30,8 @@ VALUES (
         $11,
         $12,
         $13,
-        $14
+        $14,
+        $15
     );
 -- name: DeletePost :exec
 DELETE FROM posts

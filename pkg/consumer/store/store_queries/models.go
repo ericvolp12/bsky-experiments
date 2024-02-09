@@ -156,6 +156,7 @@ type Post struct {
 	RootPostRkey       sql.NullString        `json:"root_post_rkey"`
 	Facets             pqtype.NullRawMessage `json:"facets"`
 	Embed              pqtype.NullRawMessage `json:"embed"`
+	Langs              []string              `json:"langs"`
 	Tags               []string              `json:"tags"`
 	HasEmbeddedMedia   bool                  `json:"has_embedded_media"`
 	CreatedAt          sql.NullTime          `json:"created_at"`
@@ -163,13 +164,14 @@ type Post struct {
 }
 
 type PostSentiment struct {
-	ActorDid    string          `json:"actor_did"`
-	Rkey        string          `json:"rkey"`
-	InsertedAt  time.Time       `json:"inserted_at"`
-	CreatedAt   time.Time       `json:"created_at"`
-	ProcessedAt sql.NullTime    `json:"processed_at"`
-	Sentiment   sql.NullString  `json:"sentiment"`
-	Confidence  sql.NullFloat64 `json:"confidence"`
+	ActorDid      string          `json:"actor_did"`
+	Rkey          string          `json:"rkey"`
+	InsertedAt    time.Time       `json:"inserted_at"`
+	CreatedAt     time.Time       `json:"created_at"`
+	ProcessedAt   sql.NullTime    `json:"processed_at"`
+	Sentiment     sql.NullString  `json:"sentiment"`
+	Confidence    sql.NullFloat64 `json:"confidence"`
+	DetectedLangs []string        `json:"detected_langs"`
 }
 
 type RecentPost struct {
@@ -184,6 +186,7 @@ type RecentPost struct {
 	RootPostRkey       sql.NullString        `json:"root_post_rkey"`
 	Facets             pqtype.NullRawMessage `json:"facets"`
 	Embed              pqtype.NullRawMessage `json:"embed"`
+	Langs              []string              `json:"langs"`
 	Tags               []string              `json:"tags"`
 	HasEmbeddedMedia   bool                  `json:"has_embedded_media"`
 	CreatedAt          sql.NullTime          `json:"created_at"`
