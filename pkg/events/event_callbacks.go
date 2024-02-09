@@ -271,10 +271,12 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 					span.SetAttributes(attribute.String("like.subject.post_id", postID))
 
 					// Add the Like to the DB
-					err := bsky.PostRegistry.AddLikeToPost(ctx, postID, evt.Repo)
-					if err != nil {
-						log.Errorf("failed to add like to post: %+v\n", err)
-						span.SetAttributes(attribute.String("error", err.Error()))
+					if bsky.PostRegistryEnabled {
+						err := bsky.PostRegistry.AddLikeToPost(ctx, postID, evt.Repo)
+						if err != nil {
+							log.Errorf("failed to add like to post: %+v\n", err)
+							span.SetAttributes(attribute.String("error", err.Error()))
+						}
 					}
 					likesProcessedCounter.Inc()
 				}
@@ -285,10 +287,12 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 				span.SetAttributes(attribute.String("repo.name", evt.Repo))
 				span.SetAttributes(attribute.String("event.type", "app.bsky.graph.block"))
 				span.SetAttributes(attribute.String("block.subject", rec.Subject))
-				err = bsky.PostRegistry.AddAuthorBlock(ctx, evt.Repo, rec.Subject, t)
-				if err != nil {
-					log.Errorf("failed to add author block to registry: %+v\n", err)
-					return nil
+				if bsky.PostRegistryEnabled {
+					err = bsky.PostRegistry.AddAuthorBlock(ctx, evt.Repo, rec.Subject, t)
+					if err != nil {
+						log.Errorf("failed to add author block to registry: %+v\n", err)
+						return nil
+					}
 				}
 				log.Infow("processed graph block", "target", rec.Subject, "source", evt.Repo)
 				return nil
