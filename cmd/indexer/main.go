@@ -314,31 +314,31 @@ func Indexer(cctx *cli.Context) error {
 	}()
 
 	// Start the actor profile picture indexing loop
-	shutdownProfilePictures := make(chan struct{})
-	profilePicturesShutdown := make(chan struct{})
-	go func() {
-		logger := logger.With("source", "profile_picture_indexer")
-		if index.Store == nil {
-			logger.Info("no store, skipping profile picture indexing loop...")
-			close(profilePicturesShutdown)
-			return
-		}
-		logger.Info("Starting profile picture indexing loop...")
-		for {
-			ctx := context.Background()
-			gofast := index.IndexActorProfilePictures(ctx, int32(cctx.Int("actor-page-size")))
-			select {
-			case <-shutdownProfilePictures:
-				logger.Info("Shutting down profile picture indexing loop...")
-				close(profilePicturesShutdown)
-				return
-			default:
-				if !gofast {
-					time.Sleep(1 * time.Second)
-				}
-			}
-		}
-	}()
+	// shutdownProfilePictures := make(chan struct{})
+	// profilePicturesShutdown := make(chan struct{})
+	// go func() {
+	// 	logger := logger.With("source", "profile_picture_indexer")
+	// 	if index.Store == nil {
+	// 		logger.Info("no store, skipping profile picture indexing loop...")
+	// 		close(profilePicturesShutdown)
+	// 		return
+	// 	}
+	// 	logger.Info("Starting profile picture indexing loop...")
+	// 	for {
+	// 		ctx := context.Background()
+	// 		gofast := index.IndexActorProfilePictures(ctx, int32(cctx.Int("actor-page-size")))
+	// 		select {
+	// 		case <-shutdownProfilePictures:
+	// 			logger.Info("Shutting down profile picture indexing loop...")
+	// 			close(profilePicturesShutdown)
+	// 			return
+	// 		default:
+	// 			if !gofast {
+	// 				time.Sleep(1 * time.Second)
+	// 			}
+	// 		}
+	// 	}
+	// }()
 
 	select {
 	case <-signals:
