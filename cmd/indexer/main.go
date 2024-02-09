@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"log"
 	"net/http"
@@ -44,7 +48,8 @@ type Index struct {
 	PositiveConfidenceThreshold float64
 	NegativeConfidenceThreshold float64
 
-	imageClient *http.Client
+	imageClient  *http.Client
+	imageLimiter *rate.Limiter
 
 	Limiter *rate.Limiter
 }
@@ -235,6 +240,7 @@ func Indexer(cctx *cli.Context) error {
 		Logger:                      logger,
 		Limiter:                     rate.NewLimiter(rate.Limit(4), 1),
 		imageClient:                 imageClient,
+		imageLimiter:                rate.NewLimiter(rate.Limit(50), 1),
 	}
 
 	if st != nil {
@@ -843,7 +849,7 @@ func (index *Index) DownloadImage(ctx context.Context, url string) (*string, err
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get image: %w", err)
+		return nil, fmt.Errorf("failed to get image, status: %d", resp.StatusCode)
 	}
 
 	data, err := io.ReadAll(resp.Body)
@@ -851,8 +857,14 @@ func (index *Index) DownloadImage(ctx context.Context, url string) (*string, err
 		return nil, fmt.Errorf("failed to read image: %w", err)
 	}
 
+	// Check that the data is a valid image
+	_, _, err = image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode image: %w", err)
+	}
+
 	// Encode as a base64 string
-	dataStr := base64.StdEncoding.EncodeToString([]byte(data))
+	dataStr := base64.StdEncoding.EncodeToString(data)
 
 	return &dataStr, nil
 }
@@ -893,6 +905,8 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 		go func(i int, image *search.Image) {
 			defer wg.Done()
 			url := fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", image.AuthorDID, image.CID)
+			// Limit the number of concurrent requests
+			index.imageLimiter.Wait(ctx)
 			data, err := index.DownloadImage(ctx, url)
 			errs[i] = err
 			dataStrings[i] = data
@@ -901,7 +915,7 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 
 	wg.Wait()
 
-	imageMetas := make([]*objectdetection.ImageMeta, len(unprocessedImages))
+	imageMetas := []*objectdetection.ImageMeta{}
 	for i, image := range unprocessedImages {
 		if errs[i] != nil {
 			log.Errorf("Failed to download image: %v", errs[i])
@@ -913,14 +927,14 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 			continue
 		}
 
-		imageMetas[i] = &objectdetection.ImageMeta{
+		imageMetas = append(imageMetas, &objectdetection.ImageMeta{
 			PostID:    image.PostID,
 			ActorDID:  image.AuthorDID,
 			CID:       image.CID,
 			MimeType:  image.MimeType,
 			CreatedAt: image.CreatedAt,
 			Data:      *dataStrings[i],
-		}
+		})
 	}
 
 	results, err := index.Detection.ProcessImages(ctx, imageMetas)

@@ -6,13 +6,10 @@ import os
 from time import time
 from typing import AsyncGenerator, List, Optional, Tuple
 
-import aiohttp
-
 # import pyroscope
 from fastapi import FastAPI, Request
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -113,8 +110,6 @@ images_failed = Counter("images_failed", "Number of images failed")
 images_submitted = Counter("images_submitted", "Number of images submitted")
 
 tracer = trace.get_tracer("bsky-object-detection")
-
-AioHttpClientInstrumentor().instrument()
 
 
 async def decode_image(
