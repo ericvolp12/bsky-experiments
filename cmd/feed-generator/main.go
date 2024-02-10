@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,11 +18,13 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/cluster"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/firehose"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/followers"
+	followersexp "github.com/ericvolp12/bsky-experiments/pkg/feeds/followers-exp"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/hot"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/pins"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/postlabel"
 	"github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
+	"github.com/ericvolp12/bsky-experiments/pkg/sharddb"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	ginprometheus "github.com/ericvolp12/go-gin-prometheus"
 	"github.com/gin-contrib/cors"
@@ -105,6 +108,11 @@ func main() {
 			Value:   "http://localhost:1323",
 			EnvVars: []string{"GRAPHD_ROOT"},
 		},
+		&cli.StringSliceFlag{
+			Name:    "shard-db-nodes",
+			Usage:   "list of scylla nodes for shard db",
+			EnvVars: []string{"SHARD_DB_NODES"},
+		},
 	}
 
 	app.Action = FeedGenerator
@@ -184,6 +192,14 @@ func FeedGenerator(cctx *cli.Context) error {
 	}
 	graphdClient := client.NewClient(cctx.String("graphd-root"), &h)
 
+	var shardDBClient *sharddb.ShardDB
+	if len(cctx.StringSlice("shard-db-nodes")) > 0 {
+		shardDBClient, err = sharddb.NewShardDB(ctx, cctx.StringSlice("shard-db-nodes"), slog.Default())
+		if err != nil {
+			log.Fatalf("Failed to create ShardDB: %v", err)
+		}
+	}
+
 	feedActorDID := cctx.String("feed-actor-did")
 
 	// Set the acceptable DIDs for the feed generator to respond to
@@ -257,6 +273,15 @@ func FeedGenerator(cctx *cli.Context) error {
 		log.Fatalf("Failed to create FollowersFeed: %v", err)
 	}
 	feedGenerator.AddFeed(followersFeedAliases, followersFeed)
+
+	if shardDBClient != nil {
+		// Create Experimental Followers feed
+		followersExpFeed, followersExpFeedAliases, err := followersexp.NewFollowersFeed(ctx, feedActorDID, graphdClient, redisClient, shardDBClient)
+		if err != nil {
+			log.Fatalf("Failed to create FollowersExpFeed: %v", err)
+		}
+		feedGenerator.AddFeed(followersExpFeedAliases, followersExpFeed)
+	}
 
 	// Create a My Pins feed
 	pinsFeed, pinsFeedAliases, err := pins.NewPinsFeed(ctx, feedActorDID, store)
@@ -347,10 +372,10 @@ func FeedGenerator(cctx *cli.Context) error {
 	storeProvider := auth.NewStoreProvider(store)
 
 	auther, err := auth.NewAuth(
-		10000,
-		time.Hour*1,
+		500_000,
+		time.Hour*12,
 		"https://plc.directory",
-		5,
+		40,
 		"did:web:feedsky.jazco.io",
 		storeProvider,
 	)

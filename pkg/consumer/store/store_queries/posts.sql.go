@@ -30,7 +30,8 @@ INSERT INTO posts (
         embed,
         langs,
         tags,
-        created_at
+        created_at,
+        inserted_at
     )
 VALUES (
         $1,
@@ -47,7 +48,8 @@ VALUES (
         $12,
         $13,
         $14,
-        $15
+        $15,
+        $16
     )
 `
 
@@ -67,6 +69,7 @@ type CreatePostParams struct {
 	Langs              []string              `json:"langs"`
 	Tags               []string              `json:"tags"`
 	CreatedAt          sql.NullTime          `json:"created_at"`
+	InsertedAt         time.Time             `json:"inserted_at"`
 }
 
 func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) error {
@@ -86,6 +89,7 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) error {
 		pq.Array(arg.Langs),
 		pq.Array(arg.Tags),
 		arg.CreatedAt,
+		arg.InsertedAt,
 	)
 	return err
 }

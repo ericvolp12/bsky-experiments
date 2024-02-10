@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	graphdclient "github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
+	"github.com/ericvolp12/bsky-experiments/pkg/sharddb"
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
@@ -54,6 +56,7 @@ type Consumer struct {
 	magicHeaderVal string
 
 	graphdClient *graphdclient.Client
+	shardDB      *sharddb.ShardDB
 }
 
 // Progress is the cursor for the consumer
@@ -139,9 +142,24 @@ func NewConsumer(
 	magicHeaderKey string,
 	magicHeaderVal string,
 	graphdRoot string,
+	shardDBNodes []string,
 ) (*Consumer, error) {
 	h := http.Client{
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	}
+
+	var shardDB *sharddb.ShardDB
+	var err error
+	if len(shardDBNodes) > 0 {
+		shardDB, err = sharddb.NewShardDB(ctx, shardDBNodes, slog.Default())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create sharddb: %+v", err)
+		}
+
+		err := shardDB.CreatePostTable(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create post table: %+v", err)
+		}
 	}
 
 	c := Consumer{
@@ -159,6 +177,8 @@ func NewConsumer(
 
 		magicHeaderKey: magicHeaderKey,
 		magicHeaderVal: magicHeaderVal,
+
+		shardDB: shardDB,
 	}
 
 	if graphdRoot != "" {
@@ -170,7 +190,7 @@ func NewConsumer(
 	}
 
 	// Check to see if the cursor exists in redis
-	err := c.ReadCursor(context.Background())
+	err = c.ReadCursor(context.Background())
 	if err != nil {
 		if !strings.Contains(err.Error(), "redis: nil") {
 			return nil, fmt.Errorf("failed to read cursor from redis: %+v", err)
@@ -826,6 +846,8 @@ func (c *Consumer) HandleCreateRecord(
 	var parseError error
 	var err error
 
+	indexedAt := time.Now()
+
 	// Unpack the record and process it
 	switch rec := rec.(type) {
 	case *bsky.FeedPost:
@@ -881,6 +903,18 @@ func (c *Consumer) HandleCreateRecord(
 			rootActorRkey = u.RKey
 		}
 
+		hasMedia := false
+		if rec.Embed != nil {
+			if rec.Embed.EmbedImages != nil && len(rec.Embed.EmbedImages.Images) > 0 {
+				hasMedia = true
+			} else if rec.Embed.EmbedRecordWithMedia != nil &&
+				rec.Embed.EmbedRecordWithMedia.Media != nil &&
+				rec.Embed.EmbedRecordWithMedia.Media.EmbedImages != nil &&
+				len(rec.Embed.EmbedRecordWithMedia.Media.EmbedImages.Images) > 0 {
+				hasMedia = true
+			}
+		}
+
 		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
 
 		createParams := store_queries.CreatePostParams{
@@ -893,9 +927,10 @@ func (c *Consumer) HandleCreateRecord(
 			QuotePostRkey:      sql.NullString{String: quoteActorRkey, Valid: quoteActorRkey != ""},
 			RootPostActorDid:   sql.NullString{String: rootActorDid, Valid: rootActorDid != ""},
 			RootPostRkey:       sql.NullString{String: rootActorRkey, Valid: rootActorRkey != ""},
-			HasEmbeddedMedia:   rec.Embed != nil && rec.Embed.EmbedImages != nil,
+			HasEmbeddedMedia:   hasMedia,
 			CreatedAt:          sql.NullTime{Time: recCreatedAt, Valid: true},
 			Langs:              rec.Langs,
+			InsertedAt:         indexedAt,
 		}
 
 		if rec.Facets != nil {
@@ -1008,10 +1043,36 @@ func (c *Consumer) HandleCreateRecord(
 			log.Errorf("failed to create like count: %+v", err)
 		}
 
-		// Fanout the post to followers
-		err = c.FanoutWrite(ctx, repo, path)
-		if err != nil {
-			log.Errorf("failed to fanout write: %+v", err)
+		if c.shardDB != nil {
+			bucket, err := sharddb.GetBucketFromRKey(rkey)
+			if err != nil {
+				log.Errorf("failed to get bucket from rkey %q: %+v", rkey, err)
+				break
+			}
+
+			recBytes, err := json.Marshal(rec)
+			if err != nil {
+				log.Errorf("failed to marshal record for insertion to sharddb: %+v", err)
+				break
+			}
+
+			// Create Post in ShardDB
+			shardDBPost := sharddb.Post{
+				ActorDID:  repo,
+				Rkey:      rkey,
+				IndexedAt: indexedAt,
+				Bucket:    bucket,
+				Raw:       recBytes,
+				Langs:     rec.Langs,
+				Tags:      rec.Tags,
+				HasMedia:  hasMedia,
+				IsReply:   rec.Reply != nil,
+			}
+
+			err = c.shardDB.InsertPost(ctx, shardDBPost)
+			if err != nil {
+				log.Errorf("failed to insert post into sharddb: %+v", err)
+			}
 		}
 	case *bsky.FeedLike:
 		span.SetAttributes(attribute.String("record_type", "feed_like"))

@@ -95,6 +95,11 @@ func main() {
 			Usage:   "graphd root url",
 			EnvVars: []string{"GRAPHD_ROOT"},
 		},
+		&cli.StringSliceFlag{
+			Name:    "shard-db-nodes",
+			Usage:   "list of scylla nodes for shard db",
+			EnvVars: []string{"SHARD_DB_NODES"},
+		},
 	}
 
 	app.Action = Consumer
@@ -195,6 +200,7 @@ func Consumer(cctx *cli.Context) error {
 		cctx.String("magic-header-key"),
 		cctx.String("magic-header-val"),
 		cctx.String("graphd-root"),
+		cctx.StringSlice("shard-db-nodes"),
 	)
 	if err != nil {
 		log.Fatalf("failed to create consumer: %+v", err)
