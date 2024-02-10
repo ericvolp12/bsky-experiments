@@ -8,6 +8,7 @@ import (
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	graphdclient "github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
 	"github.com/ericvolp12/bsky-experiments/pkg/sharddb"
 	"github.com/google/uuid"
@@ -31,9 +32,9 @@ type NotFoundError struct {
 	error
 }
 
-var supportedFeeds = []string{"my-followers"}
+var supportedFeeds = []string{"my-followers-ex", "my-followers"}
 
-var tracer = otel.Tracer("my-followers")
+var tracer = otel.Tracer("my-followers-ex")
 
 func NewFollowersFeed(ctx context.Context, feedActorDID string, gClient *graphdclient.Client, rClient *redis.Client, shardDB *sharddb.ShardDB, store *store.Store) (*FollowersFeed, []string, error) {
 	f := FollowersFeed{
@@ -173,11 +174,15 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 		return nil, nil, fmt.Errorf("error getting non-moots: %w", err)
 	}
 
+	span.SetAttributes(attribute.Int("nonMoots", len(nonMoots)))
+
 	// Get the intersection of the non-moots and the active posters
 	nonMootMap, err := f.intersectActivePosters(ctx, nonMoots)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error intersecting active posters: %w", err)
 	}
+
+	span.SetAttributes(attribute.Int("nonMootMap", len(nonMootMap)))
 
 	// Get the spam followers
 	spamFollowers := f.getSpamFollowers(ctx)
@@ -187,66 +192,93 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 		delete(nonMootMap, did)
 	}
 
-	bucket, err := sharddb.GetBucketFromRKey(rkey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error getting bucket from rkey: %w", err)
-	}
+	span.SetAttributes(attribute.Int("nonMootMapAfterSpam", len(nonMootMap)))
 
 	filteredPostURIs := []string{}
-
-	maxPages := 50
-	pageSize := 5000
-
 	newRkey := ""
 
-	metaPageCursor := createdAt
-	for i := 0; i < maxPages; i++ {
-		// Walk posts in reverse chronological order
-		postMetas, nextCursor, err := f.ShardDB.GetPostMetas(ctx, bucket, pageSize, metaPageCursor)
+	// Use the store to get the posts
+	if len(nonMootMap) < 1000 {
+		rawPosts, err := f.Store.Queries.GetRecentPostsFromNonSpamUsers(ctx, store_queries.GetRecentPostsFromNonSpamUsersParams{
+			Dids:            nonMoots,
+			Limit:           int32(limit),
+			CursorCreatedAt: createdAt,
+			CursorActorDid:  authorDID,
+			CursorRkey:      rkey,
+		})
 		if err != nil {
-			return nil, nil, fmt.Errorf("error getting post metas: %w", err)
+			return nil, nil, fmt.Errorf("error getting posts: %w", err)
 		}
 
-		// Pick out the posts from the non-moots
-		for _, post := range postMetas {
-			if _, ok := nonMootMap[post.ActorDID]; ok {
-				filteredPostURIs = append(filteredPostURIs, fmt.Sprintf("at://%s/app.bsky.feed.post/%s", post.ActorDID, post.Rkey))
+		// Add URIs to the filteredPostURIs
+		for _, post := range rawPosts {
+			filteredPostURIs = append(filteredPostURIs, fmt.Sprintf("at://%s/app.bsky.feed.post/%s", post.ActorDid, post.Rkey))
+		}
+
+		// Set the cursor to the last post
+		if len(rawPosts) > 0 {
+			lastPost := rawPosts[len(rawPosts)-1]
+			createdAt = lastPost.CreatedAt.Time
+			authorDID = lastPost.ActorDid
+			newRkey = lastPost.Rkey
+		}
+	} else {
+		// Otherwise use the sharddb to get the posts (high recent hit-rate)
+		bucket, err := sharddb.GetBucketFromRKey(rkey)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error getting bucket from rkey: %w", err)
+		}
+
+		maxPages := 50
+		pageSize := 5000
+
+		metaPageCursor := createdAt
+		for i := 0; i < maxPages; i++ {
+			// Walk posts in reverse chronological order
+			postMetas, nextCursor, err := f.ShardDB.GetPostMetas(ctx, bucket, pageSize, metaPageCursor)
+			if err != nil {
+				return nil, nil, fmt.Errorf("error getting post metas: %w", err)
 			}
 
-			createdAt = post.IndexedAt
-			authorDID = post.ActorDID
-			newRkey = post.Rkey
+			// Pick out the posts from the non-moots
+			for _, post := range postMetas {
+				if _, ok := nonMootMap[post.ActorDID]; ok {
+					filteredPostURIs = append(filteredPostURIs, fmt.Sprintf("at://%s/app.bsky.feed.post/%s", post.ActorDID, post.Rkey))
+				}
+
+				createdAt = post.IndexedAt
+				authorDID = post.ActorDID
+				newRkey = post.Rkey
+
+				if len(filteredPostURIs) >= int(limit) {
+					break
+				}
+			}
 
 			if len(filteredPostURIs) >= int(limit) {
 				break
 			}
-		}
 
-		if len(filteredPostURIs) >= int(limit) {
-			break
-		}
-
-		metaPageCursor = nextCursor
-		if nextCursor.IsZero() {
-			bucket = bucket - 1
-			metaPageCursor = time.Now()
-			if bucket < 0 {
-				break
+			metaPageCursor = nextCursor
+			if nextCursor.IsZero() {
+				bucket = bucket - 1
+				metaPageCursor = time.Now()
+				if bucket < 0 {
+					break
+				}
 			}
 		}
-	}
 
-	if newRkey == "" {
-		// Set the rkey cursor to the next bucket
-		newRkey = sharddb.GetHighestRKeyForBucket(bucket - 1)
+		if newRkey == "" {
+			// Set the rkey cursor to the next bucket
+			newRkey = sharddb.GetHighestRKeyForBucket(bucket - 1)
+		}
 	}
 
 	// Convert to appbsky.FeedDefs_SkeletonFeedPost
 	posts := []*appbsky.FeedDefs_SkeletonFeedPost{}
 	for _, uri := range filteredPostURIs {
-		posts = append(posts, &appbsky.FeedDefs_SkeletonFeedPost{
-			Post: uri,
-		})
+		posts = append(posts, &appbsky.FeedDefs_SkeletonFeedPost{Post: uri})
 	}
 
 	newCursor := AssembleCursor(createdAt, authorDID, newRkey)

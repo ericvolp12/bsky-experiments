@@ -3,7 +3,6 @@ package followers
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
@@ -111,37 +110,25 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 	var rawPosts []store_queries.RecentPost
 
 	nonMoots, err := f.GraphD.GetFollowersNotFollowing(ctx, userDID)
-	if err == nil {
-		// Get the intersection of the non-moots and the active posters
-		nonMoots, err = f.intersectActivePosters(ctx, nonMoots)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error intersecting active posters: %w", err)
-		}
+	if err != nil {
+		return nil, nil, fmt.Errorf("error getting non-moots: %w", err)
+	}
 
-		rawPosts, err = f.Store.Queries.GetRecentPostsFromNonSpamUsers(ctx, store_queries.GetRecentPostsFromNonSpamUsersParams{
-			Dids:            nonMoots,
-			Limit:           int32(limit),
-			CursorCreatedAt: createdAt,
-			CursorActorDid:  authorDID,
-			CursorRkey:      rkey,
-		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("error getting posts: %w", err)
-		}
-	} else {
-		span.SetAttributes(attribute.Bool("fallback", true))
-		// Fallback to old query
-		slog.Error("error getting non-moots, falling back to old query", "error", err)
-		rawPosts, err = f.Store.Queries.GetRecentPostsFromNonMoots(ctx, store_queries.GetRecentPostsFromNonMootsParams{
-			ActorDid:        userDID,
-			Limit:           int32(limit),
-			CursorCreatedAt: createdAt,
-			CursorActorDid:  authorDID,
-			CursorRkey:      rkey,
-		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("error getting posts: %w", err)
-		}
+	// Get the intersection of the non-moots and the active posters
+	nonMoots, err = f.intersectActivePosters(ctx, nonMoots)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error intersecting active posters: %w", err)
+	}
+
+	rawPosts, err = f.Store.Queries.GetRecentPostsFromNonSpamUsers(ctx, store_queries.GetRecentPostsFromNonSpamUsersParams{
+		Dids:            nonMoots,
+		Limit:           int32(limit),
+		CursorCreatedAt: createdAt,
+		CursorActorDid:  authorDID,
+		CursorRkey:      rkey,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("error getting posts: %w", err)
 	}
 
 	// Convert to appbsky.FeedDefs_SkeletonFeedPost

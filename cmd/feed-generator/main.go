@@ -17,7 +17,6 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/bangers"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/cluster"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/firehose"
-	"github.com/ericvolp12/bsky-experiments/pkg/feeds/followers"
 	followersexp "github.com/ericvolp12/bsky-experiments/pkg/feeds/followers-exp"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/hot"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/pins"
@@ -267,12 +266,12 @@ func FeedGenerator(cctx *cli.Context) error {
 	}
 	feedGenerator.AddFeed(hotFeedAliases, hotFeed)
 
-	// Create a My Followers feed
-	followersFeed, followersFeedAliases, err := followers.NewFollowersFeed(ctx, feedActorDID, store, graphdClient, redisClient)
-	if err != nil {
-		log.Fatalf("Failed to create FollowersFeed: %v", err)
-	}
-	feedGenerator.AddFeed(followersFeedAliases, followersFeed)
+	// // Create a My Followers feed
+	// followersFeed, followersFeedAliases, err := followers.NewFollowersFeed(ctx, feedActorDID, store, graphdClient, redisClient)
+	// if err != nil {
+	// 	log.Fatalf("Failed to create FollowersFeed: %v", err)
+	// }
+	// feedGenerator.AddFeed(followersFeedAliases, followersFeed)
 
 	if shardDBClient != nil {
 		// Create Experimental Followers feed
