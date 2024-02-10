@@ -199,6 +199,8 @@ type RecentPostsWithScore struct {
 	Rkey             string       `json:"rkey"`
 	SubjectCreatedAt sql.NullTime `json:"subject_created_at"`
 	InsertedAt       time.Time    `json:"inserted_at"`
+	Langs            []string     `json:"langs"`
+	HasEmbeddedMedia bool         `json:"has_embedded_media"`
 	Score            float64      `json:"score"`
 }
 

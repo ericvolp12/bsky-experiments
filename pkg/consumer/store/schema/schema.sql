@@ -224,7 +224,9 @@ FilteredPosts AS (
         fs.rkey,
         fs.subject_created_at,
         fs.num_likes,
-        p.inserted_at
+        p.inserted_at,
+        p.langs,
+        p.has_embedded_media
     FROM FilteredSubjects fs
         JOIN posts p ON fs.actor_did = p.actor_did
         AND fs.rkey = p.rkey
@@ -236,6 +238,8 @@ SELECT fp.id as subject_id,
     fp.rkey,
     fp.subject_created_at,
     fp.inserted_at,
+    fp.langs,
+    fp.has_embedded_media,
     (
         (COALESCE(fp.num_likes, 0) - 1) / (
             EXTRACT(

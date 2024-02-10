@@ -50,6 +50,7 @@ func NewAuthorLabelFeed(ctx context.Context, feedActorDID string, postRegistry *
 	labels := []string{}
 	for _, label := range labelsFromRegistry {
 		labels = append(labels, "a:"+label.LookupAlias)
+		labels = append(labels, "a-"+label.LookupAlias)
 	}
 
 	for alias := range feedAliases {
@@ -65,9 +66,10 @@ func NewAuthorLabelFeed(ctx context.Context, feedActorDID string, postRegistry *
 	}, labels, nil
 }
 
+var tracer = otel.Tracer("author-label-feed")
+
 func (alf *AuthorLabelFeed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
-	tracer := otel.Tracer("author-label-feed")
-	ctx, span := tracer.Start(ctx, "AuthorLabelFeed:GetPage")
+	ctx, span := tracer.Start(ctx, "GetPage")
 	defer span.End()
 
 	if userDID == "" {
@@ -90,6 +92,9 @@ func (alf *AuthorLabelFeed) GetPage(ctx context.Context, feed string, userDID st
 
 	// Get the author label from the feed
 	authorLabel := strings.TrimPrefix(feed, "a:")
+	if strings.HasPrefix(feed, "a-") {
+		authorLabel = strings.TrimPrefix(feed, "a-")
+	}
 
 	includeReplies := true
 	sort := "hotness"
@@ -180,6 +185,7 @@ func (plf *AuthorLabelFeed) Describe(ctx context.Context) ([]appbsky.FeedDescrib
 	labels := []string{}
 	for _, label := range labelsFromRegistry {
 		labels = append(labels, "a:"+label.LookupAlias)
+		labels = append(labels, "a-"+label.LookupAlias)
 	}
 
 	for alias := range feedAliases {
