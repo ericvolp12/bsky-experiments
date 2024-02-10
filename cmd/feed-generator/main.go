@@ -276,7 +276,7 @@ func FeedGenerator(cctx *cli.Context) error {
 
 	if shardDBClient != nil {
 		// Create Experimental Followers feed
-		followersExpFeed, followersExpFeedAliases, err := followersexp.NewFollowersFeed(ctx, feedActorDID, graphdClient, redisClient, shardDBClient)
+		followersExpFeed, followersExpFeedAliases, err := followersexp.NewFollowersFeed(ctx, feedActorDID, graphdClient, redisClient, shardDBClient, store)
 		if err != nil {
 			log.Fatalf("Failed to create FollowersExpFeed: %v", err)
 		}

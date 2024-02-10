@@ -102,3 +102,7 @@ UPDATE actors
 SET last_validated = $1,
     handle_valid = $2
 WHERE did = ANY(sqlc.arg('dids')::text []);
+-- name: GetSpamFollowers :many
+SELECT actor_did
+FROM following_counts fc
+WHERE fc.num_following > 4000;

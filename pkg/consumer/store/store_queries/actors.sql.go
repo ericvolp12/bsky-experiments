@@ -276,6 +276,35 @@ func (q *Queries) GetActorsWithoutPropic(ctx context.Context, limit int32) ([]Ac
 	return items, nil
 }
 
+const getSpamFollowers = `-- name: GetSpamFollowers :many
+SELECT actor_did
+FROM following_counts fc
+WHERE fc.num_following > 4000
+`
+
+func (q *Queries) GetSpamFollowers(ctx context.Context) ([]string, error) {
+	rows, err := q.query(ctx, q.getSpamFollowersStmt, getSpamFollowers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var actor_did string
+		if err := rows.Scan(&actor_did); err != nil {
+			return nil, err
+		}
+		items = append(items, actor_did)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateActorPropic = `-- name: UpdateActorPropic :exec
 UPDATE actors
 SET pro_pic_cid = $2,

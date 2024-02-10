@@ -3,9 +3,11 @@ package followersexp
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	graphdclient "github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
 	"github.com/ericvolp12/bsky-experiments/pkg/sharddb"
 	"github.com/google/uuid"
@@ -19,23 +21,48 @@ type FollowersFeed struct {
 	GraphD       *graphdclient.Client
 	Redis        *redis.Client
 	ShardDB      *sharddb.ShardDB
+	Store        *store.Store
+
+	spamFollowers map[string]struct{}
+	sfLk          sync.RWMutex
 }
 
 type NotFoundError struct {
 	error
 }
 
-var supportedFeeds = []string{"my-followers-ex"}
+var supportedFeeds = []string{"my-followers"}
 
-var tracer = otel.Tracer("my-followers-ex")
+var tracer = otel.Tracer("my-followers")
 
-func NewFollowersFeed(ctx context.Context, feedActorDID string, gClient *graphdclient.Client, rClient *redis.Client, shardDB *sharddb.ShardDB) (*FollowersFeed, []string, error) {
-	return &FollowersFeed{
-		FeedActorDID: feedActorDID,
-		GraphD:       gClient,
-		Redis:        rClient,
-		ShardDB:      shardDB,
-	}, supportedFeeds, nil
+func NewFollowersFeed(ctx context.Context, feedActorDID string, gClient *graphdclient.Client, rClient *redis.Client, shardDB *sharddb.ShardDB, store *store.Store) (*FollowersFeed, []string, error) {
+	f := FollowersFeed{
+		FeedActorDID:  feedActorDID,
+		GraphD:        gClient,
+		Redis:         rClient,
+		ShardDB:       shardDB,
+		Store:         store,
+		spamFollowers: map[string]struct{}{},
+	}
+
+	// Refresh the spam followers
+	go func() {
+		t := time.NewTicker(5 * time.Minute)
+		defer t.Stop()
+
+		for {
+			select {
+			case <-t.C:
+				ctx := context.Background()
+				err := f.refreshSpamFollowers(ctx)
+				if err != nil {
+					fmt.Printf("error refreshing spam followers: %v\n", err)
+				}
+			}
+		}
+	}()
+
+	return &f, supportedFeeds, nil
 }
 
 var activePostersKey = "consumer:active_posters"
@@ -88,6 +115,37 @@ func (f *FollowersFeed) intersectActivePosters(
 	return intersectionMap, nil
 }
 
+func (f *FollowersFeed) refreshSpamFollowers(ctx context.Context) error {
+	ctx, span := tracer.Start(ctx, "RefreshSpamFollowers")
+	defer span.End()
+
+	// Get the spam followers from the store
+	spamFollowers, err := f.Store.Queries.GetSpamFollowers(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get spam followers: %w", err)
+	}
+
+	// Convert the spam followers to a map for easy lookup
+	spamFollowersMap := map[string]struct{}{}
+	for _, did := range spamFollowers {
+		spamFollowersMap[did] = struct{}{}
+	}
+
+	// Update the spam followers
+	f.sfLk.Lock()
+	f.spamFollowers = spamFollowersMap
+	f.sfLk.Unlock()
+
+	return nil
+}
+
+func (f *FollowersFeed) getSpamFollowers(ctx context.Context) map[string]struct{} {
+	f.sfLk.RLock()
+	defer f.sfLk.RUnlock()
+
+	return f.spamFollowers
+}
+
 func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
 	ctx, span := tracer.Start(ctx, "GetPage")
 	defer span.End()
@@ -119,6 +177,14 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 	nonMootMap, err := f.intersectActivePosters(ctx, nonMoots)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error intersecting active posters: %w", err)
+	}
+
+	// Get the spam followers
+	spamFollowers := f.getSpamFollowers(ctx)
+
+	// Remove the spam followers from the non-moots
+	for did := range spamFollowers {
+		delete(nonMootMap, did)
 	}
 
 	bucket, err := sharddb.GetBucketFromRKey(rkey)

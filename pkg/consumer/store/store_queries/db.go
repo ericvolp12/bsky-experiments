@@ -369,6 +369,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getSentimentForPostStmt, err = db.PrepareContext(ctx, getSentimentForPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSentimentForPost: %w", err)
 	}
+	if q.getSpamFollowersStmt, err = db.PrepareContext(ctx, getSpamFollowers); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSpamFollowers: %w", err)
+	}
 	if q.getSubjectStmt, err = db.PrepareContext(ctx, getSubject); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSubject: %w", err)
 	}
@@ -1030,6 +1033,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getSentimentForPostStmt: %w", cerr)
 		}
 	}
+	if q.getSpamFollowersStmt != nil {
+		if cerr := q.getSpamFollowersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getSpamFollowersStmt: %w", cerr)
+		}
+	}
 	if q.getSubjectStmt != nil {
 		if cerr := q.getSubjectStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getSubjectStmt: %w", cerr)
@@ -1319,6 +1327,7 @@ type Queries struct {
 	getRunningCleanupJobsStmt                 *sql.Stmt
 	getRunningCleanupJobsByRepoStmt           *sql.Stmt
 	getSentimentForPostStmt                   *sql.Stmt
+	getSpamFollowersStmt                      *sql.Stmt
 	getSubjectStmt                            *sql.Stmt
 	getSubjectByIdStmt                        *sql.Stmt
 	getTopPostsStmt                           *sql.Stmt
@@ -1467,6 +1476,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getRunningCleanupJobsStmt:                 q.getRunningCleanupJobsStmt,
 		getRunningCleanupJobsByRepoStmt:           q.getRunningCleanupJobsByRepoStmt,
 		getSentimentForPostStmt:                   q.getSentimentForPostStmt,
+		getSpamFollowersStmt:                      q.getSpamFollowersStmt,
 		getSubjectStmt:                            q.getSubjectStmt,
 		getSubjectByIdStmt:                        q.getSubjectByIdStmt,
 		getTopPostsStmt:                           q.getTopPostsStmt,
