@@ -14,6 +14,7 @@ INSERT INTO recent_posts (
         embed,
         langs,
         tags,
+        subject_id,
         created_at
     )
 VALUES (
@@ -31,7 +32,8 @@ VALUES (
         $12,
         $13,
         $14,
-        $15
+        $15,
+        $16
     );
 -- name: DeleteRecentPost :exec
 DELETE FROM recent_posts
@@ -137,3 +139,20 @@ LIMIT $2;
 DELETE FROM recent_posts
 WHERE created_at < NOW() - make_interval(hours := $1)
     OR created_at > NOW() + make_interval(mins := 15);
+-- name: GetPopularRecentPostsByLanguage :many
+select *
+from recent_posts p
+    JOIN follower_counts fc ON p.actor_did = fc.actor_did
+WHERE fc.num_followers > sqlc.arg('min_followers')
+    AND p.root_post_rkey IS NULL
+    AND p.parent_post_rkey IS NULL
+    AND sqlc.arg('lang')::TEXT = ANY (p.langs)
+    AND (p.created_at, p.actor_did, p.rkey) < (
+        sqlc.arg('cursor_created_at')::TIMESTAMPTZ,
+        sqlc.arg('cursor_actor_did')::TEXT,
+        sqlc.arg('cursor_rkey')::TEXT
+    )
+ORDER BY p.created_at DESC,
+    p.actor_did DESC,
+    p.rkey DESC
+LIMIT sqlc.arg('limit');

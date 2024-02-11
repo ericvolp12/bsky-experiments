@@ -300,6 +300,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPointAssignmentsForEventStmt, err = db.PrepareContext(ctx, getPointAssignmentsForEvent); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPointAssignmentsForEvent: %w", err)
 	}
+	if q.getPopularRecentPostsByLanguageStmt, err = db.PrepareContext(ctx, getPopularRecentPostsByLanguage); err != nil {
+		return nil, fmt.Errorf("error preparing query GetPopularRecentPostsByLanguage: %w", err)
+	}
 	if q.getPostStmt, err = db.PrepareContext(ctx, getPost); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPost: %w", err)
 	}
@@ -918,6 +921,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPointAssignmentsForEventStmt: %w", cerr)
 		}
 	}
+	if q.getPopularRecentPostsByLanguageStmt != nil {
+		if cerr := q.getPopularRecentPostsByLanguageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getPopularRecentPostsByLanguageStmt: %w", cerr)
+		}
+	}
 	if q.getPostStmt != nil {
 		if cerr := q.getPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostStmt: %w", cerr)
@@ -1304,6 +1312,7 @@ type Queries struct {
 	getPointAssignmentStmt                    *sql.Stmt
 	getPointAssignmentsForActorStmt           *sql.Stmt
 	getPointAssignmentsForEventStmt           *sql.Stmt
+	getPopularRecentPostsByLanguageStmt       *sql.Stmt
 	getPostStmt                               *sql.Stmt
 	getPostWithRepliesStmt                    *sql.Stmt
 	getPostWithSentimentStmt                  *sql.Stmt
@@ -1453,6 +1462,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getPointAssignmentStmt:                    q.getPointAssignmentStmt,
 		getPointAssignmentsForActorStmt:           q.getPointAssignmentsForActorStmt,
 		getPointAssignmentsForEventStmt:           q.getPointAssignmentsForEventStmt,
+		getPopularRecentPostsByLanguageStmt:       q.getPopularRecentPostsByLanguageStmt,
 		getPostStmt:                               q.getPostStmt,
 		getPostWithRepliesStmt:                    q.getPostWithRepliesStmt,
 		getPostWithSentimentStmt:                  q.getPostWithSentimentStmt,

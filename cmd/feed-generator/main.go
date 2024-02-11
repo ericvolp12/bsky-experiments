@@ -225,7 +225,7 @@ func FeedGenerator(cctx *cli.Context) error {
 	}
 
 	// Create a cluster feed
-	clustersFeed, clusterFeedAliases, err := cluster.NewClusterFeed(ctx, feedActorDID, postRegistry)
+	clustersFeed, clusterFeedAliases, err := cluster.NewClusterFeed(ctx, feedActorDID, postRegistry, store)
 	if err != nil {
 		log.Fatalf("Failed to create ClusterFeed: %v", err)
 	}

@@ -957,6 +957,18 @@ func (c *Consumer) HandleCreateRecord(
 			createParams.Tags = rec.Tags
 		}
 
+		// Create the post subject
+		subj, err := c.Store.Queries.CreateSubject(ctx, store_queries.CreateSubjectParams{
+			ActorDid: repo,
+			Rkey:     rkey,
+			Col:      1, // Maps to app.bsky.feed.post
+		})
+		if err != nil {
+			log.Errorf("failed to create subject: %+v", err)
+		}
+
+		createParams.SubjectID = sql.NullInt64{Int64: subj.ID, Valid: true}
+
 		err = c.Store.Queries.CreatePost(ctx, createParams)
 		if err != nil {
 			log.Errorf("failed to create post: %+v", err)
@@ -978,6 +990,7 @@ func (c *Consumer) HandleCreateRecord(
 			Langs:              createParams.Langs,
 			Tags:               createParams.Tags,
 			CreatedAt:          createParams.CreatedAt,
+			SubjectID:          sql.NullInt64{Int64: subj.ID, Valid: true},
 		})
 		if err != nil {
 			log.Errorf("failed to create recent post: %+v", err)
@@ -1020,16 +1033,6 @@ func (c *Consumer) HandleCreateRecord(
 					log.Errorf("failed to create image: %+v", err)
 				}
 			}
-		}
-
-		// Create the post subject
-		subj, err := c.Store.Queries.CreateSubject(ctx, store_queries.CreateSubjectParams{
-			ActorDid: repo,
-			Rkey:     rkey,
-			Col:      1, // Maps to app.bsky.feed.post
-		})
-		if err != nil {
-			log.Errorf("failed to create subject: %+v", err)
 		}
 
 		// Initialize the like count

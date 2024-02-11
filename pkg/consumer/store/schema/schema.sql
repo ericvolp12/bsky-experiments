@@ -33,6 +33,7 @@ CREATE TABLE posts (
     embed JSONB,
     langs TEXT [],
     tags TEXT [],
+    subject_id BIGINT,
     has_embedded_media BOOLEAN DEFAULT FALSE NOT NULL,
     created_at TIMESTAMPTZ,
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -40,6 +41,7 @@ CREATE TABLE posts (
 );
 CREATE INDEX posts_inserted_at ON posts (inserted_at DESC);
 CREATE INDEX posts_created_at_index ON posts (created_at DESC);
+CREATE INDEX posts_subject_id ON posts (subject_id);
 CREATE INDEX posts_roots_or_quotes_only_created_at ON posts (created_at DESC)
 WHERE root_post_rkey IS NULL
     AND parent_post_rkey IS NULL;
@@ -61,6 +63,7 @@ CREATE TABLE recent_posts (
     embed JSONB,
     langs TEXT [],
     tags TEXT [],
+    subject_id BIGINT,
     has_embedded_media BOOLEAN DEFAULT FALSE NOT NULL,
     created_at TIMESTAMPTZ,
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -69,6 +72,7 @@ CREATE TABLE recent_posts (
 CREATE INDEX recent_posts_inserted_at ON recent_posts (inserted_at DESC);
 CREATE INDEX recent_posts_created_at_index ON recent_posts (created_at DESC);
 CREATE INDEX recent_posts_did_rkey_created_at ON recent_posts (actor_did DESC, rkey DESC, created_at DESC);
+CREATE INDEX recent_posts_by_subject ON recent_posts (subject_id);
 CREATE INDEX recent_posts_roots_or_quotes_only_created_at ON recent_posts (created_at DESC)
 WHERE root_post_rkey IS NULL
     AND parent_post_rkey IS NULL;

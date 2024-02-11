@@ -14,6 +14,7 @@ INSERT INTO posts (
         embed,
         langs,
         tags,
+        subject_id,
         created_at,
         inserted_at
     )
@@ -33,7 +34,8 @@ VALUES (
         $13,
         $14,
         $15,
-        $16
+        $16,
+        $17
     );
 -- name: DeletePost :exec
 DELETE FROM posts

@@ -158,6 +158,7 @@ type Post struct {
 	Embed              pqtype.NullRawMessage `json:"embed"`
 	Langs              []string              `json:"langs"`
 	Tags               []string              `json:"tags"`
+	SubjectID          sql.NullInt64         `json:"subject_id"`
 	HasEmbeddedMedia   bool                  `json:"has_embedded_media"`
 	CreatedAt          sql.NullTime          `json:"created_at"`
 	InsertedAt         time.Time             `json:"inserted_at"`
@@ -188,6 +189,7 @@ type RecentPost struct {
 	Embed              pqtype.NullRawMessage `json:"embed"`
 	Langs              []string              `json:"langs"`
 	Tags               []string              `json:"tags"`
+	SubjectID          sql.NullInt64         `json:"subject_id"`
 	HasEmbeddedMedia   bool                  `json:"has_embedded_media"`
 	CreatedAt          sql.NullTime          `json:"created_at"`
 	InsertedAt         time.Time             `json:"inserted_at"`

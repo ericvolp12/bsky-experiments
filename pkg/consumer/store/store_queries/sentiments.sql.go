@@ -47,7 +47,7 @@ func (q *Queries) DeleteSentimentJob(ctx context.Context, arg DeleteSentimentJob
 }
 
 const getPostWithSentiment = `-- name: GetPostWithSentiment :one
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.langs, p.tags, p.has_embedded_media, p.created_at, p.inserted_at,
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.langs, p.tags, p.subject_id, p.has_embedded_media, p.created_at, p.inserted_at,
     s.sentiment,
     s.confidence,
     s.processed_at
@@ -78,6 +78,7 @@ type GetPostWithSentimentRow struct {
 	Embed              pqtype.NullRawMessage `json:"embed"`
 	Langs              []string              `json:"langs"`
 	Tags               []string              `json:"tags"`
+	SubjectID          sql.NullInt64         `json:"subject_id"`
 	HasEmbeddedMedia   bool                  `json:"has_embedded_media"`
 	CreatedAt          sql.NullTime          `json:"created_at"`
 	InsertedAt         time.Time             `json:"inserted_at"`
@@ -103,6 +104,7 @@ func (q *Queries) GetPostWithSentiment(ctx context.Context, arg GetPostWithSenti
 		&i.Embed,
 		pq.Array(&i.Langs),
 		pq.Array(&i.Tags),
+		&i.SubjectID,
 		&i.HasEmbeddedMedia,
 		&i.CreatedAt,
 		&i.InsertedAt,
@@ -150,7 +152,7 @@ WITH unprocessed_posts AS (
     ORDER BY s.created_at
     LIMIT $1
 )
-SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.langs, p.tags, p.has_embedded_media, p.created_at, p.inserted_at
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.langs, p.tags, p.subject_id, p.has_embedded_media, p.created_at, p.inserted_at
 FROM posts p
     JOIN unprocessed_posts s ON p.actor_did = s.actor_did
     AND p.rkey = s.rkey
@@ -180,6 +182,7 @@ func (q *Queries) GetUnprocessedSentimentJobs(ctx context.Context, limit int32) 
 			&i.Embed,
 			pq.Array(&i.Langs),
 			pq.Array(&i.Tags),
+			&i.SubjectID,
 			&i.HasEmbeddedMedia,
 			&i.CreatedAt,
 			&i.InsertedAt,
