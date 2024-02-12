@@ -153,16 +153,6 @@ empty-fanout:
 	@echo "Emptying Fanout keys in Redis..."
 	redis-cli --scan --pattern "cg:*" | xargs -L 1000 redis-cli DEL
 
-.PHONY: build-pubsky
-build-pubsky:
-	@echo "Building Pubsky Go binary..."
-	$(GO_CMD_W_CGO) build -o pubsky cmd/pubsky/*.go
-
-.PHONY: pubsky-up
-pubsky-up:
-	@echo "Starting Pubsky..."
-	docker compose -f build/pubsky/docker-compose.yml up --build -d
-
 .PHONY: build-graphd
 build-graphd:
 	@echo "Building GraphD Go binary..."
@@ -182,43 +172,3 @@ graphd-down: # Stops graphd docker container
 run-dev-graphd: .env ## Runs graphd for local dev
 	@echo "Running Graphd..."
 	go run ./cmd/graphd
-
-.PHONY: build-feeddb
-build-feeddb:
-	@echo "Building FeedDB Go binary..."
-	$(GO_CMD_W_CGO) build -o feeddb cmd/feeddb/*.go
-	
-.PHONY: feeddb-up
-feeddb-up: # Runs feeddb docker container
-	@echo "Starting FeedDB..."
-	docker compose -f build/feeddb/docker-compose.yml up --build -d
-
-.PHONY: feeddb-down
-feeddb-down: # Stops feeddb docker container
-	@echo "Stopping FeedDB..."
-	docker compose -f build/feeddb/docker-compose.yml down
-
-.PHONY: run-dev-feeddb
-run-dev-feeddb: .feeddb.env ## Runs feeddb for local dev
-	@echo "Running Feeddb..."
-	go run ./cmd/feeddb
-
-.PHONY: build-graphfd
-build-graphfd:
-	@echo "Building Graphfd Go binary..."
-	$(GO_CMD_W_CGO) build -o graphfd cmd/graphfd/*.go
-	
-.PHONY: graphfd-up
-graphfd-up: # Runs graphfd docker container
-	@echo "Starting Graphfd..."
-	docker compose -f build/graphfd/docker-compose.yml up --build -d
-
-.PHONY: graphfd-down
-graphfd-down: # Stops graphfd docker container
-	@echo "Stopping Graphfd..."
-	docker compose -f build/graphfd/docker-compose.yml down
-
-.PHONY: run-dev-graphfd
-run-dev-graphfd: .env ## Runs graphfd for local dev
-	@echo "Running Graphfd..."
-	go run ./cmd/graphfd
