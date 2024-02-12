@@ -318,13 +318,12 @@ func FeedGenerator(cctx *cli.Context) error {
 					zap.String("ip", c.ClientIP()),
 					zap.String("user-agent", c.Request.UserAgent()),
 					zap.String("time", end.Format(time.RFC3339)),
-					zap.String("rootPostID", c.GetString("rootPostID")),
-					zap.String("rootPostAuthorDID", c.GetString("rootPostAuthorDID")),
 					zap.String("feedQuery", c.GetString("feedQuery")),
 					zap.String("feedName", c.GetString("feedName")),
 					zap.Int64("limit", c.GetInt64("limit")),
 					zap.String("cursor", c.GetString("cursor")),
 					zap.Duration("latency", latency),
+					zap.String("user_did", c.GetString("user_did")),
 				)
 			}
 		}

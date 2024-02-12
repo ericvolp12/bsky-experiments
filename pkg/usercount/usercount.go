@@ -191,6 +191,8 @@ func (uc *UserCount) GetUserCount(ctx context.Context) (int, error) {
 		totalUserCount += count
 	}
 
+	totalUserCount -= 250_000 // Subtract ~250k bots
+
 	select {
 	case err := <-errorCh:
 		if err != nil {

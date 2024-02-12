@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -58,15 +59,18 @@ func NewHotFeed(ctx context.Context, feedActorDID string, store *store.Store, re
 
 	go func() {
 		t := time.NewTicker(hotCacheTTL)
+		logger := slog.With("source", "whats-hot-refresh")
 		defer t.Stop()
 		for {
 			select {
 			case <-t.C:
 				ctx := context.Background()
+				logger.Info("refreshing cache")
 				_, err := f.fetchAndCachePosts(ctx)
 				if err != nil {
-					fmt.Printf("error fetching and caching posts for feed (whats-hot): %v\n", err)
+					logger.Error("error refreshing cache", "error", err)
 				}
+				logger.Info("cache refreshed")
 			}
 		}
 	}()
@@ -87,6 +91,8 @@ func (f *HotFeed) fetchAndCachePosts(ctx context.Context) ([]postRef, error) {
 	}
 
 	p := f.Redis.Pipeline()
+
+	p.Del(ctx, hotCacheKey)
 
 	postRefs := []postRef{}
 	for _, post := range rawPosts {

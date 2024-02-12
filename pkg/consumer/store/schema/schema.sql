@@ -72,6 +72,7 @@ CREATE TABLE recent_posts (
 CREATE INDEX recent_posts_inserted_at ON recent_posts (inserted_at DESC);
 CREATE INDEX recent_posts_created_at_index ON recent_posts (created_at DESC);
 CREATE INDEX recent_posts_did_rkey_created_at ON recent_posts (actor_did DESC, rkey DESC, created_at DESC);
+CREATE INDEX recent_posts_did_created_at_rkey ON recent_posts (actor_did, created_at DESC, rkey DESC);
 CREATE INDEX recent_posts_by_subject ON recent_posts (subject_id);
 CREATE INDEX recent_posts_roots_or_quotes_only_created_at ON recent_posts (created_at DESC)
 WHERE root_post_rkey IS NULL
@@ -168,6 +169,8 @@ CREATE TABLE follower_counts (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (actor_did)
 );
+CREATE INDEX follower_counts_gt_500 ON follower_counts (actor_did)
+WHERE num_followers > 500;
 CREATE TABLE following_counts (
     actor_did TEXT NOT NULL,
     num_following BIGINT NOT NULL,
