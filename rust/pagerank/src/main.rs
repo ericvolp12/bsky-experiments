@@ -108,7 +108,7 @@ async fn main() -> Result<(), Error> {
 
     for &uid in &ranks {
         if let Some(did) = uid_to_did[uid].as_ref() {
-            let rank = format!("{:.5}", pageranks[uid]);
+            let rank = format!("{:.10}", pageranks[uid]);
             wtr.write_record(&[did, &rank])
                 .expect("Unable to write record");
         }
