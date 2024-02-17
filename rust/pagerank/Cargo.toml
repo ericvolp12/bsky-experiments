@@ -1,0 +1,9 @@
+[package]
+name = "pagerank"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hashbrown = "0.14.3"
+tokio = { version = "1", features = ["full"] }
+tokio-postgres = "0.7.10"
