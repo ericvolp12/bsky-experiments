@@ -32,7 +32,7 @@ RUN apt-get update && apt-get install -y procps && rm -rf /var/lib/apt/lists/*
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # Copy the binary from the first stage.
-COPY --from=builder /app/graphd .
+COPY --from=builder /app/output/graphd .
 
 # Set the startup command to run the binary
 CMD ["./graphd"]

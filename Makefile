@@ -4,11 +4,16 @@
 GO_CMD_W_CGO = CGO_ENABLED=1 GOOS=linux go
 GO_CMD = CGO_ENABLED=0 GOOS=linux go
 
+# Shared preparation steps
+.PHONY: prepare
+prepare:
+	mkdir -p output
+
 # Build the Graph Builder Go binary
 .PHONY: build-graph-builder
-build-graph-builder:
+build-graph-builder: prepare
 	@echo "Building Graph Builder Go binary..."
-	$(GO_CMD_W_CGO) build -o graph-builder cmd/graph-builder/*.go
+	$(GO_CMD_W_CGO) build -o output/graph-builder cmd/graph-builder/*.go
 
 # Start up the Graph Builder
 .PHONY: graph-builder-up
@@ -18,9 +23,9 @@ graph-builder-up:
 
 # Build the Search API Go binary
 .PHONY: build-search
-build-search:
+build-search: prepare
 	@echo "Building Search Go binary..."
-	$(GO_CMD) build -o search cmd/search/*.go
+	$(GO_CMD) build -o output/search cmd/search/*.go
 
 .PHONY: search-up
 search-up:
@@ -70,9 +75,9 @@ object-detection-gpu-up:
 
 # Build the Indexer Go binary
 .PHONY: build-indexer
-build-indexer:
+build-indexer: prepare
 	@echo "Building Indexer Go binary..."
-	$(GO_CMD_W_CGO) build -o indexer cmd/indexer/*.go
+	$(GO_CMD_W_CGO) build -o output/indexer cmd/indexer/*.go
 
 .PHONY: indexer-up
 indexer-up:
@@ -81,9 +86,9 @@ indexer-up:
 
 # Build the Feedgen Go binary
 .PHONY: build-feedgen-go
-build-feedgen-go:
+build-feedgen-go: prepare
 	@echo "Building Feed Generator Go binary..."
-	$(GO_CMD_W_CGO) build -o feedgen cmd/feed-generator/*.go
+	$(GO_CMD_W_CGO) build -o output/feedgen cmd/feed-generator/*.go
 
 .PHONY: feedgen-go-up
 feedgen-go-up:
@@ -92,9 +97,9 @@ feedgen-go-up:
 
 # Build the PLC Go binary
 .PHONY: build-plc
-build-plc:
+build-plc: prepare
 	@echo "Building PLC binary..."
-	$(GO_CMD_W_CGO) build -o plc cmd/plc/*.go
+	$(GO_CMD_W_CGO) build -o output/plc cmd/plc/*.go
 
 .PHONY: plc-up
 plc-up:
@@ -115,9 +120,9 @@ redis-down:
 
 # Build the Consumer
 .PHONY: build-consumer
-build-consumer:
+build-consumer: prepare
 	@echo "Building Consumer Go binary..."
-	$(GO_CMD_W_CGO) build -o consumer cmd/consumer/*.go
+	$(GO_CMD_W_CGO) build -o output/consumer cmd/consumer/*.go
 
 .PHONY: consumer-up
 consumer-up:
@@ -126,9 +131,9 @@ consumer-up:
 
 # Build Jazbot
 .PHONY: build-jazbot
-build-jazbot:
+build-jazbot: prepare
 	@echo "Building Jazbot Go binary..."
-	$(GO_CMD_W_CGO) build -o jazbot cmd/jazbot/*.go
+	$(GO_CMD_W_CGO) build -o output/jazbot cmd/jazbot/*.go
 
 .PHONY: jazbot-up
 jazbot-up:
@@ -154,9 +159,9 @@ empty-fanout:
 	redis-cli --scan --pattern "cg:*" | xargs -L 1000 redis-cli DEL
 
 .PHONY: build-graphd
-build-graphd:
+build-graphd: prepare
 	@echo "Building GraphD Go binary..."
-	$(GO_CMD_W_CGO) build -o graphd cmd/graphd/*.go
+	$(GO_CMD_W_CGO) build -o output/graphd cmd/graphd/*.go
 	
 .PHONY: graphd-up
 graphd-up: # Runs graphd docker container
