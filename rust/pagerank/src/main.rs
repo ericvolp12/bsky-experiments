@@ -29,21 +29,28 @@ async fn main() -> Result<(), Error> {
 
     // Fetch and map DIDs to UIDs
     let mut did_to_uid = HashMap::new();
-    let mut uid_to_did = HashMap::new();
+    let mut uid_to_did: Vec<Option<String>> = Vec::new(); // Change to use Vec
     let mut next_uid: i64 = 1;
+
+    // Preallocate 5M elements for the vector
+    uid_to_did.reserve(5_000_000);
+
     let rows = client.query("SELECT did FROM actors", &[]).await?;
     for row in rows {
         let did: String = row.get(0);
         did_to_uid.insert(did.clone(), next_uid);
-        uid_to_did.insert(next_uid, did);
+        if uid_to_did.len() <= next_uid as usize {
+            uid_to_did.resize((next_uid + 1) as usize, None); // Ensure vector is large enough
+        }
+        uid_to_did[next_uid as usize] = Some(did); // Directly assign DID to the vector
         next_uid += 1;
     }
 
     info!("loaded {} actors", next_uid - 1);
 
     // Pre-load target UIDs for each UID into memory
+    let mut uid_to_targets: Vec<HashSet<i64>> = vec![HashSet::new(); next_uid as usize];
     let mut num_rows = 0;
-    let mut uid_to_targets = HashMap::new();
     let follow_rows = client
         .query("SELECT actor_did, target_did FROM follows", &[])
         .await?;
@@ -56,10 +63,7 @@ async fn main() -> Result<(), Error> {
         let target_did: String = row.get(1);
         if let Some(&actor_uid) = did_to_uid.get(&actor_did) {
             if let Some(&target_uid) = did_to_uid.get(&target_did) {
-                uid_to_targets
-                    .entry(actor_uid)
-                    .or_insert_with(HashSet::new)
-                    .insert(target_uid);
+                uid_to_targets[actor_uid as usize].insert(target_uid);
             }
         }
     }
@@ -67,64 +71,54 @@ async fn main() -> Result<(), Error> {
     info!("loaded {} follow rows", num_rows);
 
     // Initialize PageRank values
-    let mut pageranks = HashMap::new();
-    for &uid in did_to_uid.values() {
-        pageranks.insert(uid, 1.0);
-    }
+    let mut pageranks = vec![1.0; next_uid as usize];
 
     info!("running pagerank");
 
-    // Compute PageRank
+    // Compute PageRank with adjustments for vector use
     const MAX_ITERATIONS: usize = 100;
     const DAMPING_FACTOR: f64 = 0.85;
     for _iteration in 0..MAX_ITERATIONS {
-        let mut new_pageranks = HashMap::new();
+        let mut new_pageranks = vec![0.0; next_uid as usize];
 
-        for (&uid, &rank) in &pageranks {
-            if let Some(targets) = uid_to_targets.get(&uid) {
+        for (uid, &rank) in pageranks.iter().enumerate() {
+            if let Some(targets) = uid_to_targets.get(uid) {
                 let share = rank / targets.len() as f64;
                 for &target_uid in targets {
-                    *new_pageranks.entry(target_uid).or_insert(0.0) += share;
+                    new_pageranks[target_uid as usize] += share;
                 }
             }
         }
 
-        let mut updated_ranks = pageranks.clone();
-
-        for uid in pageranks.keys() {
-            let rank = *new_pageranks.get(uid).unwrap_or(&0.0);
-            updated_ranks.insert(
-                *uid,
-                (1.0 - DAMPING_FACTOR) / did_to_uid.len() as f64 + DAMPING_FACTOR * rank,
-            );
+        for uid in 0..next_uid as usize {
+            let rank = new_pageranks[uid];
+            pageranks[uid] = (1.0 - DAMPING_FACTOR) / next_uid as f64 + DAMPING_FACTOR * rank;
         }
 
-        info!("Iteration {}/{}", _iteration, MAX_ITERATIONS);
-
-        pageranks = updated_ranks;
+        info!("Iteration {}/{}", _iteration + 1, MAX_ITERATIONS);
     }
 
-    // Create a new CSV writer that writes to `pageranks.csv`
+    // Sort pageranks by rank
+    let mut ranks: Vec<_> = (0..next_uid as usize).collect();
+    ranks.sort_by(|&a, &b| pageranks[b].partial_cmp(&pageranks[a]).unwrap());
+
+    // CSV writing part needs minor adjustments for using uid_to_did vector
     let file = File::create("pageranks.csv").expect("Unable to create file");
     let mut wtr = csv::Writer::from_writer(file);
 
     info!("writing pageranks.csv");
 
-    // Write the header row
-    wtr.write_record(&["DID", "PageRank"])
-        .expect("Unable to write header");
-
-    // Write PageRank results to the CSV
-    for (uid, rank) in &pageranks {
-        let did = uid_to_did.get(uid).expect("DID not found");
-        wtr.write_record(&[did, &format!("{:.4}", rank)])
-            .expect("Unable to write row");
+    for &uid in &ranks {
+        if let Some(did) = uid_to_did[uid].as_ref() {
+            let rank = format!("{:.5}", pageranks[uid]);
+            wtr.write_record(&[did, &rank])
+                .expect("Unable to write record");
+        }
     }
 
-    // Ensure all writes are flushed properly
-    wtr.flush().expect("Failed to flush writer");
+    wtr.flush().unwrap();
 
-    info!("pageranks.csv written");
+    info!("done");
 
     Ok(())
 }
