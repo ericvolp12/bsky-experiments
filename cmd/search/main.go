@@ -225,6 +225,7 @@ func main() {
 
 	router.GET("/actors/type_ahead", api.SearchActorTypeAhead)
 	router.GET("/repo/:did", api.GetRepoAsJSON)
+	router.GET("/list", api.GetListMembers)
 
 	router.GET("/repo/cleanup", api.GetCleanupStatus)
 	router.POST("/repo/cleanup", api.CleanupOldRecords)

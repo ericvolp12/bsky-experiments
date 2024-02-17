@@ -143,7 +143,7 @@ func (f *HotFeed) GetPage(ctx context.Context, feed string, userDID string, limi
 		textOnly = true
 	}
 
-	cached, err := f.Redis.LRange(ctx, hotCacheKey, offset, offset+(limit*3)).Result()
+	cached, err := f.Redis.LRange(ctx, hotCacheKey, offset, offset+(limit*10)).Result()
 	if err != nil {
 		return nil, nil, fmt.Errorf("error getting posts from cache for feed (%s): %w", feed, err)
 	}

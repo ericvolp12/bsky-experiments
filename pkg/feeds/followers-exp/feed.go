@@ -196,6 +196,7 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 
 	filteredPostURIs := []string{}
 	newRkey := ""
+	hasMore := false
 
 	// Use the store to get the posts
 	if len(nonMootMap) < 1000 {
@@ -221,6 +222,7 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 			createdAt = lastPost.CreatedAt.Time
 			authorDID = lastPost.ActorDid
 			newRkey = lastPost.Rkey
+			hasMore = true
 		}
 	} else {
 		// Otherwise use the sharddb to get the posts (high recent hit-rate)
@@ -231,6 +233,7 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 
 		maxPages := 50
 		pageSize := 5000
+		hasMore = true
 
 		metaPageCursor := createdAt
 		for i := 0; i < maxPages; i++ {
@@ -264,6 +267,7 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 				bucket = bucket - 1
 				metaPageCursor = time.Now()
 				if bucket < 0 {
+					hasMore = false
 					break
 				}
 			}
@@ -281,9 +285,13 @@ func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string
 		posts = append(posts, &appbsky.FeedDefs_SkeletonFeedPost{Post: uri})
 	}
 
-	newCursor := AssembleCursor(createdAt, authorDID, newRkey)
+	var next *string
+	if hasMore {
+		newCursor := AssembleCursor(createdAt, authorDID, newRkey)
+		next = &newCursor
+	}
 
-	return posts, &newCursor, nil
+	return posts, next, nil
 }
 
 func (f *FollowersFeed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {

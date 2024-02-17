@@ -20,8 +20,6 @@ CREATE table images (
     post_uri text,
     alt_text text,
     mime_type text,
-    fullsize_url text,
-    thumbnail_url text,
     inserted_at timestamp,
     PRIMARY KEY ((post_uri, cid))
 ) WITH default_time_to_live = 0
