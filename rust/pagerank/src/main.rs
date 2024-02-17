@@ -6,12 +6,14 @@ use tokio_postgres::{Error, NoTls};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    // Get connection string from environment
     let connection_string = std::env::var("DATABASE_URL").unwrap();
 
-    if connection_string.is_empty() {
+    if &connection_string == "" {
         panic!("DATABASE_URL environment variable not set");
     }
 
+    // Connect to the PostgreSQL database
     let (client, connection) = tokio_postgres::connect(&connection_string, NoTls).await?;
 
     tokio::spawn(async move {
@@ -27,27 +29,27 @@ async fn main() -> Result<(), Error> {
 
     // Fetch and map DIDs to UIDs
     let mut did_to_uid = HashMap::new();
-    let mut uid_to_did: Vec<Option<String>> = Vec::new();
-    let mut next_uid: i64 = 1;
+    let mut uid_to_did: Vec<Option<String>> = Vec::new(); // Change to use Vec
+    let mut next_uid: usize = 1;
 
-    // Preallocate 5M elements for the vector so we don't have to resize it too often
+    // Preallocate 5M elements for the vector
     uid_to_did.reserve(5_000_000);
 
     let rows = client.query("SELECT did FROM actors", &[]).await?;
     for row in rows {
         let did: String = row.get(0);
         did_to_uid.insert(did.clone(), next_uid);
-        if uid_to_did.len() <= next_uid as usize {
-            uid_to_did.resize((next_uid + 1) as usize, None);
+        if uid_to_did.len() <= next_uid {
+            uid_to_did.resize((next_uid + 1) as usize, None); // Ensure vector is large enough
         }
-        uid_to_did[next_uid as usize] = Some(did);
+        uid_to_did[next_uid] = Some(did); // Directly assign DID to the vector
         next_uid += 1;
     }
 
     info!("loaded {} actors", next_uid - 1);
 
     // Pre-load target UIDs for each UID into memory
-    let mut uid_to_targets: Vec<HashSet<i64>> = vec![HashSet::new(); next_uid as usize];
+    let mut uid_to_targets: Vec<HashSet<usize>> = vec![HashSet::new(); next_uid];
     let mut num_rows = 0;
     let follow_rows = client
         .query("SELECT actor_did, target_did FROM follows", &[])
@@ -61,7 +63,7 @@ async fn main() -> Result<(), Error> {
         let target_did: String = row.get(1);
         if let Some(&actor_uid) = did_to_uid.get(&actor_did) {
             if let Some(&target_uid) = did_to_uid.get(&target_did) {
-                uid_to_targets[actor_uid as usize].insert(target_uid);
+                uid_to_targets[actor_uid].insert(target_uid);
             }
         }
     }
@@ -69,38 +71,40 @@ async fn main() -> Result<(), Error> {
     info!("loaded {} follow rows", num_rows);
 
     // Initialize PageRank values
-    let mut pageranks = vec![1.0; next_uid as usize];
+    let mut pageranks = vec![1.0; next_uid];
 
     info!("running pagerank");
 
-    // Compute PageRank
+    let next_uid_f64 = next_uid as f64;
+
+    // Compute PageRank with adjustments for vector use
     const MAX_ITERATIONS: usize = 100;
     const DAMPING_FACTOR: f64 = 0.85;
     for _iteration in 0..MAX_ITERATIONS {
-        let mut new_pageranks = vec![0.0; next_uid as usize];
+        let mut new_pageranks = vec![0.0; next_uid];
 
         for (uid, &rank) in pageranks.iter().enumerate() {
             if let Some(targets) = uid_to_targets.get(uid) {
                 let share = rank / targets.len() as f64;
                 for &target_uid in targets {
-                    new_pageranks[target_uid as usize] += share;
+                    new_pageranks[target_uid] += share;
                 }
             }
         }
 
-        for uid in 0..next_uid as usize {
+        for uid in 0..next_uid {
             let rank = new_pageranks[uid];
-            pageranks[uid] = (1.0 - DAMPING_FACTOR) / next_uid as f64 + DAMPING_FACTOR * rank;
+            pageranks[uid] = (1.0 - DAMPING_FACTOR) / next_uid_f64 + DAMPING_FACTOR * rank;
         }
 
         info!("Iteration {}/{}", _iteration + 1, MAX_ITERATIONS);
     }
 
     // Sort pageranks by rank
-    let mut ranks: Vec<_> = (0..next_uid as usize).collect();
+    let mut ranks: Vec<_> = (0..next_uid).collect();
     ranks.sort_by(|&a, &b| pageranks[b].partial_cmp(&pageranks[a]).unwrap());
 
-    // Write pageranks to CSV
+    // CSV writing part needs minor adjustments for using uid_to_did vector
     let file = File::create("pageranks.csv").expect("Unable to create file");
     let mut wtr = csv::Writer::from_writer(file);
 
