@@ -8,7 +8,7 @@ use tokio_postgres::{Error, NoTls};
 async fn main() -> Result<(), Error> {
     let connection_string = std::env::var("DATABASE_URL").unwrap();
 
-    if &connection_string == "" {
+    if connection_string.is_empty() {
         panic!("DATABASE_URL environment variable not set");
     }
 
