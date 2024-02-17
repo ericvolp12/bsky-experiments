@@ -1,19 +1,31 @@
-use tokio_postgres::{NoTls, Error};
 use hashbrown::HashMap;
+use log::info;
 use std::collections::HashSet;
-
+use std::fs::File;
+use tokio_postgres::{Error, NoTls};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    // Get connection string from environment
+    let connection_string = std::env::var("DATABASE_URL").unwrap();
+
+    if &connection_string == "" {
+        panic!("DATABASE_URL environment variable not set");
+    }
+
     // Connect to the PostgreSQL database
-    let (client, connection) =
-        tokio_postgres::connect("secret", NoTls).await?;
+    let (client, connection) = tokio_postgres::connect(&connection_string, NoTls).await?;
 
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);
         }
     });
+
+    // Enable info logging
+    env_logger::init();
+
+    info!("loading actors");
 
     // Fetch and map DIDs to UIDs
     let mut did_to_uid = HashMap::new();
@@ -27,53 +39,92 @@ async fn main() -> Result<(), Error> {
         next_uid += 1;
     }
 
+    info!("loaded {} actors", next_uid - 1);
+
+    // Pre-load target UIDs for each UID into memory
+    let mut num_rows = 0;
+    let mut uid_to_targets = HashMap::new();
+    let follow_rows = client
+        .query("SELECT actor_did, target_did FROM follows", &[])
+        .await?;
+    for row in follow_rows {
+        num_rows += 1;
+        if num_rows % 1_000_000 == 0 {
+            info!("Loaded {} follow rows", num_rows);
+        }
+        let actor_did: String = row.get(0);
+        let target_did: String = row.get(1);
+        if let Some(&actor_uid) = did_to_uid.get(&actor_did) {
+            if let Some(&target_uid) = did_to_uid.get(&target_did) {
+                uid_to_targets
+                    .entry(actor_uid)
+                    .or_insert_with(HashSet::new)
+                    .insert(target_uid);
+            }
+        }
+    }
+
+    info!("loaded {} follow rows", num_rows);
+
     // Initialize PageRank values
     let mut pageranks = HashMap::new();
     for &uid in did_to_uid.values() {
         pageranks.insert(uid, 1.0);
     }
 
+    info!("running pagerank");
+
     // Compute PageRank
     const MAX_ITERATIONS: usize = 100;
     const DAMPING_FACTOR: f64 = 0.85;
-    for _ in 0..MAX_ITERATIONS {
+    for _iteration in 0..MAX_ITERATIONS {
         let mut new_pageranks = HashMap::new();
 
         for (&uid, &rank) in &pageranks {
-            let target_uids = fetch_targets(&client, uid, &did_to_uid).await?;
-            let share = rank / target_uids.len() as f64;
-
-            for target_uid in target_uids {
-                *new_pageranks.entry(target_uid).or_insert(0.0) += share;
+            if let Some(targets) = uid_to_targets.get(&uid) {
+                let share = rank / targets.len() as f64;
+                for &target_uid in targets {
+                    *new_pageranks.entry(target_uid).or_insert(0.0) += share;
+                }
             }
         }
 
+        let mut updated_ranks = pageranks.clone();
+
         for uid in pageranks.keys() {
-            let rank = new_pageranks.entry(*uid).or_insert(0.0);
-            *rank = (1.0 - DAMPING_FACTOR) + DAMPING_FACTOR * (*rank);
+            let rank = *new_pageranks.get(uid).unwrap_or(&0.0);
+            updated_ranks.insert(
+                *uid,
+                (1.0 - DAMPING_FACTOR) / did_to_uid.len() as f64 + DAMPING_FACTOR * rank,
+            );
         }
 
-        pageranks = new_pageranks;
+        info!("Iteration {}/{}", _iteration, MAX_ITERATIONS);
+
+        pageranks = updated_ranks;
     }
 
-    // Print PageRank results
-    for (uid, rank) in pageranks {
-        println!("DID: {}, PageRank: {}", uid_to_did[&uid], rank);
+    // Create a new CSV writer that writes to `pageranks.csv`
+    let file = File::create("pageranks.csv").expect("Unable to create file");
+    let mut wtr = csv::Writer::from_writer(file);
+
+    info!("writing pageranks.csv");
+
+    // Write the header row
+    wtr.write_record(&["DID", "PageRank"])
+        .expect("Unable to write header");
+
+    // Write PageRank results to the CSV
+    for (uid, rank) in &pageranks {
+        let did = uid_to_did.get(uid).expect("DID not found");
+        wtr.write_record(&[did, &format!("{:.4}", rank)])
+            .expect("Unable to write row");
     }
+
+    // Ensure all writes are flushed properly
+    wtr.flush().expect("Failed to flush writer");
+
+    info!("pageranks.csv written");
 
     Ok(())
-}
-
-// Fetches target UIDs for a given UID
-async fn fetch_targets(client: &tokio_postgres::Client, uid: i64, did_to_uid: &HashMap<String, i64>) -> Result<HashSet<i64>, Error> {
-    let did = did_to_uid.iter().find_map(|(k, &v)| if v == uid { Some(k) } else { None }).unwrap();
-    let rows = client.query("SELECT target_did FROM follows WHERE actor_did = $1", &[&did]).await?;
-    let mut targets = HashSet::new();
-    for row in rows {
-        let target_did: String = row.get(0);
-        if let Some(&target_uid) = did_to_uid.get(&target_did) {
-            targets.insert(target_uid);
-        }
-    }
-    Ok(targets)
 }
