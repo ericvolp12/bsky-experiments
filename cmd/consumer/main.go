@@ -148,7 +148,7 @@ func Consumer(cctx *cli.Context) error {
 	// Registers a tracer Provider globally if the exporter endpoint is set
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
 		log.Info("initializing tracer...")
-		shutdown, err := tracing.InstallExportPipeline(ctx, "Consumer", 0.01)
+		shutdown, err := tracing.InstallExportPipeline(ctx, "Consumer", 1)
 		if err != nil {
 			log.Fatal(err)
 		}
