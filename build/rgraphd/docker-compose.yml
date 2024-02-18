@@ -1,0 +1,15 @@
+version: "3.8"
+services:
+  rgraphd:
+    build:
+      context: ../../
+      dockerfile: build/rgraphd/Dockerfile
+    image: rgraphd
+    restart: always
+    environment:
+      GRAPH_CSV: /data/follows.csv
+      PORT: 1323
+      RUST_LOG: info
+    network_mode: host # For higher performance avoid the Docker Bridge
+    volumes:
+      - ../../data:/data

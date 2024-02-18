@@ -172,3 +172,13 @@ graphd-down: # Stops graphd docker container
 run-dev-graphd: .env ## Runs graphd for local dev
 	@echo "Running Graphd..."
 	go run ./cmd/graphd
+
+.PHONY: rgraphd-up
+rgraphd-up: # Runs rgraphd docker container
+	@echo "Starting rGraphD..."
+	docker compose -f build/rgraphd/docker-compose.yml up --build -d
+
+.PHONY: rgraphd-down
+rgraphd-down: # Stops rgraphd docker container
+	@echo "Stopping rGraphD..."
+	docker compose -f build/rgraphd/docker-compose.yml down

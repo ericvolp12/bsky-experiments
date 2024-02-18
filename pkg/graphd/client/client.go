@@ -25,8 +25,8 @@ func NewClient(apiRoot string, httpClient *http.Client) *Client {
 }
 
 type Follow struct {
-	ActorDid  string `json:"actorDid"`
-	TargetDid string `json:"targetDid"`
+	ActorDid  string `json:"actor_did"`
+	TargetDid string `json:"target_did"`
 }
 
 func (c *Client) Follow(ctx context.Context, actorDid string, targetDid string) error {
@@ -71,8 +71,8 @@ func (c *Client) Follow(ctx context.Context, actorDid string, targetDid string) 
 }
 
 type Unfollow struct {
-	ActorDid  string `json:"actorDid"`
-	TargetDid string `json:"targetDid"`
+	ActorDid  string `json:"actor_did"`
+	TargetDid string `json:"target_did"`
 }
 
 func (c *Client) Unfollow(ctx context.Context, actorDid string, targetDid string) error {
@@ -116,6 +116,10 @@ func (c *Client) Unfollow(ctx context.Context, actorDid string, targetDid string
 	return nil
 }
 
+type DidsResponse struct {
+	DIDs []string `json:"dids"`
+}
+
 func (c *Client) GetFollowers(ctx context.Context, did string) ([]string, error) {
 	ctx, span := tracer.Start(ctx, "GetFollowers")
 	defer span.End()
@@ -143,20 +147,20 @@ func (c *Client) GetFollowers(ctx context.Context, did string) ([]string, error)
 		return nil, fmt.Errorf("got status code %d", resp.StatusCode)
 	}
 
-	var followerDIDs []string
-	err = json.NewDecoder(resp.Body).Decode(&followerDIDs)
+	var dids DidsResponse
+	err = json.NewDecoder(resp.Body).Decode(&dids)
 	if err != nil {
 		return nil, err
 	}
 
-	return followerDIDs, nil
+	return dids.DIDs, nil
 }
 
 func (c *Client) GetFollowersNotFollowing(ctx context.Context, did string) ([]string, error) {
 	ctx, span := tracer.Start(ctx, "GetFollowersNotFollowing")
 	defer span.End()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", c.APIRoot+"/followersNotFollowing?did="+did, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", c.APIRoot+"/followers_not_following?did="+did, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -179,11 +183,11 @@ func (c *Client) GetFollowersNotFollowing(ctx context.Context, did string) ([]st
 		return nil, fmt.Errorf("got status code %d", resp.StatusCode)
 	}
 
-	var followerDIDs []string
-	err = json.NewDecoder(resp.Body).Decode(&followerDIDs)
+	var dids DidsResponse
+	err = json.NewDecoder(resp.Body).Decode(&dids)
 	if err != nil {
 		return nil, err
 	}
 
-	return followerDIDs, nil
+	return dids.DIDs, nil
 }
