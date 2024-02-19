@@ -157,26 +157,33 @@ func (s *ShardDB) GetPosts(ctx context.Context, bucket, limit int, cursor time.T
 
 	start := time.Now()
 
-	iter := s.session.Query(getPostsQuery, bucket, cursor, limit).WithContext(ctx).Iter()
-	defer iter.Close()
+	scanner := s.session.Query(getPostsQuery, bucket, cursor, limit).WithContext(ctx).Iter().Scanner()
 
 	var posts []*Post
-	var actorDID, rkey string
-	var indexedAt time.Time
-	var hasMedia, isReply bool
-	var raw []byte
-	var langs, tags []string
-	for iter.Scan(
-		&actorDID,
-		&rkey,
-		&indexedAt,
-		&bucket,
-		&raw,
-		&langs,
-		&tags,
-		&hasMedia,
-		&isReply,
-	) {
+	for scanner.Next() {
+		var actorDID, rkey string
+		var indexedAt time.Time
+		var hasMedia, isReply bool
+		var raw []byte
+		var langs, tags []string
+		err := scanner.Scan(
+			&actorDID,
+			&rkey,
+			&indexedAt,
+			&bucket,
+			&raw,
+			&langs,
+			&tags,
+			&hasMedia,
+			&isReply,
+		)
+
+		if err != nil {
+			QueryDuration.WithLabelValues("get_posts", "error").Observe(time.Since(start).Seconds())
+			span.RecordError(err)
+			return nil, time.Time{}, fmt.Errorf("failed to get posts: %w", err)
+		}
+
 		posts = append(posts, &Post{
 			ActorDID:  actorDID,
 			Rkey:      rkey,
@@ -188,16 +195,11 @@ func (s *ShardDB) GetPosts(ctx context.Context, bucket, limit int, cursor time.T
 			HasMedia:  hasMedia,
 			IsReply:   isReply,
 		})
+		cursor = indexedAt
 	}
 
-	if err := iter.Close(); err != nil {
-		QueryDuration.WithLabelValues("get_posts", "error").Observe(time.Since(start).Seconds())
-		span.RecordError(err)
-		return nil, time.Time{}, fmt.Errorf("failed to get posts: %w", err)
-	}
 	QueryDuration.WithLabelValues("get_posts", "success").Observe(time.Since(start).Seconds())
 
-	cursor = indexedAt
 	if len(posts) < limit {
 		cursor = time.Time{}
 	}
@@ -229,24 +231,31 @@ func (s *ShardDB) GetPostMetas(ctx context.Context, bucket, limit int, cursor ti
 
 	start := time.Now()
 
-	iter := s.session.Query(getPostsQuery, bucket, cursor, limit).WithContext(ctx).Iter()
-	defer iter.Close()
+	scanner := s.session.Query(getPostsQuery, bucket, cursor, limit).WithContext(ctx).Iter().Scanner()
 
 	var posts []*Post
-	var actorDID, rkey string
-	var indexedAt time.Time
-	var hasMedia, isReply bool
-	var langs, tags []string
-	for iter.Scan(
-		&actorDID,
-		&rkey,
-		&indexedAt,
-		&bucket,
-		&langs,
-		&tags,
-		&hasMedia,
-		&isReply,
-	) {
+	for scanner.Next() {
+		var actorDID, rkey string
+		var indexedAt time.Time
+		var hasMedia, isReply bool
+		var langs, tags []string
+		err := scanner.Scan(
+			&actorDID,
+			&rkey,
+			&indexedAt,
+			&bucket,
+			&langs,
+			&tags,
+			&hasMedia,
+			&isReply,
+		)
+
+		if err != nil {
+			QueryDuration.WithLabelValues("get_post_metas", "error").Observe(time.Since(start).Seconds())
+			span.RecordError(err)
+			return nil, time.Time{}, fmt.Errorf("failed to get post metas: %w", err)
+		}
+
 		posts = append(posts, &Post{
 			ActorDID:  actorDID,
 			Rkey:      rkey,
@@ -257,16 +266,10 @@ func (s *ShardDB) GetPostMetas(ctx context.Context, bucket, limit int, cursor ti
 			HasMedia:  hasMedia,
 			IsReply:   isReply,
 		})
-	}
-
-	if err := iter.Close(); err != nil {
-		QueryDuration.WithLabelValues("get_post_metas", "error").Observe(time.Since(start).Seconds())
-		span.RecordError(err)
-		return nil, time.Time{}, fmt.Errorf("failed to get post metas: %w", err)
+		cursor = indexedAt
 	}
 	QueryDuration.WithLabelValues("get_post_metas", "success").Observe(time.Since(start).Seconds())
 
-	cursor = indexedAt
 	if len(posts) < limit {
 		cursor = time.Time{}
 	}
