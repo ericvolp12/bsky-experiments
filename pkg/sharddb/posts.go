@@ -188,6 +188,7 @@ func (s *ShardDB) GetPosts(ctx context.Context, bucket, limit int, cursor time.T
 			HasMedia:  hasMedia,
 			IsReply:   isReply,
 		})
+		raw = []byte{}
 	}
 
 	if err := iter.Close(); err != nil {
