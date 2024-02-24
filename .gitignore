@@ -9,3 +9,5 @@ __pycache__/
 data
 redis_data
 keys.json
+output/
+

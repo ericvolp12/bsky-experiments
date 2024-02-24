@@ -22,7 +22,7 @@ FROM debian:stable-slim
 
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /app/plc .
+COPY --from=builder /app/output/plc .
 
 RUN mkdir -p /app/data
 
