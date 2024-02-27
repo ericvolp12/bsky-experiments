@@ -333,6 +333,20 @@ func (c *Consumer) HandleStreamEvent(ctx context.Context, xe *events.XRPCStreamE
 	return nil
 }
 
+var knownCollections = map[string]struct{}{
+	"app.bsky.actor.profile":   {},
+	"app.bsky.feed.post":       {},
+	"app.bsky.feed.repost":     {},
+	"app.bsky.feed.like":       {},
+	"app.bsky.feed.threadgate": {},
+	"app.bsky.graph.list":      {},
+	"app.bsky.graph.listitem":  {},
+	"app.bsky.graph.follow":    {},
+	"app.bsky.graph.listblock": {},
+	"app.bsky.graph.block":     {},
+	"app.bsky.feed.generator":  {},
+}
+
 // HandleRepoCommit handles a repo commit event from the firehose and processes the records
 func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubscribeRepos_Commit) error {
 	ctx, span := tracer.Start(ctx, "HandleRepoCommit")
@@ -352,7 +366,7 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 		log.Infof("backfill not in progress, adding repo %s to queue", evt.Repo)
 
 		state := "enqueued"
-		if evt.Prev == nil {
+		if evt.Since == nil {
 			state = "complete"
 		}
 
@@ -415,7 +429,11 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 		ek := repomgr.EventKind(op.Action)
 		log = log.With("action", op.Action, "collection", collection)
 
-		opsProcessedCounter.WithLabelValues(op.Action, collection, c.SocketURL).Inc()
+		metricCollection := collection
+		if _, ok := knownCollections[collection]; !ok {
+			metricCollection = "unknown"
+		}
+		opsProcessedCounter.WithLabelValues(op.Action, metricCollection, c.SocketURL).Inc()
 
 		// recordURI := "at://" + evt.Repo + "/" + op.Path
 		span.SetAttributes(attribute.String("repo", evt.Repo))
