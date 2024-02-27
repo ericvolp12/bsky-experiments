@@ -43,7 +43,8 @@ type Directory struct {
 	RedisClient *redis.Client
 	RedisPrefix string
 
-	Store *store.Store
+	Store    *store.Store
+	validate bool
 }
 
 type DirectoryEntry struct {
@@ -70,7 +71,7 @@ type Operation struct {
 
 var tracer = otel.Tracer("plc-directory")
 
-func NewDirectory(endpoint string, redisClient *redis.Client, store *store.Store, redisPrefix string) (*Directory, error) {
+func NewDirectory(endpoint string, redisClient *redis.Client, store *store.Store, redisPrefix string, validate bool) (*Directory, error) {
 	ctx := context.Background()
 	rawLogger, err := zap.NewProduction()
 	if err != nil {
@@ -104,7 +105,8 @@ func NewDirectory(endpoint string, redisClient *redis.Client, store *store.Store
 		RedisClient: redisClient,
 		RedisPrefix: redisPrefix,
 
-		Store: store,
+		Store:    store,
+		validate: validate,
 	}, nil
 }
 
@@ -119,9 +121,11 @@ func (d *Directory) Start() {
 		}
 	}()
 
-	go func() {
-		d.ValidateHandles(ctx, 1200, 5*time.Second)
-	}()
+	if d.validate {
+		go func() {
+			d.ValidateHandles(ctx, 1200, 5*time.Second)
+		}()
+	}
 }
 
 func (d *Directory) fetchDirectoryEntries(ctx context.Context) {

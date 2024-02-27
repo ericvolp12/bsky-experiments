@@ -169,7 +169,7 @@ func main() {
 		log.Fatalf("failed to connect to redis: %+v\n", err)
 	}
 
-	plc, err := plc.NewDirectory("https://plc.directory/export", redisClient, s, "plc_directory")
+	plc, err := plc.NewDirectory("https://plc.directory/export", redisClient, s, "plc_directory", false)
 	if err != nil {
 		log.Fatalf("failed to create plc directory: %+v\n", err)
 	}
