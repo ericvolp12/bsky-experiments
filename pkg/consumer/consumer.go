@@ -57,6 +57,8 @@ type Consumer struct {
 
 	graphdClient *graphdclient.Client
 	shardDB      *sharddb.ShardDB
+
+	tags *TagTracker
 }
 
 // Progress is the cursor for the consumer
@@ -188,6 +190,14 @@ func NewConsumer(
 	if magicHeaderKey != "" && magicHeaderVal != "" {
 		c.SyncLimiter = rate.NewLimiter(40, 1)
 	}
+
+	// Create the tag tracker
+	tagTracker, err := NewTagTracker(redisClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tag tracker: %+v", err)
+	}
+
+	c.tags = tagTracker
 
 	// Check to see if the cursor exists in redis
 	err = c.ReadCursor(context.Background())
@@ -805,40 +815,6 @@ func (c *Consumer) MarkPosterActive(
 	return nil
 }
 
-var tagUsagePrefix = "consumer:tags"
-
-// IncrementTagUseCounts increments the use count of a set of tags in a redis sorted set
-func (c *Consumer) IncrementTagUseCounts(
-	ctx context.Context,
-	tags []string,
-) error {
-	ctx, span := tracer.Start(ctx, "IncrementTagUseCounts")
-	defer span.End()
-
-	for i, tag := range tags {
-		// Truncate to 100 characters
-		if len(tag) > 100 {
-			tags[i] = tag[:100]
-		}
-	}
-
-	dailySetKey := fmt.Sprintf("%s:%s", tagUsagePrefix, time.Now().Format("2006_01_02"))
-
-	// Increment the use count of each tag
-	p := c.RedisClient.Pipeline()
-
-	for _, tag := range tags {
-		p.ZIncrBy(ctx, dailySetKey, 1, tag)
-	}
-
-	_, err := p.Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to increment tag use counts: %+v", err)
-	}
-
-	return nil
-}
-
 // IntersectActivePosters returns the intersection of the active posters sorted set and the given set of posters
 func (c *Consumer) IntersectActivePosters(
 	ctx context.Context,
@@ -1142,7 +1118,7 @@ func (c *Consumer) HandleCreateRecord(
 
 		// Increment the tag use counts
 		if createParams.Tags != nil {
-			err = c.IncrementTagUseCounts(ctx, createParams.Tags)
+			err = c.tags.IncrementTagUseCounts(ctx, repo, createParams.Tags)
 			if err != nil {
 				log.Errorf("failed to increment tag use counts: %+v", err)
 			}
