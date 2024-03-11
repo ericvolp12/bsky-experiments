@@ -367,9 +367,11 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 		return false
 	}
 
-	postsIndexedCounter.WithLabelValues("store").Add(float64(len(jobs)))
+	numJobs := len(jobs)
 
-	if len(jobs) == 0 {
+	postsIndexedCounter.WithLabelValues("store").Add(float64(numJobs))
+
+	if numJobs == 0 {
 		log.Info("no posts to index, sleeping...")
 		return false
 	}
@@ -405,58 +407,56 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 
 	for i := range jobs {
 		job := jobs[i]
-		var result *sentiment.SentimentPost
+		resIndex := -1
 		for j := range sentimentResults {
-			if sentimentResults[j].Rkey == job.Rkey && sentimentResults[j].ActorDID == job.ActorDid {
-				result = sentimentResults[j]
+			res := sentimentResults[j]
+			if res.Rkey == job.Rkey && res.ActorDID == job.ActorDid {
+				resIndex = j
 				break
 			}
 		}
 
-		var s sql.NullString
-		var confidence sql.NullFloat64
-		if result != nil && result.Decision != nil {
-			postsAnalyzed++
-			switch result.Decision.Sentiment {
-			case sentiment.POSITIVE:
-				s = sql.NullString{
-					String: store.POSITIVE,
-					Valid:  true,
+		params := store_queries.SetSentimentForPostParams{
+			ActorDid:    job.ActorDid,
+			Rkey:        job.Rkey,
+			CreatedAt:   job.CreatedAt.Time,
+			ProcessedAt: sql.NullTime{Time: mlDone, Valid: true},
+		}
+
+		if resIndex >= 0 {
+			result := sentimentResults[resIndex]
+			if result != nil {
+				params.DetectedLangs = result.Langs
+				if result.Decision != nil {
+					postsAnalyzed++
+					switch result.Decision.Sentiment {
+					case sentiment.POSITIVE:
+						params.Sentiment = sql.NullString{
+							String: store.POSITIVE,
+							Valid:  true,
+						}
+						positiveSentimentCounter.WithLabelValues("store").Inc()
+					case sentiment.NEGATIVE:
+						params.Sentiment = sql.NullString{
+							String: store.NEGATIVE,
+							Valid:  true,
+						}
+						negativeSentimentCounter.WithLabelValues("store").Inc()
+					case sentiment.NEUTRAL:
+						params.Sentiment = sql.NullString{
+							String: store.NEUTRAL,
+							Valid:  true,
+						}
+					}
+					params.Confidence = sql.NullFloat64{
+						Float64: result.Decision.Confidence,
+						Valid:   true,
+					}
 				}
-				positiveSentimentCounter.WithLabelValues("store").Inc()
-			case sentiment.NEGATIVE:
-				s = sql.NullString{
-					String: store.NEGATIVE,
-					Valid:  true,
-				}
-				negativeSentimentCounter.WithLabelValues("store").Inc()
-			case sentiment.NEUTRAL:
-				s = sql.NullString{
-					String: store.NEUTRAL,
-					Valid:  true,
-				}
-			}
-			confidence = sql.NullFloat64{
-				Float64: result.Decision.Confidence,
-				Valid:   true,
 			}
 		}
 
-		langs := []string{}
-
-		if result != nil {
-			langs = result.Langs
-		}
-
-		dbSentimentParams = append(dbSentimentParams, store_queries.SetSentimentForPostParams{
-			ActorDid:      job.ActorDid,
-			Rkey:          job.Rkey,
-			CreatedAt:     job.CreatedAt.Time,
-			ProcessedAt:   sql.NullTime{Time: time.Now(), Valid: true},
-			Sentiment:     s,
-			Confidence:    confidence,
-			DetectedLangs: langs,
-		})
+		dbSentimentParams = append(dbSentimentParams, params)
 	}
 
 	span.AddEvent("SetSentimentForPost")
@@ -464,30 +464,24 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 	log.Info("setting sentiment results...")
 	sem := semaphore.NewWeighted(10)
 
-	wg := sync.WaitGroup{}
-
 	for i := range dbSentimentParams {
-		p := dbSentimentParams[i]
-		wg.Add(1)
-		go func(param store_queries.SetSentimentForPostParams) {
-			defer wg.Done()
-			ctx := context.Background()
-			sem.Acquire(ctx, 1)
+		sem.Acquire(ctx, 1)
+		go func(i int) {
 			defer sem.Release(1)
-			err := index.Store.Queries.SetSentimentForPost(ctx, param)
+			err := index.Store.Queries.SetSentimentForPost(context.Background(), dbSentimentParams[i])
 			if err != nil {
 				log.Error("failed to set sentiment for post: %+v", err)
 				return
 			}
-		}(p)
+		}(i)
 	}
 
-	wg.Wait()
+	sem.Acquire(ctx, 10)
 
 	updateDone := time.Now()
 
 	span.SetAttributes(
-		attribute.Int("posts_indexed", len(jobs)),
+		attribute.Int("posts_indexed", numJobs),
 		attribute.Int("posts_analyzed", postsAnalyzed),
 		attribute.Int("posts_labeled_with_sentiment", len(dbSentimentParams)),
 		attribute.String("indexing_time", time.Since(start).String()),
@@ -497,7 +491,7 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 	)
 
 	log.Infow("finished indexing posts, sleeping...",
-		"posts_indexed", len(jobs),
+		"posts_indexed", numJobs,
 		"posts_analyzed", postsAnalyzed,
 		"posts_labeled_with_sentiment", len(dbSentimentParams),
 		"indexing_time", time.Since(start),
@@ -506,41 +500,11 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 		"update_time", updateDone.Sub(mlDone),
 	)
 
-	if len(jobs) < int(pageSize) {
+	if numJobs < int(pageSize) {
 		return false
 	}
 
 	return true
-}
-
-type ProfileRecords struct {
-	Records []struct {
-		URI   string `json:"uri"`
-		Cid   string `json:"cid"`
-		Value struct {
-			Type   string `json:"$type"`
-			Avatar struct {
-				Type string `json:"$type"`
-				Cid  string `json:"cid"`
-				Ref  struct {
-					Link string `json:"$link"`
-				} `json:"ref"`
-				MimeType string `json:"mimeType"`
-				Size     int    `json:"size"`
-			} `json:"avatar"`
-			Banner struct {
-				Type string `json:"$type"`
-				Ref  struct {
-					Link string `json:"$link"`
-				} `json:"ref"`
-				MimeType string `json:"mimeType"`
-				Size     int    `json:"size"`
-			} `json:"banner"`
-			Description string `json:"description"`
-			DisplayName string `json:"displayName"`
-		} `json:"value"`
-	} `json:"records"`
-	Cursor string `json:"cursor"`
 }
 
 func (index *Index) IndexPostSentiments(ctx context.Context, pageSize int32) {

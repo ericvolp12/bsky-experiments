@@ -11,6 +11,8 @@ WITH unprocessed_posts AS (
     SELECT s.actor_did,
         s.rkey
     FROM post_sentiments s
+        JOIN posts p ON s.actor_did = p.actor_did
+        AND s.rkey = p.rkey
     WHERE s.processed_at IS NULL
     ORDER BY s.created_at
     LIMIT $1
