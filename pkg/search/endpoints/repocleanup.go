@@ -516,6 +516,12 @@ func (api *API) cleanupNextBatch(ctx context.Context, job store_queries.RepoClea
 			job.UpdatedAt = time.Now().UTC()
 			return &job, nil
 		}
+		if strings.Contains(err.Error(), "Could not find user info for account") {
+			job.RefreshToken = ""
+			job.JobState = "errored: Could not find user info for account (account may have been deleted)"
+			job.UpdatedAt = time.Now().UTC()
+			return &job, nil
+		}
 		return nil, fmt.Errorf("error refreshing session: %w", err)
 	}
 
