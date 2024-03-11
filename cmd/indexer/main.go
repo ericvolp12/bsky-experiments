@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/urfave/cli/v2"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/atomic"
@@ -65,12 +64,6 @@ func main() {
 			Usage:   "number of images to index per page",
 			Value:   60,
 			EnvVars: []string{"IMAGE_PAGE_SIZE"},
-		},
-		&cli.IntFlag{
-			Name:    "actor-page-size",
-			Usage:   "number of actors to index per page",
-			Value:   50,
-			EnvVars: []string{"ACTOR_PAGE_SIZE"},
 		},
 		&cli.IntFlag{
 			Name:    "port",
@@ -314,33 +307,6 @@ func Indexer(cctx *cli.Context) error {
 		}
 	}()
 
-	// Start the actor profile picture indexing loop
-	// shutdownProfilePictures := make(chan struct{})
-	// profilePicturesShutdown := make(chan struct{})
-	// go func() {
-	// 	logger := logger.With("source", "profile_picture_indexer")
-	// 	if index.Store == nil {
-	// 		logger.Info("no store, skipping profile picture indexing loop...")
-	// 		close(profilePicturesShutdown)
-	// 		return
-	// 	}
-	// 	logger.Info("Starting profile picture indexing loop...")
-	// 	for {
-	// 		ctx := context.Background()
-	// 		gofast := index.IndexActorProfilePictures(ctx, int32(cctx.Int("actor-page-size")))
-	// 		select {
-	// 		case <-shutdownProfilePictures:
-	// 			logger.Info("Shutting down profile picture indexing loop...")
-	// 			close(profilePicturesShutdown)
-	// 			return
-	// 		default:
-	// 			if !gofast {
-	// 				time.Sleep(1 * time.Second)
-	// 			}
-	// 		}
-	// 	}
-	// }()
-
 	select {
 	case <-signals:
 		cancel()
@@ -575,117 +541,6 @@ type ProfileRecords struct {
 		} `json:"value"`
 	} `json:"records"`
 	Cursor string `json:"cursor"`
-}
-
-var profilePicturesIndexedCounter = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "indexer_indexed_profile_pictures",
-	Help: "The total number of profile pictures indexed",
-}, []string{})
-
-var xrpcRequestsCounter = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "indexer_xrpc_requests",
-	Help: "The total number of xrpc requests made",
-}, []string{})
-
-func (index *Index) IndexActorProfilePictures(ctx context.Context, pageSize int32) bool {
-	ctx, span := tracer.Start(ctx, "IndexActorProfilePictures")
-	defer span.End()
-
-	log := index.Logger.With("source", "actor_profile_picture_indexer")
-	log.Info("propic index loop waking up...")
-	start := time.Now()
-	log.Info("getting unindexed actors...")
-
-	actors, err := index.Store.Queries.GetActorsWithoutPropic(ctx, pageSize)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			log.Info("no actors to index, sleeping...")
-			return false
-		}
-
-		log.Error("failed to get unindexed actors: %+v", err)
-		return false
-	}
-
-	// GET https://bsky.social/xrpc/com.atproto.repo.listRecords?repo={did}&collection=app.bsky.actor.profile
-	client := &http.Client{
-		Transport: otelhttp.NewTransport(http.DefaultTransport),
-	}
-
-	span.AddEvent("GetActorsProfilePictures")
-
-	wg := sync.WaitGroup{}
-
-	for i := range actors {
-		actor := actors[i]
-		wg.Add(1)
-		go func(actor store_queries.Actor) {
-			defer wg.Done()
-			ctx := context.Background()
-			req, err := http.NewRequest("GET", fmt.Sprintf("https://bsky.social/xrpc/com.atproto.repo.listRecords?repo=%s&collection=app.bsky.actor.profile", actor.Did), nil)
-			if err != nil {
-				log.Error("failed to create request for actor: %+v", err)
-				return
-			}
-
-			index.Limiter.Wait(ctx)
-			resp, err := client.Do(req.WithContext(ctx))
-			xrpcRequestsCounter.WithLabelValues().Inc()
-			if err != nil {
-				log.Error("failed to get profile pictures for actor: %+v", err)
-				return
-			}
-			defer resp.Body.Close()
-
-			// Read the response body into a mirrorResponse
-			profileResponse := ProfileRecords{}
-			err = json.NewDecoder(resp.Body).Decode(&profileResponse)
-			if err != nil {
-				log.Error("failed to decode response body for actor: %+v", err)
-				return
-			}
-
-			proPicCid := ""
-
-			if len(profileResponse.Records) > 0 {
-				// Set profile picture
-				proPicCid = profileResponse.Records[0].Value.Avatar.Ref.Link
-				if proPicCid == "" {
-					proPicCid = profileResponse.Records[0].Value.Avatar.Cid
-				}
-			}
-
-			err = index.Store.Queries.UpdateActorPropic(ctx, store_queries.UpdateActorPropicParams{
-				Did:       actor.Did,
-				ProPicCid: sql.NullString{Valid: true, String: proPicCid},
-				UpdatedAt: sql.NullTime{Valid: true, Time: time.Now()},
-			})
-			if err != nil {
-				log.Error("failed to set profile picture for actor: %+v", err)
-				return
-			}
-		}(actor)
-	}
-
-	wg.Wait()
-
-	profilePicturesIndexedCounter.WithLabelValues().Add(float64(len(actors)))
-
-	span.SetAttributes(
-		attribute.Int("actors_indexed", len(actors)),
-		attribute.String("indexing_time", time.Since(start).String()),
-	)
-
-	log.Infow("finished indexing actors, sleeping...",
-		"actors_indexed", len(actors),
-		"indexing_time", time.Since(start),
-	)
-
-	if len(actors) < int(pageSize) {
-		return false
-	}
-
-	return true
 }
 
 func (index *Index) IndexPostSentiments(ctx context.Context, pageSize int32) {
