@@ -4,22 +4,18 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
-	"github.com/bluesky-social/indigo/xrpc"
+	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
-	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 )
 
 type Worker struct {
-	WorkerID  int
-	Client    *xrpc.Client
-	ClientMux sync.RWMutex
-	Logger    *zap.SugaredLogger
+	WorkerID int
+	Logger   *zap.SugaredLogger
 }
 
 type ImageMeta struct {
@@ -48,28 +44,6 @@ func (bsky *BSky) worker(ctx context.Context, workerID int) {
 	}()
 
 	log.Infof("starting worker %d\n", workerID)
-
-	// Run a routine that refreshes the auth token every 10 minutes
-	authTicker := time.NewTicker(10 * time.Minute)
-	quit := make(chan struct{})
-	go func() {
-		log.Info("starting auth refresh routine...")
-		for {
-			select {
-			case <-authTicker.C:
-				log.Info("refreshing auth token...")
-				err := bsky.RefreshAuthToken(ctx, workerID)
-				if err != nil {
-					log.Error("error refreshing auth token: %s\n", err)
-				} else {
-					log.Info("successfully refreshed auth token")
-				}
-			case <-quit:
-				authTicker.Stop()
-				return
-			}
-		}
-	}()
 
 	// Pull from the work queue and process records as they come in
 	for {
@@ -128,18 +102,10 @@ func (bsky *BSky) ProcessRepoRecord(
 		"trace_id", span.SpanContext().TraceID().String(),
 	)
 
-	span.AddEvent("HandleRepoCommit:ResolveDid")
-	authorHandle, err := bsky.ResolveDID(ctx, authorDID)
-	if err != nil {
-		log.Errorf("error getting DID for %s: %+v\n", authorDID, err)
-		return nil
-	}
-
 	span.SetAttributes(attribute.String("author.did", authorDID))
-	span.SetAttributes(attribute.String("author.handle", authorHandle))
 
 	span.AddEvent("HandleRepoCommit:DecodeFacets")
-	mentions, links, err := bsky.DecodeFacets(ctx, authorDID, authorHandle, pst.Facets, workerID)
+	mentions, links, err := bsky.DecodeFacets(ctx, pst.Facets)
 	if err != nil {
 		log.Errorf("error decoding post facets: %+v\n", err)
 	}
@@ -160,46 +126,47 @@ func (bsky *BSky) ProcessRepoRecord(
 	var parentID string
 	var rootID string
 	parentRelationsip := ""
-	quotingHandle := ""
-	replyingToHandle := ""
+	quotingDID := ""
+	replyingToDID := ""
 
 	// Handle direct replies
-	if pst.Reply != nil && pst.Reply.Parent != nil {
-		replyingToURI := pst.Reply.Parent.Uri
-		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, authorDID, authorHandle, replyingToURI, workerID)
-		if err != nil {
-			log.Errorf("error processing reply relation: %+v\n", err)
-			return nil
+	if pst.Reply != nil {
+		if pst.Reply.Parent != nil {
+			u, err := syntax.ParseATURI(pst.Reply.Parent.Uri)
+			if err != nil {
+				log.Errorf("error parsing reply parent URI: %+v\n", err)
+				return nil
+			}
+			replyingToDID = u.Authority().String()
+			// Increment the reply count metric
+			replyCounter.Inc()
+			// Set the parent relationship to reply and the parent ID to the reply's ID
+			parentRelationsip = search.ReplyRelationship
+			parentID = u.RecordKey().String()
 		}
-		replyingToHandle = parentAuthorHandle
-		// Increment the reply count metric
-		replyCounter.Inc()
-		// Set the parent relationship to reply and the parent ID to the reply's ID
-		parentRelationsip = search.ReplyRelationship
-		parentParts := strings.Split(replyingToURI, "/")
-		parentID = parentParts[len(parentParts)-1]
 		if pst.Reply.Root != nil {
-			// Set the root ID to the root post ID
-			rootParts := strings.Split(pst.Reply.Root.Uri, "/")
-			rootID = rootParts[len(rootParts)-1]
+			u, err := syntax.ParseATURI(pst.Reply.Root.Uri)
+			if err != nil {
+				log.Errorf("error parsing reply root URI: %+v\n", err)
+				return nil
+			}
+			rootID = u.RecordKey().String()
 		}
 	}
 
 	// Handle quote reposts
 	if pst.Embed != nil && pst.Embed.EmbedRecord != nil && pst.Embed.EmbedRecord.Record != nil {
-		quotingURI := pst.Embed.EmbedRecord.Record.Uri
-		_, parentAuthorHandle, err := bsky.ProcessRelation(ctx, authorDID, authorHandle, quotingURI, workerID)
+		u, err := syntax.ParseATURI(pst.Embed.EmbedRecord.Record.Uri)
 		if err != nil {
-			log.Errorf("error processing quote relation: %+v\n", err)
+			log.Errorf("error parsing quoting URI: %+v\n", err)
 			return nil
 		}
-		quotingHandle = parentAuthorHandle
+		quotingDID = u.Authority().String()
 		// Increment the quote count metric
 		quoteCounter.Inc()
 		// Set the parent relationship to quote and the parent ID to the quote post ID
 		parentRelationsip = search.QuoteRelationship
-		parentParts := strings.Split(quotingURI, "/")
-		parentID = parentParts[len(parentParts)-1]
+		parentID = u.RecordKey().String()
 	}
 
 	// Extract any embedded images
@@ -218,13 +185,12 @@ func (bsky *BSky) ProcessRepoRecord(
 
 	}
 
-	postLink := fmt.Sprintf("https://bsky.app/profile/%s/post/%s", authorHandle, postID)
+	postLink := fmt.Sprintf("https://bsky.app/profile/%s/post/%s", authorDID, postID)
 
 	// Write the post to the Post Registry if enabled
 	if bsky.PostRegistryEnabled {
 		author := search.Author{
-			DID:    authorDID,
-			Handle: authorHandle,
+			DID: authorDID,
 		}
 
 		post := search.Post{
@@ -287,10 +253,9 @@ func (bsky *BSky) ProcessRepoRecord(
 		"mentions", mentions,
 		"image_count", len(images),
 		"links", links,
-		"author_handle", authorHandle,
 		"author_did", authorDID,
-		"quoting_handle", quotingHandle,
-		"replying_to_handle", replyingToHandle,
+		"quoting_did", quotingDID,
+		"replying_to_did", replyingToDID,
 		"parent_id", parentID,
 		"root_id", rootID,
 		"parent_relationship", parentRelationsip,
@@ -303,33 +268,4 @@ func (bsky *BSky) ProcessRepoRecord(
 	postProcessingDurationHistogram.Observe(time.Since(start).Seconds())
 
 	return nil
-}
-
-// ProcessRelation handles a quote or reply relation
-// It returns the parent author DID and handle after resolving the parent post
-func (bsky *BSky) ProcessRelation(
-	ctx context.Context,
-	authorDID, authorHandle, parentPostURI string,
-	workerID int,
-) (string, string, error) {
-	ctx, span := tracer.Start(ctx, "ProcessRelation")
-	defer span.End()
-
-	log := bsky.Workers[workerID].Logger
-
-	slicedURI := strings.TrimPrefix(parentPostURI, "at://")
-	parentAuthorDID := slicedURI[0:strings.Index(slicedURI, "/")]
-
-	parentAuthorHandle, err := bsky.ResolveDID(ctx, parentAuthorDID)
-	if err != nil {
-		errmsg := fmt.Sprintf("error resolving replying-to post author (%s): %+v\n", parentPostURI, err)
-		log.Errorf("%s\n", errmsg)
-		return "", "", errors.Wrap(err, errmsg)
-	}
-
-	span.SetAttributes(attribute.String("parent.uri", parentPostURI))
-	span.SetAttributes(attribute.String("parent.author_handle", parentAuthorHandle))
-	span.SetAttributes(attribute.String("parent.author_did", parentAuthorDID))
-
-	return parentAuthorDID, parentAuthorHandle, nil
 }

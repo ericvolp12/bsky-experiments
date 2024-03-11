@@ -3,7 +3,6 @@ package events
 import (
 	"context"
 	"fmt"
-	"log"
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"go.opentelemetry.io/otel"
@@ -13,10 +12,7 @@ import (
 // DecodeFacets decodes the facets of a richtext record into mentions and links
 func (bsky *BSky) DecodeFacets(
 	ctx context.Context,
-	authorDID string,
-	authorHandle string,
 	facets []*appbsky.RichtextFacet,
-	workerID int,
 ) ([]string, []string, error) {
 	ctx, span := otel.Tracer("graph-builder").Start(ctx, "DecodeFacets")
 	defer span.End()
@@ -34,14 +30,7 @@ func (bsky *BSky) DecodeFacets(
 					if feature.RichtextFacet_Link != nil {
 						links = append(links, feature.RichtextFacet_Link.Uri)
 					} else if feature.RichtextFacet_Mention != nil {
-						mentionedHandle, err := bsky.ResolveDID(ctx, feature.RichtextFacet_Mention.Did)
-						if err != nil {
-							log.Printf("error getting handle for %s: %s", feature.RichtextFacet_Mention.Did, err)
-							mentions = append(mentions, fmt.Sprintf("[failed-lookup]@%s", feature.RichtextFacet_Mention.Did))
-							failedLookups++
-							continue
-						}
-						mentions = append(mentions, fmt.Sprintf("@%s", mentionedHandle))
+						mentions = append(mentions, fmt.Sprintf("@%s", feature.RichtextFacet_Mention.Did))
 					}
 				}
 			}

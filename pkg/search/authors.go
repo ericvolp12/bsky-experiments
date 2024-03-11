@@ -43,8 +43,9 @@ type AuthorBlock struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+var tracer = otel.Tracer("post-registry")
+
 func (pr *PostRegistry) AddAuthor(ctx context.Context, author *Author) error {
-	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AddAuthor")
 	defer span.End()
 
@@ -56,7 +57,6 @@ func (pr *PostRegistry) AddAuthor(ctx context.Context, author *Author) error {
 }
 
 func (pr *PostRegistry) GetAuthor(ctx context.Context, did string) (*Author, error) {
-	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetAuthor")
 	defer span.End()
 	author, err := pr.queries.GetAuthor(ctx, did)
@@ -70,9 +70,9 @@ func (pr *PostRegistry) GetAuthor(ctx context.Context, did string) (*Author, err
 }
 
 func (pr *PostRegistry) GetOptedOutAuthors(ctx context.Context) ([]*Author, error) {
-	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetOptedOutAuthors")
 	defer span.End()
+
 	authors, err := pr.queries.GetOptedOutAuthors(ctx)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -90,7 +90,6 @@ func (pr *PostRegistry) GetOptedOutAuthors(ctx context.Context) ([]*Author, erro
 }
 
 func (pr *PostRegistry) UpdateAuthorOptOut(ctx context.Context, did string, optOut bool) error {
-	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:UpdateAuthorOptOut")
 	defer span.End()
 
@@ -105,7 +104,6 @@ func (pr *PostRegistry) UpdateAuthorOptOut(ctx context.Context, did string, optO
 }
 
 func (pr *PostRegistry) GetAuthorsByHandle(ctx context.Context, handle string) ([]*Author, error) {
-	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetAuthorsByHandle")
 	defer span.End()
 
@@ -223,7 +221,6 @@ func (pr *PostRegistry) GetTopPosters(ctx context.Context, count int32) ([]searc
 }
 
 func (pr *PostRegistry) AddAuthorBlock(ctx context.Context, authorDID string, targetDID string, createdAt time.Time) error {
-	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:AddAuthorBlock")
 	defer span.End()
 
@@ -236,7 +233,6 @@ func (pr *PostRegistry) AddAuthorBlock(ctx context.Context, authorDID string, ta
 }
 
 func (pr *PostRegistry) RemoveBlock(ctx context.Context, actorDID string, targetDID string) error {
-	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:RemoveBlock")
 	defer span.End()
 
@@ -248,7 +244,6 @@ func (pr *PostRegistry) RemoveBlock(ctx context.Context, actorDID string, target
 }
 
 func (pr *PostRegistry) GetBlockedByCount(ctx context.Context, targetDID string) (int64, error) {
-	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetBlockedByCount")
 	defer span.End()
 
@@ -264,7 +259,6 @@ func (pr *PostRegistry) GetBlockedByCount(ctx context.Context, targetDID string)
 }
 
 func (pr *PostRegistry) GetBlocksPageForTarget(ctx context.Context, targetDID string, limit int32, offset int32) ([]*AuthorBlock, error) {
-	tracer := otel.Tracer("post-registry")
 	ctx, span := tracer.Start(ctx, "PostRegistry:GetBlocksPageForTarget")
 	defer span.End()
 

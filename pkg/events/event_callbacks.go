@@ -15,7 +15,6 @@ import (
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/repomgr"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
-	intXRPC "github.com/ericvolp12/bsky-experiments/pkg/xrpc"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -130,15 +129,8 @@ func NewBSky(
 	// Initialize the workers, each with their own BSky Client and Mutex
 	// Workers share a single WorkQueue and SocialGraph/Mutex
 	for i := 0; i < workerCount; i++ {
-		client, err := intXRPC.GetXRPCClient(ctx)
-		if err != nil {
-			return nil, err
-		}
-
 		bsky.Workers[i] = &Worker{
-			WorkerID:  i,
-			Client:    client,
-			ClientMux: sync.RWMutex{},
+			WorkerID: i,
 		}
 
 		go bsky.worker(ctx, i)
@@ -279,8 +271,6 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 					likesProcessedCounter.Inc()
 				}
 				return nil
-			case *appbsky.FeedRepost:
-				// Ignore reposts for now
 			case *appbsky.GraphBlock:
 				span.SetAttributes(attribute.String("repo.name", evt.Repo))
 				span.SetAttributes(attribute.String("event.type", "app.bsky.graph.block"))
@@ -292,21 +282,6 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 				}
 				log.Infow("processed graph block", "target", rec.Subject, "source", evt.Repo)
 				return nil
-
-			case *appbsky.GraphFollow:
-				// Ignore follows for now
-			case *appbsky.ActorProfile:
-				// Ignore profile updates for now
-			case *appbsky.FeedGenerator:
-				// Ignore feed generator updates for now
-			case *appbsky.GraphList:
-				// Ignore mute list creation for now
-			case *appbsky.GraphListitem:
-				// Ignore mute list updates for now
-			case *appbsky.FeedThreadgate:
-				// Ignore threadgates for now
-			default:
-				log.Warnf("unknown record type: %+v", rec)
 			}
 
 		case repomgr.EvtKindDeleteRecord:
