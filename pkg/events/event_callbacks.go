@@ -194,10 +194,6 @@ func (bsky *BSky) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubs
 		log.Errorf("failed to read repo from car: %+v\n", err)
 		return nil
 	}
-	if evt.Rebase {
-		rebaseEventsProcessed.Inc()
-		return nil
-	}
 	for _, op := range evt.Ops {
 		ek := repomgr.EventKind(op.Action)
 		switch ek {

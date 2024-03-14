@@ -5,22 +5,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// Initialize Prometheus Metrics for cache hits and misses
-var cacheHits = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "bsky_cache_hits_total",
-	Help: "The total number of cache hits",
-}, []string{"cache_type"})
-
-var cacheMisses = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "bsky_cache_misses_total",
-	Help: "The total number of cache misses",
-}, []string{"cache_type"})
-
-var cacheSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
-	Name: "bsky_cache_size_bytes",
-	Help: "The size of the cache in bytes",
-}, []string{"cache_type"})
-
 // Initialize Prometheus Metrics for mentions and replies
 var mentionCounter = promauto.NewCounter(prometheus.CounterOpts{
 	Name: "bsky_mentions_total",
@@ -43,11 +27,6 @@ var postsProcessedCounter = promauto.NewCounter(prometheus.CounterOpts{
 	Help: "The total number of posts processed",
 })
 
-var rebaseEventsProcessed = promauto.NewCounter(prometheus.CounterOpts{
-	Name: "bsky_rebase_events_processed_total",
-	Help: "The total number of rebase events processed",
-})
-
 var deleteRecordsProcessed = promauto.NewCounter(prometheus.CounterOpts{
 	Name: "bsky_delete_records_processed_total",
 	Help: "The total number of delete records processed",
@@ -59,12 +38,6 @@ var postProcessingDurationHistogram = promauto.NewHistogram(prometheus.Histogram
 	Help:    "The duration of processing posts",
 	Buckets: prometheus.ExponentialBuckets(0.01, 2, 15),
 })
-
-var apiCallDurationHistogram = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Name:    "bsky_api_call_duration_seconds",
-	Help:    "The duration of API calls",
-	Buckets: prometheus.ExponentialBuckets(0.0001, 2, 20),
-}, []string{"api_call"})
 
 var likesProcessedCounter = promauto.NewCounter(prometheus.CounterOpts{
 	Name: "bsky_likes_processed_total",

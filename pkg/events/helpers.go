@@ -21,8 +21,6 @@ func (bsky *BSky) DecodeFacets(
 	mentions := []string{}
 	links := []string{}
 
-	failedLookups := 0
-
 	for _, facet := range facets {
 		if facet.Features != nil {
 			for _, feature := range facet.Features {
@@ -37,9 +35,6 @@ func (bsky *BSky) DecodeFacets(
 		}
 	}
 
-	if failedLookups > 0 {
-		span.SetAttributes(attribute.Int("lookups.failed", failedLookups))
-	}
 	span.SetAttributes(attribute.Int("mentions.count", len(mentions)))
 	span.SetAttributes(attribute.Int("links.count", len(links)))
 	mentionCounter.Add(float64(len(mentions)))
