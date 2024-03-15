@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
-	"github.com/ericvolp12/bsky-experiments/pkg/search/search_queries"
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,16 +39,15 @@ type StatPercentile struct {
 }
 
 type AuthorStatsResponse struct {
-	TotalUsers          int                        `json:"total_users"`
-	TotalAuthors        int64                      `json:"total_authors"`
-	TotalPosts          int64                      `json:"total_posts"`
-	MeanPostCount       float64                    `json:"mean_post_count"`
-	Percentiles         []search.Percentile        `json:"percentiles"`
-	FollowerPercentiles []StatPercentile           `json:"follower_percentiles"`
-	Brackets            []search.Bracket           `json:"brackets"`
-	UpdatedAt           time.Time                  `json:"updated_at"`
-	TopPosters          []search_queries.TopPoster `json:"top_posters"`
-	DailyData           []DailyDatapoint           `json:"daily_data"`
+	TotalUsers          int                 `json:"total_users"`
+	TotalAuthors        int64               `json:"total_authors"`
+	TotalPosts          int64               `json:"total_posts"`
+	MeanPostCount       float64             `json:"mean_post_count"`
+	Percentiles         []search.Percentile `json:"percentiles"`
+	FollowerPercentiles []StatPercentile    `json:"follower_percentiles"`
+	Brackets            []search.Bracket    `json:"brackets"`
+	UpdatedAt           time.Time           `json:"updated_at"`
+	DailyData           []DailyDatapoint    `json:"daily_data"`
 }
 
 func (api *API) GetAuthorStats(c *gin.Context) {
@@ -103,13 +101,6 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 	if authorStats == nil {
 		log.Printf("Author stats returned nil")
 		return errors.New("author stats returned nil")
-	}
-
-	// Get the top 25 posters
-	topPosters, err := api.PostRegistry.GetTopPosters(ctx, 25)
-	if err != nil {
-		log.Printf("Error getting top posters: %v", err)
-		return fmt.Errorf("error getting top posters: %w", err)
 	}
 
 	// Get usercount from UserCount service
@@ -190,7 +181,6 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 			FollowerPercentiles: followerPercentiles,
 			Brackets:            authorStats.Brackets,
 			UpdatedAt:           authorStats.UpdatedAt,
-			TopPosters:          topPosters,
 			DailyData:           dailyDatapoints,
 		},
 		Expiration: time.Now().Add(api.StatsCacheTTL),
