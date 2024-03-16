@@ -1,11 +1,11 @@
 use hashbrown::HashMap;
 use log::info;
-use scylla::Session;
+use scylla::{Session, SessionBuilder};
 use std::collections::HashSet;
 use std::fs::File;
 
 #[tokio::main]
-async fn main() -> Result<(), scylla::transport::errors::QueryError> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get connection string from environment
     let connection_string = std::env::var("SCYLLA_URI").unwrap();
 
@@ -14,7 +14,10 @@ async fn main() -> Result<(), scylla::transport::errors::QueryError> {
     }
 
     // Connect to the ScyllaDB cluster
-    let session = Session::connect(&connection_string, None).await?;
+    let session: Session = SessionBuilder::new()
+        .known_node(connection_string)
+        .build()
+        .await?;
 
     // Enable info logging
     env_logger::init();
@@ -30,11 +33,17 @@ async fn main() -> Result<(), scylla::transport::errors::QueryError> {
     uid_to_did.reserve(5_000_000);
 
     let rows = session
-        .query("SELECT did FROM actors", &[])
+        .query("SELECT did FROM bsky.actors", &[])
         .await?
-        .rows;
+        .rows
+        .unwrap();
     for row in rows {
-        let did: String = row.columns[0].as_text().unwrap().to_string();
+        let did: String = row.columns[0]
+            .as_ref()
+            .unwrap()
+            .as_text()
+            .unwrap()
+            .to_string();
         did_to_uid.insert(did.clone(), next_uid);
         if uid_to_did.len() <= next_uid {
             uid_to_did.resize((next_uid + 1) as usize, None); // Ensure vector is large enough
@@ -49,16 +58,27 @@ async fn main() -> Result<(), scylla::transport::errors::QueryError> {
     let mut uid_to_targets: Vec<HashSet<usize>> = vec![HashSet::new(); next_uid];
     let mut num_rows = 0;
     let follow_rows = session
-        .query("SELECT actor_did, subject_did FROM follows", &[])
+        .query("SELECT actor_did, subject_did FROM bsky.follows", &[])
         .await?
-        .rows;
+        .rows
+        .unwrap();
     for row in follow_rows {
         num_rows += 1;
         if num_rows % 1_000_000 == 0 {
             info!("Loaded {} follow rows", num_rows);
         }
-        let actor_did: String = row.columns[0].as_text().unwrap().to_string();
-        let target_did: String = row.columns[1].as_text().unwrap().to_string();
+        let actor_did: String = row.columns[0]
+            .as_ref()
+            .unwrap()
+            .as_text()
+            .unwrap()
+            .to_string();
+        let target_did: String = row.columns[1]
+            .as_ref()
+            .unwrap()
+            .as_text()
+            .unwrap()
+            .to_string();
         if let Some(&actor_uid) = did_to_uid.get(&actor_did) {
             if let Some(&target_uid) = did_to_uid.get(&target_did) {
                 uid_to_targets[actor_uid].insert(target_uid);
