@@ -1,0 +1,14 @@
+version: '3'
+services:
+  pagerank:
+    build:
+      context: ../..
+      dockerfile: build/pagerank/Dockerfile
+    environment:
+      - ACTORS_FILE=/data/actors.csv
+      - FOLLOWS_FILE=/data/follows.csv
+      - OUTPUT_FILE=/data/pageranks.csv
+      - EXPECTED_ACTOR_COUNT=5000000
+      - RUST_LOG=info
+    volumes:
+      - /mnt/secundus/Documents/work/bsky:/data

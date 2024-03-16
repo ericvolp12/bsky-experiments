@@ -1,26 +1,25 @@
 use hashbrown::HashMap;
 use log::info;
-use scylla::{Session, SessionBuilder};
 use std::collections::HashSet;
 use std::fs::File;
+use std::io::{BufRead, BufReader};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Get connection string from environment
-    let connection_string = std::env::var("SCYLLA_URI").unwrap();
-
-    if &connection_string == "" {
-        panic!("SCYLLA_URI environment variable not set");
-    }
-
-    // Connect to the ScyllaDB cluster
-    let session: Session = SessionBuilder::new()
-        .known_node(connection_string)
-        .build()
-        .await?;
-
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Enable info logging
     env_logger::init();
+
+    // Get file paths from environment variables or use default values
+    let actors_file_path =
+        std::env::var("ACTORS_FILE").unwrap_or_else(|_| "actors.csv".to_string());
+    let follows_file_path =
+        std::env::var("FOLLOWS_FILE").unwrap_or_else(|_| "follows.csv".to_string());
+    let output_file_path =
+        std::env::var("OUTPUT_FILE").unwrap_or_else(|_| "pageranks.csv".to_string());
+        
+    let expected_actor_count: usize = std::env::var("EXPECTED_ACTOR_COUNT")
+        .unwrap_or_else(|_| "5000000".to_string())
+        .parse()
+        .unwrap();
 
     info!("loading actors");
 
@@ -29,21 +28,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut uid_to_did: Vec<Option<String>> = Vec::new();
     let mut next_uid: usize = 1;
 
-    // Preallocate 5M elements for the vector
-    uid_to_did.reserve(5_000_000);
+    did_to_uid.reserve(expected_actor_count);
+    uid_to_did.reserve(expected_actor_count);
 
-    let rows = session
-        .query("SELECT did FROM bsky.actors", &[])
-        .await?
-        .rows
-        .unwrap();
-    for row in rows {
-        let did: String = row.columns[0]
-            .as_ref()
-            .unwrap()
-            .as_text()
-            .unwrap()
-            .to_string();
+    let actors_file = File::open(&actors_file_path)?;
+    let actors_reader = BufReader::new(actors_file);
+
+    for line in actors_reader.lines() {
+        let did = line?;
         did_to_uid.insert(did.clone(), next_uid);
         if uid_to_did.len() <= next_uid {
             uid_to_did.resize((next_uid + 1) as usize, None); // Ensure vector is large enough
@@ -57,28 +49,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Pre-load target UIDs for each UID into memory
     let mut uid_to_targets: Vec<HashSet<usize>> = vec![HashSet::new(); next_uid];
     let mut num_rows = 0;
-    let follow_rows = session
-        .query("SELECT actor_did, subject_did FROM bsky.follows", &[])
-        .await?
-        .rows
-        .unwrap();
-    for row in follow_rows {
+
+    let follows_file = File::open(&follows_file_path)?;
+    let follows_reader = BufReader::new(follows_file);
+
+    for line in follows_reader.lines() {
+        let row = line?;
         num_rows += 1;
         if num_rows % 1_000_000 == 0 {
             info!("Loaded {} follow rows", num_rows);
         }
-        let actor_did: String = row.columns[0]
-            .as_ref()
-            .unwrap()
-            .as_text()
-            .unwrap()
-            .to_string();
-        let target_did: String = row.columns[1]
-            .as_ref()
-            .unwrap()
-            .as_text()
-            .unwrap()
-            .to_string();
+        let mut iter = row.split(',');
+        let actor_did = iter.next().unwrap().to_string();
+        let target_did = iter.next().unwrap().to_string();
         if let Some(&actor_uid) = did_to_uid.get(&actor_did) {
             if let Some(&target_uid) = did_to_uid.get(&target_did) {
                 uid_to_targets[actor_uid].insert(target_uid);
@@ -95,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let next_uid_f64 = next_uid as f64;
 
-    // Compute PageRank with adjustments for vector use
+    // Compute PageRank
     const MAX_ITERATIONS: usize = 100;
     const DAMPING_FACTOR: f64 = 0.85;
     for _iteration in 0..MAX_ITERATIONS {
@@ -122,11 +105,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut ranks: Vec<_> = (0..next_uid).collect();
     ranks.sort_by(|&a, &b| pageranks[b].partial_cmp(&pageranks[a]).unwrap());
 
-    // CSV writing part needs minor adjustments for using uid_to_did vector
-    let file = File::create("pageranks.csv").expect("Unable to create file");
-    let mut wtr = csv::Writer::from_writer(file);
+    let output_file = File::create(&output_file_path)?;
+    let mut wtr = csv::Writer::from_writer(output_file);
 
-    info!("writing pageranks.csv");
+    info!("writing {}", output_file_path);
 
     for &uid in &ranks {
         if let Some(did) = uid_to_did[uid].as_ref() {
@@ -136,7 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    wtr.flush().unwrap();
+    wtr.flush()?;
 
     info!("done");
 
