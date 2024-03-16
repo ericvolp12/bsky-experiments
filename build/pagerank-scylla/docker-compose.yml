@@ -1,0 +1,8 @@
+version: '3'
+services:
+  pagerank-scylla:
+    build:
+      context: ../..
+      dockerfile: build/pagerank-scylla/Dockerfile
+    environment:
+      - SCYLLA_URI=scylla-node-address

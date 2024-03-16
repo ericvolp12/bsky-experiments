@@ -182,3 +182,14 @@ rgraphd-up: # Runs rgraphd docker container
 rgraphd-down: # Stops rgraphd docker container
 	@echo "Stopping rGraphD..."
 	docker compose -f build/rgraphd/docker-compose.yml down
+
+# Build Pagerank-Scylla
+.PHONY: pagerank-scylla-up
+pagerank-scylla-up:
+	@echo "Starting Pagerank-Scylla..."
+	docker compose -f build/pagerank-scylla/docker-compose.yml up --build -d
+	
+.PHONY: pagerank-scylla-down
+pagerank-scylla-down:
+	@echo "Stopping Pagerank-Scylla..."
+	docker compose -f build/pagerank-scylla/docker-compose.yml down
