@@ -2,37 +2,25 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/bluesky-social/indigo/atproto/identity"
+	"github.com/bluesky-social/indigo/atproto/syntax"
 	es256k "github.com/ericvolp12/jwt-go-secp256k1"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
 	lru "github.com/hashicorp/golang-lru/arc/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	godid "github.com/whyrusleeping/go-did"
+	"gitlab.com/yawning/secp256k1-voi/secec"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/time/rate"
 )
-
-type PLCEntry struct {
-	Context            []string                   `json:"@context"`
-	ID                 string                     `json:"id"`
-	AlsoKnownAs        []string                   `json:"alsoKnownAs"`
-	VerificationMethod []godid.VerificationMethod `json:"verificationMethod"`
-	Service            []struct {
-		ID              string `json:"id"`
-		Type            string `json:"type"`
-		ServiceEndpoint string `json:"serviceEndpoint"`
-	} `json:"service"`
-}
 
 type KeyCacheEntry struct {
 	UserDID   string
@@ -63,12 +51,10 @@ type FeedAuthEntity struct {
 }
 
 type Auth struct {
-	KeyCache     *lru.ARCCache[string, KeyCacheEntry]
-	KeyCacheTTL  time.Duration
-	HTTPClient   *http.Client
-	Limiter      *rate.Limiter
-	ServiceDID   string
-	PLCDirectory string
+	KeyCache    *lru.ARCCache[string, KeyCacheEntry]
+	KeyCacheTTL time.Duration
+	ServiceDID  string
+	Dir         *identity.CacheDirectory
 	// A bit of a hack for small-scope authenticated APIs
 	KeyProvider APIKeyProvider
 }
@@ -90,7 +76,6 @@ type APIKeyProvider interface {
 func NewAuth(
 	keyCacheSize int,
 	keyCacheTTL time.Duration,
-	plcDirectory string,
 	requestsPerSecond int,
 	serviceDID string,
 	keyProvider APIKeyProvider,
@@ -105,19 +90,22 @@ func NewAuth(
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
 	}
 
-	timeBetweenRequests := time.Duration(float64(time.Second) / float64(requestsPerSecond))
-
-	// Initialize the rate limiter for PLC Directory requests
-	limiter := rate.NewLimiter(rate.Every(timeBetweenRequests), 1)
+	baseDir := identity.BaseDirectory{
+		PLCURL:              identity.DefaultPLCURL,
+		PLCLimiter:          rate.NewLimiter(rate.Limit(float64(requestsPerSecond)), 1),
+		HTTPClient:          client,
+		TryAuthoritativeDNS: true,
+		// primary Bluesky PDS instance only supports HTTP resolution method
+		SkipDNSDomainSuffixes: []string{".bsky.social"},
+	}
+	dir := identity.NewCacheDirectory(&baseDir, keyCacheSize, keyCacheTTL, time.Minute*2, keyCacheTTL)
 
 	return &Auth{
-		KeyCache:     keyCache,
-		KeyCacheTTL:  keyCacheTTL,
-		PLCDirectory: plcDirectory,
-		HTTPClient:   &client,
-		ServiceDID:   serviceDID,
-		Limiter:      limiter,
-		KeyProvider:  keyProvider,
+		KeyCache:    keyCache,
+		KeyCacheTTL: keyCacheTTL,
+		ServiceDID:  serviceDID,
+		Dir:         &dir,
+		KeyProvider: keyProvider,
 	}, nil
 }
 
@@ -160,43 +148,34 @@ func (auth *Auth) GetClaimsFromAuthHeader(ctx context.Context, authHeader string
 			cacheMisses.WithLabelValues("key").Inc()
 			span.SetAttributes(attribute.Bool("caches.keys.hit", false))
 
+			did, err := syntax.ParseDID(userDID)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to parse user DID: %v", err)
+			}
+
 			// Get the user's key from PLC Directory
-			plcEntry, err := auth.GetPLCEntry(ctx, userDID)
+			id, err := auth.Dir.LookupDID(ctx, did)
 			if err != nil {
-				return nil, fmt.Errorf("Failed to get PLC Entry: %v", err)
+				return nil, fmt.Errorf("Failed to lookup user DID: %v", err)
 			}
 
-			// Check if the PLC Entry has a verification method
-			if len(plcEntry.VerificationMethod) == 0 {
-				return nil, fmt.Errorf("No verification method found in PLC Entry")
-			}
-
-			// Get the multibase key from the PLC Entry's verification method with id #atproto
-			var vm *godid.VerificationMethod
-			for _, verificationMethod := range plcEntry.VerificationMethod {
-				if strings.HasSuffix(verificationMethod.ID, "#atproto") {
-					vm = &verificationMethod
-					break
-				}
-			}
-
-			if vm == nil {
-				return nil, fmt.Errorf("No verification method for #atproto found in PLC Entry")
-			}
-
-			// Parse the public key from the decoded multibase key
-			pub, err := vm.GetPublicKey()
+			key, err := id.GetPublicKey("atproto")
 			if err != nil {
-				return nil, fmt.Errorf("Failed to decode multibase key: %v", err)
+				return nil, fmt.Errorf("Failed to get user public key: %v", err)
+			}
+
+			parsedPubkey, err := secec.NewPublicKey(key.UncompressedBytes())
+			if err != nil {
+				return nil, fmt.Errorf("Failed to parse user public key: %v", err)
 			}
 
 			// Add the ECDSA key to the cache
 			auth.KeyCache.Add(userDID, KeyCacheEntry{
-				Key:       pub.Raw,
+				Key:       parsedPubkey,
 				ExpiresAt: time.Now().Add(auth.KeyCacheTTL),
 			})
 
-			return pub.Raw, nil
+			return parsedPubkey, nil
 		}
 
 		return nil, fmt.Errorf("Invalid authorization token (failed to parse claims)")
@@ -211,45 +190,6 @@ func (auth *Auth) GetClaimsFromAuthHeader(ctx context.Context, authHeader string
 	}
 
 	return nil
-}
-
-func (auth *Auth) GetPLCEntry(ctx context.Context, did string) (*PLCEntry, error) {
-	tracer := otel.Tracer("auth")
-	ctx, span := tracer.Start(ctx, "Auth:GetPLCEntry")
-	defer span.End()
-
-	// Wait for the rate limiter
-	auth.Limiter.Wait(ctx)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/%s", auth.PLCDirectory, did), nil)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to create PLC Directory request: %v", err)
-	}
-
-	// Execute the request with the auth's instrumented HTTP client
-	resp, err := auth.HTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to get user's entry from PLC Directory: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Failed to get user's entry from PLC Directory: %v", resp.Status)
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to read PLC Directory response: %v", err)
-	}
-
-	// Unmarshal into a PLC Entry
-	plcEntry := &PLCEntry{}
-	err = json.Unmarshal(body, plcEntry)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to unmarshal PLC Entry: %v", err)
-	}
-
-	return plcEntry, nil
 }
 
 func (auth *Auth) AuthenticateGinRequestViaJWT(c *gin.Context) {

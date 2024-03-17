@@ -372,7 +372,6 @@ func FeedGenerator(cctx *cli.Context) error {
 	auther, err := auth.NewAuth(
 		500_000,
 		time.Hour*12,
-		"https://plc.directory",
 		40,
 		"did:web:feedsky.jazco.io",
 		storeProvider,
