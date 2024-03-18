@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   bsky-feedgen-go:
@@ -9,6 +9,7 @@ services:
       - "host.docker.internal:host-gateway"
     image: bsky-feedgen-go #:stable
     container_name: bsky-feedgen-go
+    restart: unless-stopped
     env_file:
       - ../../.feedgen.env
     ports:
@@ -36,4 +37,3 @@ services:
   #     - type: bind
   #       source: ../../keys.json
   #       target: /keys.json
-

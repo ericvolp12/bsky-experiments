@@ -33,6 +33,7 @@ type Endpoints struct {
 	FeedGenerator   *feedgenerator.FeedGenerator
 	GraphJSONUrl    string
 	FeedUsers       map[string][]string
+	usersLk         sync.RWMutex
 	UniqueSeenUsers *bloom.BloomFilter
 
 	PostRegistry *search.PostRegistry
@@ -230,6 +231,8 @@ func (ep *Endpoints) ProcessUser(feedName string, userDID string) {
 		uniqueFeedUserCounter.Inc()
 	}
 
+	ep.usersLk.Lock()
+	defer ep.usersLk.Unlock()
 	// Check if the feed user list exists
 	if ep.FeedUsers[feedName] == nil {
 		// If not, create the feed user list
@@ -543,6 +546,7 @@ func (ep *Endpoints) GetFeeds(c *gin.Context) {
 
 	feeds := make(map[string]FeedMeta)
 
+	ep.usersLk.RLock()
 	for alias, feed := range ep.FeedGenerator.FeedMap {
 		feedType := reflect.TypeOf(feed).String()
 		feedType = strings.TrimPrefix(feedType, "*")
@@ -552,6 +556,7 @@ func (ep *Endpoints) GetFeeds(c *gin.Context) {
 			UserCount: len(ep.FeedUsers[alias]),
 		}
 	}
+	ep.usersLk.RUnlock()
 
 	resp := GetFeedsResponse{
 		Feeds: feeds,
