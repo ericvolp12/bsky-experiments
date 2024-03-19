@@ -23,8 +23,8 @@ import (
 
 func main() {
 	app := cli.App{
-		Name:    "consumer",
-		Usage:   "atproto firehose consumer",
+		Name:    "checkout",
+		Usage:   "atproto repo checkout tool",
 		Version: "0.0.2",
 	}
 
