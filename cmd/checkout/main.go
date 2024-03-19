@@ -38,7 +38,7 @@ func main() {
 		&cli.StringFlag{
 			Name:    "output-dir",
 			Usage:   "directory to write the repo to",
-			Value:   "./<repo-did>",
+			Value:   "./out/<repo-did>",
 			EnvVars: []string{"OUTPUT_DIR"},
 		},
 		&cli.BoolFlag{
@@ -72,8 +72,8 @@ func Checkout(cctx *cli.Context) error {
 
 	outputDir := cctx.String("output-dir")
 
-	if outputDir == "./<repo-did>" {
-		outputDir = fmt.Sprintf("./%s", did.String())
+	if outputDir == "./out/<repo-did>" {
+		outputDir = fmt.Sprintf("./out/%s", did.String())
 		outputDir, err = filepath.Abs(outputDir)
 		if err != nil {
 			slog.Error("Error getting absolute path", "error", err)
