@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -63,7 +64,7 @@ func Checkout(cctx *cli.Context) error {
 
 	did, err := syntax.ParseDID(rawDID)
 	if err != nil {
-		log.Printf("Error parsing DID: %v", err)
+		slog.Error("Error parsing DID", "error", err)
 		return fmt.Errorf("Error parsing DID: %v", err)
 	}
 
@@ -75,14 +76,14 @@ func Checkout(cctx *cli.Context) error {
 		outputDir = fmt.Sprintf("./%s", did.String())
 		outputDir, err = filepath.Abs(outputDir)
 		if err != nil {
-			log.Printf("Error getting absolute path: %v", err)
+			slog.Error("Error getting absolute path", "error", err)
 			return fmt.Errorf("Error getting absolute path: %v", err)
 		}
 
 		// Create the directory if it doesn't exist
 		err = os.MkdirAll(outputDir, 0755)
 		if err != nil {
-			log.Printf("Error creating directory: %v", err)
+			slog.Error("Error creating directory", "error", err)
 			return fmt.Errorf("Error creating directory: %v", err)
 		}
 	}
@@ -94,80 +95,96 @@ func Checkout(cctx *cli.Context) error {
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		log.Printf("Error creating request: %v", err)
+		slog.Error("Error creating request", "error", err)
 		return fmt.Errorf("Error creating request: %v", err)
 	}
 
 	req.Header.Set("Accept", "application/vnd.ipld.car")
-	req.Header.Set("User-Agent", "jaz-repo-checkout/0.0.1")
+	req.Header.Set("User-Agent", "jaz-repo-checkout/0.0.2")
+
+	slog.Info("fetching repo", "did", did.String(), "url", url)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("Error sending request: %v", err)
+		slog.Error("Error sending request", "error", err)
 		return fmt.Errorf("Error sending request: %v", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Error response: %v", resp.StatusCode)
+		slog.Error("Error response", "status", resp.StatusCode)
 		return fmt.Errorf("Error response: %v", resp.StatusCode)
 	}
 
 	r, err := repo.ReadRepoFromCar(ctx, resp.Body)
 	if err != nil {
-		log.Printf("Error reading repo: %v", err)
+		slog.Error("Error reading repo", "error", err)
 		return fmt.Errorf("Error reading repo: %v", err)
 	}
 
 	err = resp.Body.Close()
 	if err != nil {
-		log.Printf("Error closing response body: %v", err)
+		slog.Error("Error closing response body", "error", err)
 		return fmt.Errorf("Error closing response body: %v", err)
 	}
+
+	numRecords := 0
+	numCollections := 0
+	collectionsSeen := make(map[string]struct{})
 
 	r.ForEach(ctx, "", func(path string, nodeCid cid.Cid) error {
 		recordCid, rec, err := r.GetRecordBytes(ctx, path)
 		if err != nil {
-			log.Printf("Error getting record: %v", err)
+			slog.Error("Error getting record", "error", err)
 			return nil
 		}
 
 		// Verify that the record cid matches the cid in the event
 		if recordCid != nodeCid {
-			log.Printf("mismatch in record and op cid: %s != %s", recordCid, nodeCid)
+			slog.Error("mismatch in record and op cid", "recordCid", recordCid, "nodeCid", nodeCid)
 			return nil
 		}
 
 		parts := strings.Split(path, "/")
 		if len(parts) != 2 {
-			log.Printf("path does not have 2 parts: %s", path)
+			slog.Error("path does not have 2 parts", "path", path)
 			return nil
 		}
 
 		collection := parts[0]
 		rkey := parts[1]
 
+		// Count the number of records and collections
+		numRecords++
+		if _, ok := collectionsSeen[collection]; !ok {
+			numCollections++
+			collectionsSeen[collection] = struct{}{}
+		}
+
 		// Create a directory for the collection if it doesn't exist
 		collectionDir := filepath.Join(outputDir, collection)
 		err = os.MkdirAll(collectionDir, 0755)
 		if err != nil {
-			log.Printf("Error creating collection directory: %v", err)
+			slog.Error("Error creating collection directory", "error", err)
+			return nil
 		}
 
 		// Write the record to a file as JSON
 		recordPath := filepath.Join(collectionDir, fmt.Sprintf("%s.json", rkey))
 		asCbor, err := data.UnmarshalCBOR(*rec)
 		if err != nil {
+			slog.Error("Error unmarshalling record", "error", err)
 			return fmt.Errorf("failed to unmarshal record: %w", err)
 		}
 
 		recJSON, err := json.Marshal(asCbor)
 		if err != nil {
+			slog.Error("Error marshalling record to json", "error", err)
 			return fmt.Errorf("failed to marshal record to json: %w", err)
 		}
 
 		err = os.WriteFile(recordPath, recJSON, 0644)
 		if err != nil {
-			log.Printf("Error writing record to file: %v", err)
+			slog.Error("Error writing record to file", "error", err)
 		}
 
 		return nil
@@ -177,17 +194,19 @@ func Checkout(cctx *cli.Context) error {
 	if cctx.Bool("compress") {
 		err = compressDirectory(outputDir)
 		if err != nil {
-			log.Printf("Error compressing directory: %v", err)
+			slog.Error("Error compressing directory", "error", err)
 			return fmt.Errorf("Error compressing directory: %v", err)
 		}
 
 		// Delete the intermediate files
 		err = os.RemoveAll(outputDir)
 		if err != nil {
-			log.Printf("Error deleting intermediate files: %v", err)
+			slog.Error("Error deleting intermediate files", "error", err)
 			return fmt.Errorf("Error deleting intermediate files: %v", err)
 		}
 	}
+
+	slog.Info("checkout complete", "outputDir", outputDir, "numRecords", numRecords, "numCollections", numCollections)
 
 	return nil
 }
