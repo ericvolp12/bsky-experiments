@@ -23,7 +23,7 @@ from pythonjsonlogger import jsonlogger
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .models import ImageMeta, ImageResult
-from .object_detection import DetectionResult, detect_objects, processor
+from .object_detection import DetectionResult, detect_objects, processor, imageClasses
 
 # Set up JSON logging
 formatter = jsonlogger.JsonFormatter()
@@ -182,7 +182,10 @@ async def preprocess_and_detect(
             def preprocess_batch():
                 with tracer.start_as_current_span("preprocess_images") as span:
                     batch = processor(
-                        images=[img for _, img in image_pairs], return_tensors="pt"
+                        text=imageClasses,
+                        images=[img for _, img in image_pairs],
+                        return_tensors="pt",
+                        Padding=true,
                     )
                     return batch
 

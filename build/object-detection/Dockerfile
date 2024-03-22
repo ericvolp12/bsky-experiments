@@ -18,7 +18,7 @@ WORKDIR /model
 
 RUN git lfs install
 
-RUN git clone https://hf.co/facebook/detr-resnet-50
+RUN git clone https://hf.co/openai/clip-vit-large-patch14
 
 # Stage 3: Building the final image
 FROM base as final
@@ -27,7 +27,7 @@ RUN mkdir -p /models
 
 ENV MODEL_FROM_DISK=True
 
-COPY --from=model-downloader /model/detr-resnet-50 /app/facebook/detr-resnet-50
+COPY --from=model-downloader /model/clip-vit-large-patch14 /app/openai/clip-vit-large-patch14
 COPY python/object-detection/bsky-object-detection /app/bsky-object-detection
 
 ENV PYTHONPATH=/app

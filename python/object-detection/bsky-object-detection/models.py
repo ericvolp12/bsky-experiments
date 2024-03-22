@@ -15,7 +15,6 @@ class ImageMeta(BaseModel):
 class DetectionResult(BaseModel):
     label: str
     confidence: float
-    box: List[float]
 
 
 class ImageResult(BaseModel):
