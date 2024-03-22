@@ -53,7 +53,7 @@ def detect_objects(
             outputs = model(**inputs)
 
         logits_per_image = outputs.logits_per_image
-        probs = logits_per_image.softmax(dim=1).cpu().numpy()
+        probs = logits_per_image.softmax(dim=1).cpu().detach().numpy()
 
         processing_time = time.time() - start
         span.set_attribute("processing_time", processing_time)
