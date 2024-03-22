@@ -22,9 +22,8 @@ type ImageMeta struct {
 }
 
 type DetectionResult struct {
-	Label      string    `json:"label"`
-	Confidence float64   `json:"confidence"`
-	Box        []float64 `json:"box"`
+	Label      string  `json:"label"`
+	Confidence float64 `json:"confidence"`
 }
 
 type ImageResult struct {

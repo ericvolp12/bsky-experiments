@@ -32,6 +32,14 @@ imageClasses = [
     "a picture of a cute animal",
 ]
 
+labels = [
+    "cat",
+    "dog",
+    "bird",
+    "food",
+    "animal",
+]
+
 
 def detect_objects(
     batch: BatchFeature, image_pairs: List[Tuple[ImageMeta, Image.Image]]
@@ -55,7 +63,7 @@ def detect_objects(
         for idx, result in enumerate(probs):
             image_meta, _ = image_pairs[idx]
             detection_results = []
-            for i, (label, score) in enumerate(zip(imageClasses, result)):
+            for i, (label, score) in enumerate(zip(labels, result)):
                 detection_results.append(DetectionResult(label=label, confidence=score))
             batch_detection_results.append((image_meta, detection_results))
 
