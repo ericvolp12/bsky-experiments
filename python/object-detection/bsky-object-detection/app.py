@@ -185,7 +185,7 @@ async def preprocess_and_detect(
                         text=imageClasses,
                         images=[img for _, img in image_pairs],
                         return_tensors="pt",
-                        Padding=true,
+                        Padding=True,
                     )
                     return batch
 
