@@ -22,7 +22,7 @@ FROM debian:stable-slim
 
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /app/indexer .
+COPY --from=builder /app/output/indexer .
 
 RUN mkdir -p /app/data
 

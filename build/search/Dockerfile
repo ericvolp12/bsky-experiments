@@ -22,7 +22,7 @@ FROM alpine:latest
 
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /app/search .
+COPY --from=builder /app/output/search .
 
 COPY public/ public/
 

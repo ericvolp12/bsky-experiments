@@ -30,7 +30,7 @@ FROM debian:stable-slim
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 # Copy the binary from the first stage.
-COPY --from=builder /app/jazbot .
+COPY --from=builder /app/output/jazbot .
 
 # Set the startup command to run the binary
 CMD ["./jazbot"]
