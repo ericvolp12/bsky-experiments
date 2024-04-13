@@ -1,3 +1,10 @@
+#[cfg(not(target_env = "msvc"))]
+use jemallocator::Jemalloc;
+
+#[cfg(all(not(windows), not(target_env = "musl")))]
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 use axum::{
     routing::{get, post},
     Extension, Router,

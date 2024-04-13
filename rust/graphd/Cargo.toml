@@ -21,3 +21,6 @@ AXUM_HTTP_REQUESTS_TOTAL = "rgraphd_requests_total"
 AXUM_HTTP_REQUESTS_DURATION_SECONDS = "rgraphd_requests_duration_seconds"
 AXUM_HTTP_REQUESTS_PENDING = "rgraphd_requests_pending"
 AXUM_HTTP_RESPONSE_BODY_SIZE = "rgraphd_response_body_size"
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+jemallocator = "0.5.4"
