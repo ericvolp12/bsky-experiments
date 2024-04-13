@@ -145,6 +145,36 @@ pub async fn get_followers_not_following(
 }
 
 #[derive(Serialize)]
+pub struct IntersectFollowingAndFollowersResponse {
+    dids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct IntersectFollowingAndFollowersQuery {
+    actor_did: String,
+    target_did: String,
+}
+
+pub async fn get_intersect_following_and_followers(
+    state: Extension<AppState>,
+    Query(query): Query<IntersectFollowingAndFollowersQuery>,
+) -> impl IntoResponse {
+    let actor_uid = state.graph.get_uid(&query.actor_did);
+    let target_uid = state.graph.get_uid(&query.target_did);
+    if actor_uid.is_none() || target_uid.is_none() {
+        return Json(IntersectFollowingAndFollowersResponse { dids: vec![] });
+    }
+    let dids = state
+        .graph
+        .intersect_following_and_followers(actor_uid.unwrap(), target_uid.unwrap())
+        .iter()
+        .map(|uid| state.graph.get_did(*uid).unwrap())
+        .collect();
+    Json(IntersectFollowingAndFollowersResponse { dids })
+}
+
+
+#[derive(Serialize)]
 pub struct DoesFollowResponse {
     does_follow: bool,
 }

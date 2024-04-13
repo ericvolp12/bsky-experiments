@@ -58,6 +58,10 @@ async fn main() {
             "/followers_not_following",
             get(handlers::get_followers_not_following),
         )
+        .route(
+            "/follows_following",
+            get(handlers::get_intersect_following_and_followers),
+        )
         .route("/does_follow", get(handlers::get_does_follow))
         .layer(Extension(state))
         .route(

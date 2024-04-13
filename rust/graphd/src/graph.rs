@@ -106,6 +106,13 @@ impl Graph {
         result
     }
 
+    pub fn intersect_following_and_followers(&self, actor: u64, target: u64) -> HashSet<u64> {
+        self.get_following(actor)
+            .intersection(&self.get_followers(target))
+            .cloned()
+            .collect()
+    }
+
     pub fn does_follow(&self, actor: u64, target: u64) -> bool {
         self.get_following(actor).contains(&target)
     }
