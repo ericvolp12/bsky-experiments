@@ -1,10 +1,10 @@
 use log::info;
 use std::{
-    collections::{HashMap, HashSet},
     fs::File,
     io::BufReader,
     sync::RwLock,
 };
+use hashbrown::{HashMap, HashSet};
 
 use csv;
 
