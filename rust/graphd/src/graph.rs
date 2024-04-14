@@ -4,14 +4,19 @@ use std::{fs::File, io::BufReader, sync::RwLock};
 
 use csv;
 
+pub struct QueueItem {
+    pub action: String,
+    pub actor: u64,
+    pub target: u64,
+}
+
 pub struct Graph {
     follows: RwLock<HashMap<u64, HashSet<u64>>>,
     followers: RwLock<HashMap<u64, HashSet<u64>>>,
     uid_to_did: RwLock<HashMap<u64, String>>,
     did_to_uid: RwLock<HashMap<String, u64>>,
     next_uid: RwLock<u64>,
-    pub follow_queue: RwLock<Vec<(u64, u64)>>,
-    pub unfollow_queue: RwLock<Vec<(u64, u64)>>,
+    pub pending_queue: RwLock<Vec<QueueItem>>,
     pub is_loaded: RwLock<bool>,
 }
 
@@ -23,8 +28,7 @@ impl Graph {
             uid_to_did: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
             did_to_uid: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
             next_uid: RwLock::new(0),
-            follow_queue: RwLock::new(Vec::new()),
-            unfollow_queue: RwLock::new(Vec::new()),
+            pending_queue: RwLock::new(Vec::new()),
             is_loaded: RwLock::new(false),
         }
     }
@@ -198,19 +202,17 @@ impl Graph {
 
         *self.is_loaded.write().unwrap() = true;
 
-        // Play through the follow queue
-        for (actor, target) in self.follow_queue.write().unwrap().iter() {
-            self.add_follow(*actor, *target);
+        // Play through the pending queue
+        for item in self.pending_queue.write().unwrap().iter() {
+            match item.action.as_str() {
+                "follow" => self.add_follow(item.actor, item.target),
+                "unfollow" => self.remove_follow(item.actor, item.target),
+                _ => (),
+            }
         }
 
-        // Play through the unfollow queue
-        for (actor, target) in self.unfollow_queue.write().unwrap().iter() {
-            self.remove_follow(*actor, *target);
-        }
-
-        // Clear the queues
-        self.follow_queue.write().unwrap().clear();
-        self.unfollow_queue.write().unwrap().clear();
+        // Clear the queue
+        self.pending_queue.write().unwrap().clear();
 
         info!("Loaded graph with {} users", self.get_usercount());
 

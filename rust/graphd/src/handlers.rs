@@ -41,8 +41,7 @@ pub struct HealthStatus {
     user_count: Option<u64>,
     follow_count: Option<u64>,
     loaded: bool,
-    follow_queue_len: Option<usize>,
-    unfollow_queue_len: Option<usize>,
+    pending_queue_len: Option<usize>,
 }
 
 pub async fn health(
@@ -55,14 +54,12 @@ pub async fn health(
         user_count: None,
         follow_count: None,
         loaded: *state.graph.is_loaded.read().unwrap(),
-        follow_queue_len: None,
-        unfollow_queue_len: None,
+        pending_queue_len: None,
     };
 
     if query.stats == "true" {
         status.user_count = Some(state.graph.get_usercount());
-        status.follow_queue_len = Some(state.graph.follow_queue.read().unwrap().len());
-        status.unfollow_queue_len = Some(state.graph.unfollow_queue.read().unwrap().len());
+        status.pending_queue_len = Some(state.graph.pending_queue.read().unwrap().len());
     }
 
     Json(status)
@@ -89,9 +86,12 @@ pub async fn post_follows(
 
         // If the graph isn't loaded yet, enqueue the follow request
         if !state.graph.is_loaded.read().unwrap().clone() {
-            let mut follow_queue = state.graph.follow_queue.write().unwrap();
-            follow_queue.push((actor_uid, target_uid));
-            continue;
+            let mut action_queue = state.graph.pending_queue.write().unwrap();
+            action_queue.push(graph::QueueItem {
+                action: "follow".to_string(),
+                actor: actor_uid,
+                target: target_uid,
+            });
         }
 
         state.graph.add_follow(actor_uid, target_uid);
@@ -106,8 +106,12 @@ pub async fn post_follow(state: Extension<AppState>, body: Json<Follow>) -> impl
 
     // If the graph isn't loaded yet, enqueue the follow request
     if !state.graph.is_loaded.read().unwrap().clone() {
-        let mut follow_queue = state.graph.follow_queue.write().unwrap();
-        follow_queue.push((actor_uid, target_uid));
+        let mut action_queue = state.graph.pending_queue.write().unwrap();
+        action_queue.push(graph::QueueItem {
+            action: "follow".to_string(),
+            actor: actor_uid,
+            target: target_uid,
+        });
         return StatusCode::OK;
     }
 
@@ -293,8 +297,12 @@ pub async fn post_unfollow(
 
     // If the graph isn't loaded yet, enqueue the unfollow request
     if !state.graph.is_loaded.read().unwrap().clone() {
-        let mut unfollow_queue = state.graph.unfollow_queue.write().unwrap();
-        unfollow_queue.push((actor_uid, target_uid));
+        let mut action_queue = state.graph.pending_queue.write().unwrap();
+        action_queue.push(graph::QueueItem {
+            action: "unfollow".to_string(),
+            actor: actor_uid,
+            target: target_uid,
+        });
         return StatusCode::OK;
     }
 
