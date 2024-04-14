@@ -29,6 +29,11 @@ impl IntoResponse for Errors {
     }
 }
 
+#[derive(Deserialize)]
+pub struct HealthStatusQuery {
+    stats: String,
+}
+
 #[derive(Serialize)]
 pub struct HealthStatus {
     status: &'static str,
@@ -40,7 +45,10 @@ pub struct HealthStatus {
     unfollow_queue_len: Option<usize>,
 }
 
-pub async fn health(Query(stats): Query<bool>, state: Extension<AppState>) -> impl IntoResponse {
+pub async fn health(
+    state: Extension<AppState>,
+    Query(query): Query<HealthStatusQuery>,
+) -> impl IntoResponse {
     let mut status = HealthStatus {
         status: "ok",
         version: "0.1.0",
@@ -51,7 +59,7 @@ pub async fn health(Query(stats): Query<bool>, state: Extension<AppState>) -> im
         unfollow_queue_len: None,
     };
 
-    if stats {
+    if query.stats == "true" {
         status.user_count = Some(state.graph.get_usercount());
         status.follow_queue_len = Some(state.graph.follow_queue.read().unwrap().len());
         status.unfollow_queue_len = Some(state.graph.unfollow_queue.read().unwrap().len());
