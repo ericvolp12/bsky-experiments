@@ -202,21 +202,20 @@ impl Graph {
         let reader = BufReader::new(file);
 
         let mut rows = csv::Reader::from_reader(reader);
-
+        let mut rec = csv::StringRecord::new();
         let mut row_count = 0;
 
-        for row in rows.records() {
-            let record = row?;
+        while rows.read_record(&mut rec)? {
             row_count += 1;
             if row_count % 1_000_000 == 0 {
                 info!("Processed {} rows", row_count);
             }
 
-            let actor_did = record[0].to_string();
-            let target_did = record[1].to_string();
+            let actor_did = rec.get(0).unwrap();
+            let target_did = rec.get(1).unwrap();
 
-            let actor_uid = self.acquire_did(&actor_did);
-            let target_uid = self.acquire_did(&target_did);
+            let actor_uid = self.acquire_did(actor_did);
+            let target_uid = self.acquire_did(target_did);
 
             self.add_follow(actor_uid, target_uid);
         }
