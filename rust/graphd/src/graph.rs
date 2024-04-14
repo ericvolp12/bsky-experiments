@@ -1,5 +1,4 @@
-use dashmap::DashMap as HashMap;
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
 use log::info;
 use std::{fs::File, io::BufReader, sync::RwLock};
 
@@ -17,10 +16,10 @@ struct QueueItem {
 }
 
 pub struct Graph {
-    follows: HashMap<u64, HashSet<u64>>,
-    followers: HashMap<u64, HashSet<u64>>,
-    uid_to_did: HashMap<u64, String>,
-    did_to_uid: HashMap<String, u64>,
+    follows: RwLock<HashMap<u64, HashSet<u64>>>,
+    followers: RwLock<HashMap<u64, HashSet<u64>>>,
+    uid_to_did: RwLock<HashMap<u64, String>>,
+    did_to_uid: RwLock<HashMap<String, u64>>,
     next_uid: RwLock<u64>,
     pending_queue: RwLock<Vec<QueueItem>>,
     pub is_loaded: RwLock<bool>,
@@ -29,10 +28,10 @@ pub struct Graph {
 impl Graph {
     pub fn new(expected_node_count: u64) -> Self {
         Graph {
-            follows: HashMap::with_capacity(expected_node_count as usize),
-            followers: HashMap::with_capacity(expected_node_count as usize),
-            uid_to_did: HashMap::with_capacity(expected_node_count as usize),
-            did_to_uid: HashMap::with_capacity(expected_node_count as usize),
+            follows: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
+            followers: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
+            uid_to_did: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
+            did_to_uid: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
             next_uid: RwLock::new(0),
             pending_queue: RwLock::new(Vec::new()),
             is_loaded: RwLock::new(false),
@@ -61,31 +60,45 @@ impl Graph {
 
     pub fn add_follow(&self, actor: u64, target: u64) {
         self.follows
+            .write()
+            .unwrap()
             .entry(actor)
             .or_insert(HashSet::new())
             .insert(target);
 
         self.followers
+            .write()
+            .unwrap()
             .entry(target)
             .or_insert(HashSet::new())
             .insert(actor);
     }
 
     pub fn remove_follow(&self, actor: u64, target: u64) {
-        if let Some(mut set) = self.follows.get_mut(&actor) {
+        if let Some(set) = self.follows.write().unwrap().get_mut(&actor) {
             set.remove(&target);
         }
-        if let Some(mut set) = self.followers.get_mut(&target) {
+        if let Some(set) = self.followers.write().unwrap().get_mut(&target) {
             set.remove(&actor);
         }
     }
 
     pub fn get_followers(&self, uid: u64) -> HashSet<u64> {
-        self.followers.get(&uid).unwrap().clone()
+        self.followers
+            .read()
+            .unwrap()
+            .get(&uid)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn get_following(&self, uid: u64) -> HashSet<u64> {
-        self.follows.get(&uid).unwrap().clone()
+        self.follows
+            .read()
+            .unwrap()
+            .get(&uid)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn get_moots(&self, uid: u64) -> HashSet<u64> {
@@ -143,16 +156,18 @@ impl Graph {
     }
 
     pub fn acquire_did(&self, did: &str) -> u64 {
+        let mut uid_to_did = self.uid_to_did.write().unwrap();
+        let mut did_to_uid = self.did_to_uid.write().unwrap();
         let mut next_uid = self.next_uid.write().unwrap();
 
-        if let Some(uid) = self.did_to_uid.get(did) {
+        if let Some(uid) = did_to_uid.get(did) {
             return *uid;
         }
 
         let uid = *next_uid;
         *next_uid += 1;
-        self.uid_to_did.insert(uid, did.to_string());
-        self.did_to_uid.insert(did.to_string(), uid);
+        uid_to_did.insert(uid, did.to_string());
+        did_to_uid.insert(did.to_string(), uid);
         uid
     }
 
@@ -161,22 +176,22 @@ impl Graph {
     }
 
     pub fn get_did(&self, uid: u64) -> Option<String> {
-        self.uid_to_did.get(&uid).map(|s| s.clone())
+        self.uid_to_did.read().unwrap().get(&uid).cloned()
     }
 
     pub fn get_uid(&self, did: &str) -> Option<u64> {
-        self.did_to_uid.get(did).map(|u| *u)
+        self.did_to_uid.read().unwrap().get(did).cloned()
     }
 
     pub fn get_dids(&self, vec: Vec<u64>) -> Vec<String> {
         vec.iter()
-            .map(|uid| self.uid_to_did.get(uid).unwrap().clone())
+            .map(|uid| self.uid_to_did.read().unwrap().get(uid).unwrap().clone())
             .collect()
     }
 
     pub fn get_uids(&self, vec: Vec<String>) -> Vec<u64> {
         vec.iter()
-            .map(|did| self.did_to_uid.get(did).unwrap().clone())
+            .map(|did| self.did_to_uid.read().unwrap().get(did).unwrap().clone())
             .collect()
     }
 }
