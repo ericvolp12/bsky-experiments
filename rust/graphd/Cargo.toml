@@ -28,3 +28,6 @@ tikv-jemallocator = "0.5"
 
 [profile.release]
 codegen-units = 1
+
+[build]
+rustflags = ["-C", "target-cpu=native"]
