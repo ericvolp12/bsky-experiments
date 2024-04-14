@@ -27,9 +27,13 @@ async fn main() {
 
     let port = std::env::var("PORT").unwrap_or("8000".to_string());
     let csv_path = std::env::var("CSV_PATH").unwrap_or("data/follows.csv".to_string());
+    let expected_node_count = std::env::var("EXPECTED_NODE_COUNT")
+        .unwrap_or("5000000".to_string())
+        .parse::<u64>()
+        .unwrap();
 
     info!("Starting up");
-    let graph = graph::Graph::new(5_000_000);
+    let graph = graph::Graph::new(expected_node_count);
     graph.load_from_csv(&csv_path).unwrap();
     info!("Loaded graph with {} users", graph.get_usercount());
 

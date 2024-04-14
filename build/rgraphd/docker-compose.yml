@@ -10,6 +10,7 @@ services:
       GRAPH_CSV: /data/follows.csv
       PORT: 1323
       RUST_LOG: info
+      EXPECTED_NODE_COUNT: 5_500_000
     network_mode: host # For higher performance avoid the Docker Bridge
     volumes:
       - ../../data:/data

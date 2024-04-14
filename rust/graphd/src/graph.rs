@@ -1,4 +1,3 @@
-use ahash::RandomState;
 use log::info;
 use std::{
     collections::{HashMap, HashSet},
@@ -10,9 +9,9 @@ use std::{
 use csv;
 
 pub struct Graph {
-    follows: RwLock<HashMap<u64, HashSet<u64, RandomState>, RandomState>>,
-    followers: RwLock<HashMap<u64, HashSet<u64, RandomState>, RandomState>>,
-    uid_to_did: RwLock<HashMap<u64, String, RandomState>>,
+    follows: RwLock<HashMap<u64, HashSet<u64>>>,
+    followers: RwLock<HashMap<u64, HashSet<u64>>>,
+    uid_to_did: RwLock<HashMap<u64, String>>,
     did_to_uid: RwLock<HashMap<String, u64>>,
     next_uid: RwLock<u64>,
 }
@@ -20,18 +19,9 @@ pub struct Graph {
 impl Graph {
     pub fn new(expected_node_count: u64) -> Self {
         Graph {
-            follows: RwLock::new(HashMap::with_capacity_and_hasher(
-                expected_node_count as usize,
-                RandomState::default(),
-            )),
-            followers: RwLock::new(HashMap::with_capacity_and_hasher(
-                expected_node_count as usize,
-                RandomState::default(),
-            )),
-            uid_to_did: RwLock::new(HashMap::with_capacity_and_hasher(
-                expected_node_count as usize,
-                RandomState::default(),
-            )),
+            follows: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
+            followers: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
+            uid_to_did: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
             did_to_uid: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
             next_uid: RwLock::new(0),
         }
@@ -42,14 +32,14 @@ impl Graph {
             .write()
             .unwrap()
             .entry(actor)
-            .or_insert(HashSet::with_hasher(RandomState::default()))
+            .or_insert(HashSet::new())
             .insert(target);
 
         self.followers
             .write()
             .unwrap()
             .entry(target)
-            .or_insert(HashSet::with_hasher(RandomState::default()))
+            .or_insert(HashSet::new())
             .insert(actor);
     }
 
@@ -62,7 +52,7 @@ impl Graph {
         }
     }
 
-    pub fn get_followers(&self, uid: u64) -> HashSet<u64, RandomState> {
+    pub fn get_followers(&self, uid: u64) -> HashSet<u64> {
         self.followers
             .read()
             .unwrap()
@@ -71,7 +61,7 @@ impl Graph {
             .unwrap_or_default()
     }
 
-    pub fn get_following(&self, uid: u64) -> HashSet<u64, RandomState> {
+    pub fn get_following(&self, uid: u64) -> HashSet<u64> {
         self.follows
             .read()
             .unwrap()
@@ -86,7 +76,7 @@ impl Graph {
         follows.intersection(&followers).cloned().collect()
     }
 
-    pub fn intersect_followers(&self, uids: Vec<u64>) -> HashSet<u64, RandomState> {
+    pub fn intersect_followers(&self, uids: Vec<u64>) -> HashSet<u64> {
         // Sort by number of followers ascending so we can start with the smallest set
         let mut uids = uids;
         uids.sort_by_key(|uid| self.get_followers(*uid).len());
@@ -101,7 +91,7 @@ impl Graph {
         result
     }
 
-    pub fn intersect_following(&self, uids: Vec<u64>) -> HashSet<u64, RandomState> {
+    pub fn intersect_following(&self, uids: Vec<u64>) -> HashSet<u64> {
         // Sort by number of follows ascending so we can start with the smallest set
         let mut uids = uids;
         uids.sort_by_key(|uid| self.get_following(*uid).len());
