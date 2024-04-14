@@ -173,7 +173,6 @@ pub async fn get_intersect_following_and_followers(
     Json(IntersectFollowingAndFollowersResponse { dids })
 }
 
-
 #[derive(Serialize)]
 pub struct DoesFollowResponse {
     does_follow: bool,
