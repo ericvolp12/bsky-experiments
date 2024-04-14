@@ -4,10 +4,15 @@ use std::{fs::File, io::BufReader, sync::RwLock};
 
 use csv;
 
-pub struct QueueItem {
-    pub action: String,
-    pub actor: u64,
-    pub target: u64,
+enum Action {
+    Follow,
+    Unfollow,
+}
+
+struct QueueItem {
+    action: Action,
+    actor: u64,
+    target: u64,
 }
 
 pub struct Graph {
@@ -16,7 +21,7 @@ pub struct Graph {
     uid_to_did: RwLock<HashMap<u64, String>>,
     did_to_uid: RwLock<HashMap<String, u64>>,
     next_uid: RwLock<u64>,
-    pub pending_queue: RwLock<Vec<QueueItem>>,
+    pending_queue: RwLock<Vec<QueueItem>>,
     pub is_loaded: RwLock<bool>,
 }
 
@@ -31,6 +36,26 @@ impl Graph {
             pending_queue: RwLock::new(Vec::new()),
             is_loaded: RwLock::new(false),
         }
+    }
+
+    pub fn enqueue_follow(&self, actor: u64, target: u64) {
+        self.pending_queue.write().unwrap().push(QueueItem {
+            action: Action::Follow,
+            actor,
+            target,
+        });
+    }
+
+    pub fn enqueue_unfollow(&self, actor: u64, target: u64) {
+        self.pending_queue.write().unwrap().push(QueueItem {
+            action: Action::Unfollow,
+            actor,
+            target,
+        });
+    }
+
+    pub fn pending_queue_len(&self) -> usize {
+        self.pending_queue.read().unwrap().len()
     }
 
     pub fn add_follow(&self, actor: u64, target: u64) {
@@ -204,10 +229,9 @@ impl Graph {
 
         // Play through the pending queue
         for item in self.pending_queue.write().unwrap().iter() {
-            match item.action.as_str() {
-                "follow" => self.add_follow(item.actor, item.target),
-                "unfollow" => self.remove_follow(item.actor, item.target),
-                _ => (),
+            match item.action {
+                Action::Follow => self.add_follow(item.actor, item.target),
+                Action::Unfollow => self.remove_follow(item.actor, item.target),
             }
         }
 
