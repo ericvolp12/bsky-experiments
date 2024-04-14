@@ -13,7 +13,7 @@ use axum_prometheus::{
     metrics_exporter_prometheus::{Matcher, PrometheusBuilder},
     PrometheusMetricLayer, AXUM_HTTP_REQUESTS_DURATION_SECONDS,
 };
-use log::info;
+use log::{info, warn};
 use metrics_process::Collector;
 use std::sync::Arc;
 use tokio;
@@ -34,12 +34,18 @@ async fn main() {
 
     info!("Starting up");
     let graph = graph::Graph::new(expected_node_count);
-    graph.load_from_csv(&csv_path).unwrap();
-    info!("Loaded graph with {} users", graph.get_usercount());
+    let graph = Arc::new(graph); // Wrap the graph in Arc and Mutex for safe concurrent access
 
-    let state = handlers::AppState {
-        graph: Arc::new(graph),
-    };
+    let graph_clone = graph.clone();
+    let csv_path_clone = csv_path.clone();
+    tokio::spawn(async move {
+        match graph_clone.load_from_csv(&csv_path_clone) {
+            Ok(_) => info!("Loaded graph from CSV"),
+            Err(e) => warn!("Failed to load graph: {}", e),
+        }
+    });
+
+    let state = handlers::AppState { graph };
 
     let collector = Collector::default();
     collector.describe();
@@ -84,7 +90,7 @@ async fn main() {
         )
         .layer(metric_layer);
 
-    println!("🚀 Server started successfully");
+    println!("Listening on port {}", port);
 
     let listen_address = format!("0.0.0.0:{}", port);
 

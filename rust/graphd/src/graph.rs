@@ -1,10 +1,6 @@
-use log::info;
-use std::{
-    fs::File,
-    io::BufReader,
-    sync::RwLock,
-};
 use hashbrown::{HashMap, HashSet};
+use log::info;
+use std::{fs::File, io::BufReader, sync::RwLock};
 
 use csv;
 
@@ -14,6 +10,9 @@ pub struct Graph {
     uid_to_did: RwLock<HashMap<u64, String>>,
     did_to_uid: RwLock<HashMap<String, u64>>,
     next_uid: RwLock<u64>,
+    pub follow_queue: RwLock<Vec<(u64, u64)>>,
+    pub unfollow_queue: RwLock<Vec<(u64, u64)>>,
+    pub is_loaded: RwLock<bool>,
 }
 
 impl Graph {
@@ -24,6 +23,9 @@ impl Graph {
             uid_to_did: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
             did_to_uid: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
             next_uid: RwLock::new(0),
+            follow_queue: RwLock::new(Vec::new()),
+            unfollow_queue: RwLock::new(Vec::new()),
+            is_loaded: RwLock::new(false),
         }
     }
 
@@ -189,6 +191,28 @@ impl Graph {
 
             self.add_follow(actor_uid, target_uid);
         }
+
+        // Note: There's a race condition here where if someone follows and then unfollows in the
+        // window between the graph being loaded and the follow queue being processed, the unfollow
+        // will be ignored. For now that's an acceptable limitation of the design.
+
+        *self.is_loaded.write().unwrap() = true;
+
+        // Play through the follow queue
+        for (actor, target) in self.follow_queue.write().unwrap().iter() {
+            self.add_follow(*actor, *target);
+        }
+
+        // Play through the unfollow queue
+        for (actor, target) in self.unfollow_queue.write().unwrap().iter() {
+            self.remove_follow(*actor, *target);
+        }
+
+        // Clear the queues
+        self.follow_queue.write().unwrap().clear();
+        self.unfollow_queue.write().unwrap().clear();
+
+        info!("Loaded graph with {} users", self.get_usercount());
 
         Ok(())
     }

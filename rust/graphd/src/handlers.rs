@@ -1,4 +1,9 @@
-use axum::{extract::Query, http::StatusCode, response::IntoResponse, Extension, Json};
+use axum::{
+    extract::Query,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Extension, Json,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -9,12 +14,30 @@ pub struct AppState {
     pub graph: Arc<graph::Graph>,
 }
 
+pub enum Errors {
+    StillLoading,
+}
+
+impl IntoResponse for Errors {
+    fn into_response(self) -> Response {
+        let body = match self {
+            Errors::StillLoading => "graph data is still loading",
+        };
+
+        // its often easiest to implement `IntoResponse` by calling other implementations
+        (StatusCode::SERVICE_UNAVAILABLE, body).into_response()
+    }
+}
+
 #[derive(Serialize)]
 pub struct HealthStatus {
     status: &'static str,
     version: &'static str,
     user_count: Option<u64>,
     follow_count: Option<u64>,
+    loaded: bool,
+    follow_queue_len: Option<usize>,
+    unfollow_queue_len: Option<usize>,
 }
 
 pub async fn health(Query(stats): Query<bool>, state: Extension<AppState>) -> impl IntoResponse {
@@ -23,10 +46,15 @@ pub async fn health(Query(stats): Query<bool>, state: Extension<AppState>) -> im
         version: "0.1.0",
         user_count: None,
         follow_count: None,
+        loaded: *state.graph.is_loaded.read().unwrap(),
+        follow_queue_len: None,
+        unfollow_queue_len: None,
     };
 
     if stats {
         status.user_count = Some(state.graph.get_usercount());
+        status.follow_queue_len = Some(state.graph.follow_queue.read().unwrap().len());
+        status.unfollow_queue_len = Some(state.graph.unfollow_queue.read().unwrap().len());
     }
 
     Json(status)
@@ -50,6 +78,14 @@ pub async fn post_follows(
     for follow in body.follows {
         let actor_uid = state.graph.acquire_did(&follow.actor_did);
         let target_uid = state.graph.acquire_did(&follow.target_did);
+
+        // If the graph isn't loaded yet, enqueue the follow request
+        if !state.graph.is_loaded.read().unwrap().clone() {
+            let mut follow_queue = state.graph.follow_queue.write().unwrap();
+            follow_queue.push((actor_uid, target_uid));
+            continue;
+        }
+
         state.graph.add_follow(actor_uid, target_uid);
     }
 
@@ -59,6 +95,14 @@ pub async fn post_follows(
 pub async fn post_follow(state: Extension<AppState>, body: Json<Follow>) -> impl IntoResponse {
     let actor_uid = state.graph.acquire_did(&body.actor_did);
     let target_uid = state.graph.acquire_did(&body.target_did);
+
+    // If the graph isn't loaded yet, enqueue the follow request
+    if !state.graph.is_loaded.read().unwrap().clone() {
+        let mut follow_queue = state.graph.follow_queue.write().unwrap();
+        follow_queue.push((actor_uid, target_uid));
+        return StatusCode::OK;
+    }
+
     state.graph.add_follow(actor_uid, target_uid);
     StatusCode::OK
 }
@@ -76,10 +120,15 @@ pub struct FollowingQuery {
 pub async fn get_following(
     state: Extension<AppState>,
     Query(query): Query<FollowingQuery>,
-) -> impl IntoResponse {
+) -> Result<Json<FollowingResponse>, Errors> {
+    // If not loaded, return an error
+    if !state.graph.is_loaded.read().unwrap().clone() {
+        return Err(Errors::StillLoading);
+    }
+
     let uid = state.graph.get_uid(&query.did);
     if uid.is_none() {
-        return Json(FollowingResponse { dids: vec![] });
+        return Ok(Json(FollowingResponse { dids: vec![] }));
     }
     let dids = state
         .graph
@@ -87,7 +136,7 @@ pub async fn get_following(
         .iter()
         .map(|uid| state.graph.get_did(*uid).unwrap())
         .collect();
-    Json(FollowingResponse { dids })
+    Ok(Json(FollowingResponse { dids }))
 }
 
 #[derive(Serialize)]
@@ -103,10 +152,15 @@ pub struct FollowersQuery {
 pub async fn get_followers(
     state: Extension<AppState>,
     Query(query): Query<FollowersQuery>,
-) -> impl IntoResponse {
+) -> Result<Json<FollowersResponse>, Errors> {
+    // If not loaded, return an error
+    if !state.graph.is_loaded.read().unwrap().clone() {
+        return Err(Errors::StillLoading);
+    }
+
     let uid = state.graph.get_uid(&query.did);
     if uid.is_none() {
-        return Json(FollowersResponse { dids: vec![] });
+        return Ok(Json(FollowersResponse { dids: vec![] }));
     }
     let dids = state
         .graph
@@ -114,7 +168,7 @@ pub async fn get_followers(
         .iter()
         .map(|uid| state.graph.get_did(*uid).unwrap())
         .collect();
-    Json(FollowersResponse { dids })
+    Ok(Json(FollowersResponse { dids }))
 }
 
 #[derive(Serialize)]
@@ -130,10 +184,15 @@ pub struct FollowersNotFollowingQuery {
 pub async fn get_followers_not_following(
     state: Extension<AppState>,
     Query(query): Query<FollowersNotFollowingQuery>,
-) -> impl IntoResponse {
+) -> Result<Json<FollowersNotFollowingResponse>, Errors> {
+    // If not loaded, return an error
+    if !state.graph.is_loaded.read().unwrap().clone() {
+        return Err(Errors::StillLoading);
+    }
+
     let uid = state.graph.get_uid(&query.did);
     if uid.is_none() {
-        return Json(FollowersNotFollowingResponse { dids: vec![] });
+        return Ok(Json(FollowersNotFollowingResponse { dids: vec![] }));
     }
     let dids = state
         .graph
@@ -141,7 +200,7 @@ pub async fn get_followers_not_following(
         .iter()
         .map(|uid| state.graph.get_did(*uid).unwrap())
         .collect();
-    Json(FollowersNotFollowingResponse { dids })
+    Ok(Json(FollowersNotFollowingResponse { dids }))
 }
 
 #[derive(Serialize)]
@@ -158,11 +217,18 @@ pub struct IntersectFollowingAndFollowersQuery {
 pub async fn get_intersect_following_and_followers(
     state: Extension<AppState>,
     Query(query): Query<IntersectFollowingAndFollowersQuery>,
-) -> impl IntoResponse {
+) -> Result<Json<IntersectFollowingAndFollowersResponse>, Errors> {
+    // If not loaded, return an error
+    if !state.graph.is_loaded.read().unwrap().clone() {
+        return Err(Errors::StillLoading);
+    }
+
     let actor_uid = state.graph.get_uid(&query.actor_did);
     let target_uid = state.graph.get_uid(&query.target_did);
     if actor_uid.is_none() || target_uid.is_none() {
-        return Json(IntersectFollowingAndFollowersResponse { dids: vec![] });
+        return Ok(Json(IntersectFollowingAndFollowersResponse {
+            dids: vec![],
+        }));
     }
     let dids = state
         .graph
@@ -170,7 +236,7 @@ pub async fn get_intersect_following_and_followers(
         .iter()
         .map(|uid| state.graph.get_did(*uid).unwrap())
         .collect();
-    Json(IntersectFollowingAndFollowersResponse { dids })
+    Ok(Json(IntersectFollowingAndFollowersResponse { dids }))
 }
 
 #[derive(Serialize)]
@@ -187,16 +253,21 @@ pub struct DoesFollowQuery {
 pub async fn get_does_follow(
     state: Extension<AppState>,
     Query(query): Query<DoesFollowQuery>,
-) -> impl IntoResponse {
+) -> Result<Json<DoesFollowResponse>, Errors> {
+    // If not loaded, return an error
+    if !state.graph.is_loaded.read().unwrap().clone() {
+        return Err(Errors::StillLoading);
+    }
+
     let actor_uid = state.graph.get_uid(&query.actor_did);
     let target_uid = state.graph.get_uid(&query.target_did);
     if actor_uid.is_none() || target_uid.is_none() {
-        return Json(DoesFollowResponse { does_follow: false });
+        return Ok(Json(DoesFollowResponse { does_follow: false }));
     }
     let does_follow = state
         .graph
         .does_follow(actor_uid.unwrap(), target_uid.unwrap());
-    Json(DoesFollowResponse { does_follow })
+    Ok(Json(DoesFollowResponse { does_follow }))
 }
 
 #[derive(Deserialize)]
@@ -209,13 +280,16 @@ pub async fn post_unfollow(
     state: Extension<AppState>,
     body: Json<UnfollowRequest>,
 ) -> impl IntoResponse {
-    let actor_uid = state.graph.get_uid(&body.actor_did);
-    let target_uid = state.graph.get_uid(&body.target_did);
-    if actor_uid.is_none() || target_uid.is_none() {
-        return StatusCode::NOT_FOUND;
+    let actor_uid = state.graph.acquire_did(&body.actor_did);
+    let target_uid = state.graph.acquire_did(&body.target_did);
+
+    // If the graph isn't loaded yet, enqueue the unfollow request
+    if !state.graph.is_loaded.read().unwrap().clone() {
+        let mut unfollow_queue = state.graph.unfollow_queue.write().unwrap();
+        unfollow_queue.push((actor_uid, target_uid));
+        return StatusCode::OK;
     }
-    state
-        .graph
-        .remove_follow(actor_uid.unwrap(), target_uid.unwrap());
+
+    state.graph.remove_follow(actor_uid, target_uid);
     StatusCode::OK
 }
