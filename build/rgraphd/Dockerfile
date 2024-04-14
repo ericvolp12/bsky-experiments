@@ -18,6 +18,9 @@ RUN cargo build --release
 # Start a new stage to have a lean production image
 FROM debian:bookworm-slim
 
+# Install runit and dumb-init
+RUN apt-get update && apt-get install -y runit dumb-init
+
 # Copy the release binary from the builder stage
 COPY --from=builder /usr/src/graphd/target/release/graphd /usr/local/bin/graphd
 
@@ -26,6 +29,9 @@ ENV CSV_PATH=/data/follows.csv
 
 # Create data directory 
 RUN mkdir -p /data
+
+# Set the entrypoint
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 
 # Run the app
 CMD ["graphd"]
