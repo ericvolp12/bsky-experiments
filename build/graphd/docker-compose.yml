@@ -8,6 +8,7 @@ services:
     restart: always
     environment:
       GRAPH_CSV: /data/follows.csv
+      GODEBUG: madvdontneed=1
     network_mode: host # For higher performance avoid the Docker Bridge
     volumes:
       - ../../data:/data

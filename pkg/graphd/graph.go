@@ -78,31 +78,31 @@ func (g *Graph) GetDIDs(uids []uint32) ([]string, error) {
 	return dids, nil
 }
 
-func (g *Graph) GetUID(did *string) (uint32, bool) {
+func (g *Graph) GetUID(did string) (uint32, bool) {
 	g.dtuLk.RLock()
 	defer g.dtuLk.RUnlock()
-	uid, ok := g.dtu[*did]
+	uid, ok := g.dtu[did]
 	return uid, ok
 }
 
-func (g *Graph) GetUIDs(dids []*string) ([]uint32, error) {
+func (g *Graph) GetUIDs(dids []string) ([]uint32, error) {
 	g.dtuLk.RLock()
 	defer g.dtuLk.RUnlock()
 	uids := make([]uint32, len(dids))
 	for i, did := range dids {
-		uid, ok := g.dtu[*did]
+		uid, ok := g.dtu[did]
 		if !ok {
-			return nil, fmt.Errorf("did %s not found", *did)
+			return nil, fmt.Errorf("did %s not found", did)
 		}
 		uids[i] = uid
 	}
 	return uids, nil
 }
 
-func (g *Graph) setUID(did *string, uid uint32) {
+func (g *Graph) setUID(did string, uid uint32) {
 	g.dtuLk.Lock()
 	defer g.dtuLk.Unlock()
-	g.dtu[*did] = uid
+	g.dtu[did] = uid
 }
 
 func (g *Graph) nextUID() uint32 {
@@ -111,15 +111,15 @@ func (g *Graph) nextUID() uint32 {
 	return uid
 }
 
-func (g *Graph) setDID(uid uint32, did *string) {
+func (g *Graph) setDID(uid uint32, did string) {
 	g.utdLk.Lock()
 	defer g.utdLk.Unlock()
-	g.utd[uid] = *did
+	g.utd[uid] = did
 }
 
 // AcquireDID links a DID to a UID, creating a new UID if necessary.
 // If the DID is already linked to a UID, that UID is returned
-func (g *Graph) AcquireDID(did *string) uint32 {
+func (g *Graph) AcquireDID(did string) uint32 {
 	g.nextLk.RLock()
 	uid, ok := g.GetUID(did)
 	g.nextLk.RUnlock()
@@ -145,15 +145,15 @@ func (g *Graph) AcquireDID(did *string) uint32 {
 	return uid
 }
 
-func (g *Graph) AddFollow(actorUID, targetUID *uint32) {
-	actorMap, _ := g.g.Load(*actorUID)
+func (g *Graph) AddFollow(actorUID, targetUID uint32) {
+	actorMap, _ := g.g.Load(actorUID)
 	actorMap.followingLk.Lock()
-	actorMap.followingBM.Add(uint32(*targetUID))
+	actorMap.followingBM.Add(uint32(targetUID))
 	actorMap.followingLk.Unlock()
 
-	targetMap, _ := g.g.Load(*targetUID)
+	targetMap, _ := g.g.Load(targetUID)
 	targetMap.followersLk.Lock()
-	targetMap.followersBM.Add(uint32(*actorUID))
+	targetMap.followersBM.Add(uint32(actorUID))
 	targetMap.followersLk.Unlock()
 
 	g.followCount.Inc()
@@ -389,10 +389,10 @@ func (g *Graph) processCSVLine(b *bytes.Buffer) error {
 		return fmt.Errorf("invalid follow: %s", line)
 	}
 
-	actorUID := g.AcquireDID(&parts[0])
-	targetUID := g.AcquireDID(&parts[1])
+	actorUID := g.AcquireDID(parts[0])
+	targetUID := g.AcquireDID(parts[1])
 
-	g.AddFollow(&actorUID, &targetUID)
+	g.AddFollow(actorUID, targetUID)
 
 	return nil
 }

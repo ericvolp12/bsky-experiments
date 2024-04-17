@@ -46,7 +46,7 @@ func (h *Handlers) Health(c echo.Context) error {
 func (h *Handlers) GetFollowers(c echo.Context) error {
 	did := c.QueryParam("did")
 
-	uid, ok := h.graph.GetUID(&did)
+	uid, ok := h.graph.GetUID(did)
 	if !ok {
 		return c.JSON(404, "uid not found")
 	}
@@ -69,7 +69,7 @@ func (h *Handlers) GetFollowers(c echo.Context) error {
 func (h *Handlers) GetFollowing(c echo.Context) error {
 	did := c.QueryParam("did")
 
-	uid, ok := h.graph.GetUID(&did)
+	uid, ok := h.graph.GetUID(did)
 	if !ok {
 		return c.JSON(404, "uid not found")
 	}
@@ -92,7 +92,7 @@ func (h *Handlers) GetFollowing(c echo.Context) error {
 func (h *Handlers) GetFollowersNotFollowing(c echo.Context) error {
 	did := c.QueryParam("did")
 
-	uid, ok := h.graph.GetUID(&did)
+	uid, ok := h.graph.GetUID(did)
 	if !ok {
 		return c.JSON(404, "uid not found")
 	}
@@ -116,12 +116,12 @@ func (h *Handlers) GetDoesFollow(c echo.Context) error {
 	actorDid := c.QueryParam("actorDid")
 	targetDid := c.QueryParam("targetDid")
 
-	actorUID, ok := h.graph.GetUID(&actorDid)
+	actorUID, ok := h.graph.GetUID(actorDid)
 	if !ok {
 		return c.JSON(404, "actor uid not found")
 	}
 
-	targetUID, ok := h.graph.GetUID(&targetDid)
+	targetUID, ok := h.graph.GetUID(targetDid)
 	if !ok {
 		return c.JSON(404, "target uid not found")
 	}
@@ -139,12 +139,12 @@ func (h *Handlers) GetAreMoots(c echo.Context) error {
 	didA := c.QueryParam("didA")
 	didB := c.QueryParam("didB")
 
-	uidA, ok := h.graph.GetUID(&didA)
+	uidA, ok := h.graph.GetUID(didA)
 	if !ok {
 		return c.JSON(404, "actor uid not found")
 	}
 
-	uidB, ok := h.graph.GetUID(&didB)
+	uidB, ok := h.graph.GetUID(didB)
 	if !ok {
 		return c.JSON(404, "target uid not found")
 	}
@@ -174,7 +174,7 @@ func (h *Handlers) GetIntersectFollowers(c echo.Context) error {
 	qDIDs := c.QueryParams()["did"]
 	uids := make([]uint32, 0)
 	for _, qDID := range qDIDs {
-		uid, ok := h.graph.GetUID(&qDID)
+		uid, ok := h.graph.GetUID(qDID)
 		if !ok {
 			return c.JSON(404, fmt.Sprintf("uid not found for did %s", qDID))
 		}
@@ -204,12 +204,12 @@ func (h *Handlers) GetFollowsFollowing(c echo.Context) error {
 	actorDID := c.QueryParam("actor_did")
 	targetDID := c.QueryParam("target_did")
 
-	actorUID, ok := h.graph.GetUID(&actorDID)
+	actorUID, ok := h.graph.GetUID(actorDID)
 	if !ok {
 		return c.JSON(404, "actor uid not found")
 	}
 
-	targetUID, ok := h.graph.GetUID(&targetDID)
+	targetUID, ok := h.graph.GetUID(targetDID)
 	if !ok {
 		return c.JSON(404, "target uid not found")
 	}
@@ -236,7 +236,7 @@ func (h *Handlers) GetIntersectFollowing(c echo.Context) error {
 	qDIDs := c.QueryParams()["did"]
 	uids := make([]uint32, 0)
 	for _, qDID := range qDIDs {
-		uid, ok := h.graph.GetUID(&qDID)
+		uid, ok := h.graph.GetUID(qDID)
 		if !ok {
 			return c.JSON(404, fmt.Sprintf("uid not found for did %s", qDID))
 		}
@@ -261,7 +261,7 @@ func (h *Handlers) GetIntersectFollowing(c echo.Context) error {
 func (h *Handlers) GetMoots(c echo.Context) error {
 	did := c.QueryParam("did")
 
-	uid, ok := h.graph.GetUID(&did)
+	uid, ok := h.graph.GetUID(did)
 	if !ok {
 		return c.JSON(404, "uid not found")
 	}
@@ -305,9 +305,9 @@ func (h *Handlers) PostFollow(c echo.Context) error {
 	actor := actorDid.String()
 	target := targetDid.String()
 
-	actorUID := h.graph.AcquireDID(&actor)
-	targetUID := h.graph.AcquireDID(&target)
-	h.graph.AddFollow(&actorUID, &targetUID)
+	actorUID := h.graph.AcquireDID(actor)
+	targetUID := h.graph.AcquireDID(target)
+	h.graph.AddFollow(actorUID, targetUID)
 
 	return c.JSON(200, "ok")
 }
@@ -336,9 +336,9 @@ func (h *Handlers) PostFollows(c echo.Context) error {
 	}
 
 	for _, follow := range body.Follows {
-		actorUID := h.graph.AcquireDID(&follow.ActorDid)
-		targetUID := h.graph.AcquireDID(&follow.TargetDid)
-		h.graph.AddFollow(&actorUID, &targetUID)
+		actorUID := h.graph.AcquireDID(follow.ActorDid)
+		targetUID := h.graph.AcquireDID(follow.TargetDid)
+		h.graph.AddFollow(actorUID, targetUID)
 	}
 
 	return c.JSON(200, "ok")
@@ -368,8 +368,8 @@ func (h *Handlers) PostUnfollow(c echo.Context) error {
 	actor := actorDid.String()
 	target := targetDid.String()
 
-	actorUID := h.graph.AcquireDID(&actor)
-	targetUID := h.graph.AcquireDID(&target)
+	actorUID := h.graph.AcquireDID(actor)
+	targetUID := h.graph.AcquireDID(target)
 	h.graph.RemoveFollow(actorUID, targetUID)
 
 	return c.JSON(200, "ok")
@@ -399,8 +399,8 @@ func (h *Handlers) PostUnfollows(c echo.Context) error {
 	}
 
 	for _, unfollow := range body.Unfollows {
-		actorUID := h.graph.AcquireDID(&unfollow.ActorDid)
-		targetUID := h.graph.AcquireDID(&unfollow.TargetDid)
+		actorUID := h.graph.AcquireDID(unfollow.ActorDid)
+		targetUID := h.graph.AcquireDID(unfollow.TargetDid)
 		h.graph.RemoveFollow(actorUID, targetUID)
 	}
 
