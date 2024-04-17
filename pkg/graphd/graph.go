@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -372,6 +373,9 @@ func (g *Graph) LoadFromCSV(csvFile string) error {
 
 	close(bufs)
 	wg.Wait()
+
+	// Explicitly free memory since the CSV reading allocates a lot of memory
+	debug.FreeOSMemory()
 
 	log.Info("total follows", "total", totalFollows, "duration", time.Since(start))
 	return nil
