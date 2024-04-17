@@ -101,6 +101,7 @@ func GraphD(cctx *cli.Context) error {
 	e.GET("/areMoots", h.GetAreMoots)
 	e.GET("/intersectFollowers", h.GetIntersectFollowers)
 	e.GET("/intersectFollowing", h.GetIntersectFollowing)
+	e.GET("/follows_following", h.GetFollowsFollowing)
 
 	e.POST("/follow", h.PostFollow)
 	e.POST("/follows", h.PostFollows)

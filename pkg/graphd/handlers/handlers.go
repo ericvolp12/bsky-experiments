@@ -23,8 +23,8 @@ type HealthStatus struct {
 	Status      string  `json:"status"`
 	Version     string  `json:"version"`
 	Message     string  `json:"msg,omitempty"`
-	UserCount   *uint64 `json:"userCount,omitempty"`
-	FollowCount *uint64 `json:"followCount,omitempty"`
+	UserCount   *uint32 `json:"userCount,omitempty"`
+	FollowCount *uint32 `json:"followCount,omitempty"`
 }
 
 func (h *Handlers) Health(c echo.Context) error {
@@ -172,7 +172,7 @@ func (h *Handlers) GetIntersectFollowers(c echo.Context) error {
 		return c.JSON(400, "did query param is required")
 	}
 	qDIDs := c.QueryParams()["did"]
-	uids := make([]uint64, 0)
+	uids := make([]uint32, 0)
 	for _, qDID := range qDIDs {
 		uid, ok := h.graph.GetUID(&qDID)
 		if !ok {
@@ -196,12 +196,45 @@ func (h *Handlers) GetIntersectFollowers(c echo.Context) error {
 	return c.JSON(200, dids)
 }
 
+func (h *Handlers) GetFollowsFollowing(c echo.Context) error {
+	if !c.QueryParams().Has("actor_did") || !c.QueryParams().Has("target_did") {
+		return c.JSON(400, "actor_did and target_did query params are required")
+	}
+
+	actorDID := c.QueryParam("actor_did")
+	targetDID := c.QueryParam("target_did")
+
+	actorUID, ok := h.graph.GetUID(&actorDID)
+	if !ok {
+		return c.JSON(404, "actor uid not found")
+	}
+
+	targetUID, ok := h.graph.GetUID(&targetDID)
+	if !ok {
+		return c.JSON(404, "target uid not found")
+	}
+
+	intersect, err := h.graph.IntersectFollowingAndFollowers(actorUID, targetUID)
+	if err != nil {
+		slog.Error("failed to intersect following and followers", "err", err)
+		return c.JSON(500, "failed to intersect following and followers")
+	}
+
+	dids, err := h.graph.GetDIDs(intersect)
+	if err != nil {
+		slog.Error("failed to get dids", "err", err)
+		return c.JSON(500, fmt.Errorf("failed to get dids"))
+	}
+
+	return c.JSON(200, dids)
+}
+
 func (h *Handlers) GetIntersectFollowing(c echo.Context) error {
 	if !c.QueryParams().Has("did") {
 		return c.JSON(400, "did query param is required")
 	}
 	qDIDs := c.QueryParams()["did"]
-	uids := make([]uint64, 0)
+	uids := make([]uint32, 0)
 	for _, qDID := range qDIDs {
 		uid, ok := h.graph.GetUID(&qDID)
 		if !ok {
