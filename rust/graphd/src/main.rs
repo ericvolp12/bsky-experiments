@@ -29,7 +29,7 @@ async fn main() {
     let csv_path = std::env::var("CSV_PATH").unwrap_or("data/follows.csv".to_string());
     let expected_node_count = std::env::var("EXPECTED_NODE_COUNT")
         .unwrap_or("5000000".to_string())
-        .parse::<u64>()
+        .parse::<u32>()
         .unwrap();
 
     info!("Starting up");

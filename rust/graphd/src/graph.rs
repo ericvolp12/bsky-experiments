@@ -1,7 +1,7 @@
-use hashbrown::{HashMap, HashSet};
-// use dashmap::{DashMap as HashMap, DashSet as HashSet};
+use hashbrown::HashMap;
 use log::info;
-use std::{fs::File, io::BufReader, sync::RwLock};
+use roaring::bitmap::RoaringBitmap;
+use std::{fs::File, io::BufReader, ops::BitAnd, sync::RwLock};
 
 use csv;
 
@@ -12,25 +12,28 @@ enum Action {
 
 struct QueueItem {
     action: Action,
-    actor: u64,
-    target: u64,
+    actor: u32,
+    target: u32,
+}
+
+struct ActorMap {
+    following: RwLock<RoaringBitmap>,
+    followers: RwLock<RoaringBitmap>,
 }
 
 pub struct Graph {
-    follows: RwLock<HashMap<u64, HashSet<u64>>>,
-    followers: RwLock<HashMap<u64, HashSet<u64>>>,
-    uid_to_did: RwLock<HashMap<u64, String>>,
-    did_to_uid: RwLock<HashMap<String, u64>>,
-    next_uid: RwLock<u64>,
+    actors: RwLock<HashMap<u32, ActorMap>>,
+    uid_to_did: RwLock<HashMap<u32, String>>,
+    did_to_uid: RwLock<HashMap<String, u32>>,
+    next_uid: RwLock<u32>,
     pending_queue: RwLock<Vec<QueueItem>>,
     pub is_loaded: RwLock<bool>,
 }
 
 impl Graph {
-    pub fn new(expected_node_count: u64) -> Self {
+    pub fn new(expected_node_count: u32) -> Self {
         Graph {
-            follows: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
-            followers: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
+            actors: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
             uid_to_did: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
             did_to_uid: RwLock::new(HashMap::with_capacity(expected_node_count as usize)),
             next_uid: RwLock::new(0),
@@ -39,7 +42,7 @@ impl Graph {
         }
     }
 
-    pub fn enqueue_follow(&self, actor: u64, target: u64) {
+    pub fn enqueue_follow(&self, actor: u32, target: u32) {
         self.pending_queue.write().unwrap().push(QueueItem {
             action: Action::Follow,
             actor,
@@ -47,7 +50,7 @@ impl Graph {
         });
     }
 
-    pub fn enqueue_unfollow(&self, actor: u64, target: u64) {
+    pub fn enqueue_unfollow(&self, actor: u32, target: u32) {
         self.pending_queue.write().unwrap().push(QueueItem {
             action: Action::Unfollow,
             actor,
@@ -59,104 +62,69 @@ impl Graph {
         self.pending_queue.read().unwrap().len()
     }
 
-    pub fn add_follow(&self, actor: u64, target: u64) {
-        self.follows
-            .write()
-            .unwrap()
-            .entry(actor)
-            .or_insert(HashSet::new())
-            .insert(target);
+    pub fn add_follow(&self, actor: u32, target: u32) {
+        let mut actors = self.actors.write().unwrap();
+        let actor_map = actors.entry(actor).or_insert_with(|| ActorMap {
+            following: RwLock::new(RoaringBitmap::new()),
+            followers: RwLock::new(RoaringBitmap::new()),
+        });
+        actor_map.following.write().unwrap().insert(target);
 
-        self.followers
-            .write()
-            .unwrap()
-            .entry(target)
-            .or_insert(HashSet::new())
-            .insert(actor);
+        let target_map = actors.entry(target).or_insert_with(|| ActorMap {
+            following: RwLock::new(RoaringBitmap::new()),
+            followers: RwLock::new(RoaringBitmap::new()),
+        });
+        target_map.followers.write().unwrap().insert(actor);
     }
 
-    pub fn remove_follow(&self, actor: u64, target: u64) {
-        if let Some(set) = self.follows.write().unwrap().get_mut(&actor) {
-            set.remove(&target);
+    pub fn remove_follow(&self, actor: u32, target: u32) {
+        let mut actors = self.actors.write().unwrap();
+        if let Some(actor_map) = actors.get_mut(&actor) {
+            actor_map.following.write().unwrap().remove(target);
         }
-        if let Some(set) = self.followers.write().unwrap().get_mut(&target) {
-            set.remove(&actor);
+
+        if let Some(target_map) = actors.get_mut(&target) {
+            target_map.followers.write().unwrap().remove(actor);
         }
     }
 
-    pub fn get_followers(&self, uid: u64) -> HashSet<u64> {
-        self.followers
+    pub fn get_followers(&self, uid: u32) -> RoaringBitmap {
+        self.actors
             .read()
             .unwrap()
             .get(&uid)
-            .cloned()
-            .unwrap_or_default()
+            .unwrap()
+            .followers
+            .read()
+            .unwrap()
+            .clone()
     }
 
-    pub fn get_following(&self, uid: u64) -> HashSet<u64> {
-        self.follows
+    pub fn get_following(&self, uid: u32) -> RoaringBitmap {
+        self.actors
             .read()
             .unwrap()
             .get(&uid)
-            .cloned()
-            .unwrap_or_default()
+            .unwrap()
+            .following
+            .read()
+            .unwrap()
+            .clone()
     }
 
-    pub fn get_moots(&self, uid: u64) -> HashSet<u64> {
-        let follows = self.get_following(uid);
-        let followers = self.get_followers(uid);
-        follows.intersection(&followers).cloned().collect()
+    pub fn intersect_following_and_followers(&self, actor: u32, target: u32) -> RoaringBitmap {
+        BitAnd::bitand(&self.get_following(actor), &self.get_followers(target))
     }
 
-    pub fn intersect_followers(&self, uids: Vec<u64>) -> HashSet<u64> {
-        // Sort by number of followers ascending so we can start with the smallest set
-        let mut uids = uids;
-        uids.sort_by_key(|uid| self.get_followers(*uid).len());
-
-        let mut result = self.get_followers(uids[0]);
-        for uid in uids.iter().skip(1) {
-            result = result
-                .intersection(&self.get_followers(*uid))
-                .cloned()
-                .collect();
-        }
-        result
+    pub fn does_follow(&self, actor: u32, target: u32) -> bool {
+        self.get_following(actor).contains(target)
     }
 
-    pub fn intersect_following(&self, uids: Vec<u64>) -> HashSet<u64> {
-        // Sort by number of follows ascending so we can start with the smallest set
-        let mut uids = uids;
-        uids.sort_by_key(|uid| self.get_following(*uid).len());
-
-        let mut result = self.get_following(uids[0]);
-        for uid in uids.iter().skip(1) {
-            result = result
-                .intersection(&self.get_following(*uid))
-                .cloned()
-                .collect();
-        }
-        result
+    pub fn get_followers_not_following(&self, uid: u32) -> RoaringBitmap {
+        &self.get_followers(uid) - &self.get_following(uid)
     }
 
-    pub fn intersect_following_and_followers(&self, actor: u64, target: u64) -> HashSet<u64> {
-        self.get_following(actor)
-            .intersection(&self.get_followers(target))
-            .cloned()
-            .collect()
-    }
-
-    pub fn does_follow(&self, actor: u64, target: u64) -> bool {
-        self.get_following(actor).contains(&target)
-    }
-
-    pub fn get_followers_not_following(&self, uid: u64) -> HashSet<u64> {
-        self.get_followers(uid)
-            .difference(&self.get_following(uid))
-            .cloned()
-            .collect()
-    }
-
-    pub fn acquire_did(&self, did: &str) -> u64 {
+    pub fn acquire_did(&self, did: &str) -> u32 {
         let mut uid_to_did = self.uid_to_did.write().unwrap();
         let mut did_to_uid = self.did_to_uid.write().unwrap();
         let mut next_uid = self.next_uid.write().unwrap();
@@ -172,28 +140,16 @@ impl Graph {
         uid
     }
 
-    pub fn get_usercount(&self) -> u64 {
+    pub fn get_usercount(&self) -> u32 {
         *self.next_uid.read().unwrap()
     }
 
-    pub fn get_did(&self, uid: u64) -> Option<String> {
+    pub fn get_did(&self, uid: u32) -> Option<String> {
         self.uid_to_did.read().unwrap().get(&uid).cloned()
     }
 
-    pub fn get_uid(&self, did: &str) -> Option<u64> {
+    pub fn get_uid(&self, did: &str) -> Option<u32> {
         self.did_to_uid.read().unwrap().get(did).cloned()
-    }
-
-    pub fn get_dids(&self, vec: Vec<u64>) -> Vec<String> {
-        vec.iter()
-            .map(|uid| self.uid_to_did.read().unwrap().get(uid).unwrap().clone())
-            .collect()
-    }
-
-    pub fn get_uids(&self, vec: Vec<String>) -> Vec<u64> {
-        vec.iter()
-            .map(|did| self.did_to_uid.read().unwrap().get(did).unwrap().clone())
-            .collect()
     }
 }
 
