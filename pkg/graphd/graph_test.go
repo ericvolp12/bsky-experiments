@@ -9,7 +9,7 @@ import (
 )
 
 func BenchmarkAcquireDID(b *testing.B) {
-	graph := graphd.NewGraph("", "")
+	graph := graphd.NewGraph()
 
 	dids := make([]string, b.N)
 
@@ -21,12 +21,12 @@ func BenchmarkAcquireDID(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		graph.AcquireDID(dids[i])
+		graph.AcquireDID(&dids[i])
 	}
 }
 
 func BenchmarkAddFollow(b *testing.B) {
-	graph := graphd.NewGraph("", "")
+	graph := graphd.NewGraph()
 
 	dids := make([]string, b.N)
 
@@ -39,7 +39,7 @@ func BenchmarkAddFollow(b *testing.B) {
 
 	// Acquire all DIDs
 	for i := 0; i < b.N; i++ {
-		uids[i] = graph.AcquireDID(dids[i])
+		uids[i] = graph.AcquireDID(&dids[i])
 	}
 
 	// Create a Zipf distribution with parameters s = 1.07 and v = 1. The
@@ -53,12 +53,12 @@ func BenchmarkAddFollow(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		followee := uids[zipf.Uint64()%uint64(b.N)] // get a random node according to Zipf's law
-		graph.AddFollow(uids[i], followee)
+		graph.AddFollow(&uids[i], &followee)
 	}
 }
 
 func BenchmarkGetFollowers(b *testing.B) {
-	graph := graphd.NewGraph("", "")
+	graph := graphd.NewGraph()
 
 	dids := make([]string, b.N)
 
@@ -71,7 +71,7 @@ func BenchmarkGetFollowers(b *testing.B) {
 
 	// Acquire all DIDs
 	for i := 0; i < b.N; i++ {
-		uids[i] = graph.AcquireDID(dids[i])
+		uids[i] = graph.AcquireDID(&dids[i])
 	}
 
 	// Create a Zipf distribution with parameters s = 1.07 and v = 1. The
@@ -83,7 +83,7 @@ func BenchmarkGetFollowers(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		followee := uids[zipf.Uint64()%uint64(b.N)] // get a random node according to Zipf's law
-		graph.AddFollow(uids[i], followee)
+		graph.AddFollow(&uids[i], &followee)
 	}
 
 	b.ResetTimer()
@@ -94,7 +94,7 @@ func BenchmarkGetFollowers(b *testing.B) {
 }
 
 func BenchmarkDoesFollow(b *testing.B) {
-	graph := graphd.NewGraph("", "")
+	graph := graphd.NewGraph()
 
 	dids := make([]string, b.N)
 
@@ -107,7 +107,7 @@ func BenchmarkDoesFollow(b *testing.B) {
 
 	// Acquire all DIDs
 	for i := 0; i < b.N; i++ {
-		uids[i] = graph.AcquireDID(dids[i])
+		uids[i] = graph.AcquireDID(&dids[i])
 	}
 
 	// Create a Zipf distribution with parameters s = 1.07 and v = 1. The
@@ -119,7 +119,7 @@ func BenchmarkDoesFollow(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		followee := uids[zipf.Uint64()%uint64(b.N)] // get a random node according to Zipf's law
-		graph.AddFollow(uids[i], followee)
+		graph.AddFollow(&uids[i], &followee)
 	}
 
 	b.ResetTimer()
@@ -130,7 +130,7 @@ func BenchmarkDoesFollow(b *testing.B) {
 }
 
 func TestIntersectNFollowers(t *testing.T) {
-	graph := graphd.NewGraph("", "")
+	graph := graphd.NewGraph()
 
 	dids := make([]string, 100)
 
@@ -143,24 +143,24 @@ func TestIntersectNFollowers(t *testing.T) {
 
 	// Acquire all DIDs
 	for i := 0; i < 100; i++ {
-		uids[i] = graph.AcquireDID(dids[i])
+		uids[i] = graph.AcquireDID(&dids[i])
 	}
 
 	// Create a known set of followers
 	for i := 0; i < 100; i++ {
-		graph.AddFollow(uids[i], uids[0])
+		graph.AddFollow(&uids[i], &uids[0])
 	}
 
 	for i := 5; i < 50; i++ {
-		graph.AddFollow(uids[i], uids[1])
+		graph.AddFollow(&uids[i], &uids[1])
 	}
 
 	for i := 2; i < 25; i++ {
-		graph.AddFollow(uids[i], uids[2])
+		graph.AddFollow(&uids[i], &uids[2])
 	}
 
 	for i := 0; i < 10; i++ {
-		graph.AddFollow(uids[i], uids[3])
+		graph.AddFollow(&uids[i], &uids[3])
 	}
 
 	// Intersect the followers of the first 4 DIDs

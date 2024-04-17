@@ -45,12 +45,6 @@ func main() {
 			EnvVars: []string{"GRAPH_CSV"},
 			Value:   "data/follows.csv",
 		},
-		&cli.StringFlag{
-			Name:    "graph-binary",
-			Usage:   "path to graph binary file",
-			EnvVars: []string{"GRAPH_BINARY"},
-			Value:   "data/graphd_graph.bin",
-		},
 	}
 
 	app.Action = GraphD
@@ -72,9 +66,9 @@ func GraphD(cctx *cli.Context) error {
 		Level: logLevel,
 	})))
 
-	graph := graphd.NewGraph(cctx.String("graph-csv"), cctx.String("graph-binary"))
+	graph := graphd.NewGraph()
 
-	err := graph.LoadFromFile()
+	err := graph.LoadFromCSV(cctx.String("graph-csv"))
 	if err != nil {
 		slog.Error("failed to load graph from file", "error", err)
 		return err
