@@ -1,7 +1,6 @@
 package endpoints
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,10 +12,13 @@ import (
 
 	"github.com/bits-and-blooms/bloom/v3"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
+	"github.com/bluesky-social/indigo/atproto/identity"
+	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/ericvolp12/bsky-experiments/pkg/auth"
 	feedgenerator "github.com/ericvolp12/bsky-experiments/pkg/feed-generator"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/clusters"
+	"golang.org/x/time/rate"
 
 	"github.com/gin-gonic/gin"
 	"github.com/whyrusleeping/go-did"
@@ -36,6 +38,8 @@ type Endpoints struct {
 	usersLk         sync.RWMutex
 	UniqueSeenUsers *bloom.BloomFilter
 
+	dir *identity.CacheDirectory
+
 	PostRegistry *search.PostRegistry
 
 	DescriptionCache    *DescriptionCacheItem
@@ -51,11 +55,23 @@ type DidResponse struct {
 func NewEndpoints(feedGenerator *feedgenerator.FeedGenerator, graphJSONUrl string, postRegistry *search.PostRegistry) (*Endpoints, error) {
 	uniqueSeenUsers := bloom.NewWithEstimates(1000000, 0.01)
 
+	base := identity.BaseDirectory{
+		PLCURL: "https://plc.directory",
+		HTTPClient: http.Client{
+			Timeout: time.Second * 15,
+		},
+		PLCLimiter:            rate.NewLimiter(rate.Limit(10), 1),
+		TryAuthoritativeDNS:   true,
+		SkipDNSDomainSuffixes: []string{".bsky.social"},
+	}
+	dir := identity.NewCacheDirectory(&base, 250_000, time.Hour*24, time.Minute*2, time.Minute*5)
+
 	return &Endpoints{
 		FeedGenerator:       feedGenerator,
 		GraphJSONUrl:        graphJSONUrl,
 		UniqueSeenUsers:     uniqueSeenUsers,
 		FeedUsers:           map[string][]string{},
+		dir:                 &dir,
 		PostRegistry:        postRegistry,
 		DescriptionCacheTTL: 30 * time.Minute,
 	}, nil
@@ -380,33 +396,21 @@ func (ep *Endpoints) AssignUserToFeed(c *gin.Context) {
 		return
 	}
 
-	authors, err := ep.PostRegistry.GetAuthorsByHandle(ctx, targetHandle)
+	handle, err := syntax.ParseHandle(targetHandle)
 	if err != nil {
-		if errors.As(err, &search.NotFoundError{}) {
-			span.SetAttributes(attribute.Bool("feed.assign_label.author_not_found", true))
-			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("author not found: %s", err.Error())})
-			return
-		}
-		span.SetAttributes(attribute.Bool("feed.assign_label.error", true))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("error getting authors: %s", err.Error())})
+		span.SetAttributes(attribute.Bool("feed.assign_label.invalid_handle", true))
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid handle: %s", err.Error())})
 		return
 	}
 
-	if len(authors) == 0 {
-		span.SetAttributes(attribute.Bool("feed.assign_label.author_not_found", true))
-		c.JSON(http.StatusNotFound, gin.H{"error": "author not found"})
+	id, err := ep.dir.LookupHandle(ctx, handle)
+	if err != nil {
+		span.SetAttributes(attribute.Bool("feed.assign_label.handle_not_found", true))
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("failed to resolve handle to did: %s", err.Error())})
 		return
 	}
 
-	if len(authors) > 1 {
-		span.SetAttributes(attribute.Bool("feed.assign_label.multiple_authors_found", true))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "multiple authors found with that handle (this should never happen)"})
-		return
-	}
-
-	userDID := authors[0].DID
-
-	err = ep.PostRegistry.AssignLabelToAuthorByAlias(ctx, userDID, feedName)
+	err = ep.PostRegistry.AssignLabelToAuthorByAlias(ctx, id.DID.String(), feedName)
 	if err != nil {
 		span.SetAttributes(attribute.Bool("feed.assign_label.error", true))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to assign label to user: %s", err.Error())})
@@ -453,33 +457,21 @@ func (ep *Endpoints) UnassignUserFromFeed(c *gin.Context) {
 		return
 	}
 
-	authors, err := ep.PostRegistry.GetAuthorsByHandle(ctx, targetHandle)
+	handle, err := syntax.ParseHandle(targetHandle)
 	if err != nil {
-		if errors.As(err, &search.NotFoundError{}) {
-			span.SetAttributes(attribute.Bool("feed.assign_label.author_not_found", true))
-			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("author not found: %s", err.Error())})
-			return
-		}
-		span.SetAttributes(attribute.Bool("feed.assign_label.error", true))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("error getting authors: %s", err.Error())})
+		span.SetAttributes(attribute.Bool("feed.assign_label.invalid_handle", true))
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid handle: %s", err.Error())})
 		return
 	}
 
-	if len(authors) == 0 {
-		span.SetAttributes(attribute.Bool("feed.assign_label.author_not_found", true))
-		c.JSON(http.StatusNotFound, gin.H{"error": "author not found"})
+	id, err := ep.dir.LookupHandle(ctx, handle)
+	if err != nil {
+		span.SetAttributes(attribute.Bool("feed.assign_label.handle_not_found", true))
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("failed to resolve handle to did: %s", err.Error())})
 		return
 	}
 
-	if len(authors) > 1 {
-		span.SetAttributes(attribute.Bool("feed.assign_label.multiple_authors_found", true))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "multiple authors found with that handle (this should never happen)"})
-		return
-	}
-
-	userDID := authors[0].DID
-
-	err = ep.PostRegistry.UnassignLabelFromAuthorByAlias(ctx, userDID, feedName)
+	err = ep.PostRegistry.UnassignLabelFromAuthorByAlias(ctx, id.DID.String(), feedName)
 	if err != nil {
 		span.SetAttributes(attribute.Bool("feed.assign_label.error", true))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to unassign label from user: %s", err.Error())})
