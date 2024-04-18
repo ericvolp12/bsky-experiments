@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -25,7 +24,7 @@ type Graph struct {
 	dtuLk sync.RWMutex
 
 	uidNext uint32
-	nextLk  sync.RWMutex
+	nextLk  sync.Mutex
 
 	followCount *xsync.Counter
 
@@ -42,7 +41,7 @@ type FollowMap struct {
 
 func NewGraph() *Graph {
 	return &Graph{
-		g:           xsync.NewMapOf[uint32, *FollowMap](),
+		g:           xsync.NewMapOfPresized[uint32, *FollowMap](5_500_000),
 		followCount: xsync.NewCounter(),
 		userCount:   xsync.NewCounter(),
 		utd:         map[uint32]string{},
@@ -106,12 +105,6 @@ func (g *Graph) setUID(did string, uid uint32) {
 	g.dtu[did] = uid
 }
 
-func (g *Graph) nextUID() uint32 {
-	uid := g.uidNext
-	g.uidNext++
-	return uid
-}
-
 func (g *Graph) setDID(uid uint32, did string) {
 	g.utdLk.Lock()
 	defer g.utdLk.Unlock()
@@ -121,28 +114,31 @@ func (g *Graph) setDID(uid uint32, did string) {
 // AcquireDID links a DID to a UID, creating a new UID if necessary.
 // If the DID is already linked to a UID, that UID is returned
 func (g *Graph) AcquireDID(did string) uint32 {
-	g.nextLk.RLock()
+	g.nextLk.Lock()
+	defer g.nextLk.Unlock()
+
 	uid, ok := g.GetUID(did)
-	g.nextLk.RUnlock()
-	if !ok {
-		g.nextLk.Lock()
-		defer g.nextLk.Unlock()
-
-		uid = g.nextUID()
-		g.setUID(did, uid)
-		g.setDID(uid, did)
-
-		// Initialize the follow maps
-		initMap := &FollowMap{
-			followingLk: sync.RWMutex{},
-			followersLk: sync.RWMutex{},
-			followingBM: roaring.NewBitmap(),
-			followersBM: roaring.NewBitmap(),
-		}
-		g.g.Store(uid, initMap)
-
-		g.userCount.Add(1)
+	if ok {
+		return uid
 	}
+
+	uid = g.uidNext
+	g.setUID(did, uid)
+	g.setDID(uid, did)
+
+	// Initialize the follow maps
+	initMap := &FollowMap{
+		followingLk: sync.RWMutex{},
+		followersLk: sync.RWMutex{},
+		followingBM: roaring.NewBitmap(),
+		followersBM: roaring.NewBitmap(),
+	}
+	g.g.Store(uid, initMap)
+
+	g.userCount.Add(1)
+
+	g.uidNext++
+
 	return uid
 }
 
@@ -348,8 +344,8 @@ func (g *Graph) LoadFromCSV(csvFile string) error {
 	wg := sync.WaitGroup{}
 	bufs := make(chan *bytes.Buffer, 10_000)
 
-	// Start 10 workers to process the lines
-	for i := 0; i < 10; i++ {
+	// Start 6 workers to process the lines
+	for i := 0; i < 6; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -374,9 +370,6 @@ func (g *Graph) LoadFromCSV(csvFile string) error {
 	close(bufs)
 	wg.Wait()
 
-	// Explicitly free memory since the CSV reading allocates a lot of memory
-	debug.FreeOSMemory()
-
 	log.Info("total follows", "total", totalFollows, "duration", time.Since(start))
 	return nil
 }
@@ -388,13 +381,13 @@ func (g *Graph) processCSVLine(b *bytes.Buffer) error {
 	}()
 
 	line := string(b.Bytes())
-	parts := strings.SplitN(line, ",", 2) // Use SplitN for efficiency
-	if len(parts) < 2 {
+	actorDID, targetDID, found := strings.Cut(line, ",")
+	if !found {
 		return fmt.Errorf("invalid follow: %s", line)
 	}
 
-	actorUID := g.AcquireDID(parts[0])
-	targetUID := g.AcquireDID(parts[1])
+	actorUID := g.AcquireDID(actorDID)
+	targetUID := g.AcquireDID(targetDID)
 
 	g.AddFollow(actorUID, targetUID)
 
