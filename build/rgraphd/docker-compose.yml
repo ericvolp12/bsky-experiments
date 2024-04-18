@@ -13,4 +13,4 @@ services:
       EXPECTED_NODE_COUNT: 5_500_000
     network_mode: host # For higher performance avoid the Docker Bridge
     volumes:
-      - /mnt/ssd/graphd:/data
+      - ./data:/data

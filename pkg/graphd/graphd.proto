@@ -1,0 +1,145 @@
+syntax = "proto3";
+
+package graphd;
+
+// Message definitions that correspond to data structures and requests
+
+message GetHealthStatusRequest {
+    bool include_stats = 1;
+}
+
+message GetHealthStatusResponse {
+  string status = 1;
+  string version = 2;
+  string message = 3;
+  uint32 user_count = 4;
+  uint32 follow_count = 5;
+}
+
+message GetFollowersRequest {
+    string target_did = 1;
+}
+
+message GetFollowersResponse {
+    repeated string dids = 1;
+}
+
+message GetFollowingRequest {
+    string actor_did = 1;
+}
+
+message GetFollowingResponse {
+    repeated string dids = 1;
+}
+
+message GetFollowersNotFollowingRequest {
+    string actor_did = 1;
+}
+
+message GetFollowersNotFollowingResponse {
+    repeated string dids = 1;
+}
+
+message GetDoesFollowRequest {
+    string actor_did = 1;
+    string target_did = 2;
+}
+
+message GetDoesFollowResponse {
+    bool does_follow = 1;
+}
+
+message GetAreMootsRequest {
+    string actor_did = 1;
+    string target_did = 2;
+}
+
+message GetAreMootsResponse {
+    bool are_moots = 1;
+}
+
+message GetIntersectFollowersRequest{
+    repeated string target_dids = 1;
+}
+
+message GetIntersectFollowersResponse{
+    repeated string actor_dids = 1;
+}
+
+message GetFollowsFollowingRequest {
+    string actor_did = 1;
+    string target_did = 2;
+}
+
+message GetFollowsFollowingResponse {
+    repeated string dids = 1;
+}
+
+message GetIntersectFollowingRequest {
+    repeated string actor_dids = 1;
+}
+
+message GetIntersectFollowingResponse {
+    repeated string dids = 1;
+}
+
+message GetMootsRequest {
+    string actor_did = 1;
+}
+
+message GetMootsResponse {
+    repeated string dids = 1;
+}
+
+message PostFollowRequest {
+    string actor_did = 1;
+    string target_did = 2;
+}
+
+message PostFollowResponse {}
+
+message Follow {
+    string actor_did = 1;
+    string target_did = 2;
+}
+
+message PostFollowsRequest {
+    repeated Follow follows = 1;
+}
+
+message PostFollowsResponse {}
+
+message PostUnfollowRequest {
+    string actor_did = 1;
+    string target_did = 2;
+}
+
+message PostUnfollowResponse {}
+
+message Unfollow {
+    string actor_did = 1;
+    string target_did = 2;
+}
+
+message PostUnfollowsRequest {
+    repeated Unfollow unfollows = 1;
+}
+
+message PostUnfollowsResponse {}
+
+service GraphDService {
+  rpc GetHealthStatus(GetHealthStatusRequest) returns (GetHealthStatusResponse);
+  rpc GetFollowers(GetFollowersRequest) returns (GetFollowersResponse);
+  rpc GetFollowing(GetFollowingRequest) returns (GetFollowingResponse);
+  rpc GetFollowersNotFollowing(GetFollowersNotFollowingRequest) returns (GetFollowersNotFollowingResponse);
+  rpc GetDoesFollow(GetDoesFollowRequest) returns (GetDoesFollowResponse);
+  rpc GetAreMoots(GetAreMootsRequest) returns (GetAreMootsResponse);
+  rpc GetIntersectFollowers(GetIntersectFollowersRequest) returns (GetIntersectFollowersResponse);
+  rpc GetFollowsFollowing(GetFollowsFollowingRequest) returns (GetFollowsFollowingResponse);
+  rpc GetIntersectFollowing(GetIntersectFollowingRequest) returns (GetIntersectFollowingResponse);
+  rpc GetMoots(GetMootsRequest) returns (GetMootsResponse);
+  rpc PostFollow(PostFollowRequest) returns (PostFollowResponse);
+  rpc PostFollows(PostFollowsRequest) returns (PostFollowsResponse);
+  rpc PostUnfollow(PostUnfollowRequest) returns (PostUnfollowResponse);
+  rpc PostUnfollows(PostUnfollowsRequest) returns (PostUnfollowsResponse);
+}
