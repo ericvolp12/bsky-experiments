@@ -137,7 +137,7 @@ pub async fn get_following(
         .graph
         .get_following(uid.unwrap())
         .iter()
-        .map(|uid| state.graph.get_did(uid).unwrap())
+        .map(|uid| state.graph.get_did(uid).unwrap_or_default())
         .collect();
     Ok(Json(FollowingResponse { dids }))
 }
@@ -169,7 +169,7 @@ pub async fn get_followers(
         .graph
         .get_followers(uid.unwrap())
         .iter()
-        .map(|uid| state.graph.get_did(uid).unwrap())
+        .map(|uid| state.graph.get_did(uid).unwrap_or_default())
         .collect();
     Ok(Json(FollowersResponse { dids }))
 }
@@ -201,7 +201,7 @@ pub async fn get_followers_not_following(
         .graph
         .get_followers_not_following(uid.unwrap())
         .iter()
-        .map(|uid| state.graph.get_did(uid).unwrap())
+        .map(|uid| state.graph.get_did(uid).unwrap_or_default())
         .collect();
     Ok(Json(FollowersNotFollowingResponse { dids }))
 }
@@ -237,7 +237,7 @@ pub async fn get_intersect_following_and_followers(
         .graph
         .intersect_following_and_followers(actor_uid.unwrap(), target_uid.unwrap())
         .iter()
-        .map(|uid| state.graph.get_did(uid).unwrap())
+        .map(|uid| state.graph.get_did(uid).unwrap_or_default())
         .collect();
     Ok(Json(IntersectFollowingAndFollowersResponse { dids }))
 }

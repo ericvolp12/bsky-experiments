@@ -89,27 +89,19 @@ impl Graph {
     }
 
     pub fn get_followers(&self, uid: u32) -> RoaringBitmap {
-        self.actors
-            .read()
-            .unwrap()
-            .get(&uid)
-            .unwrap()
-            .followers
-            .read()
-            .unwrap()
-            .clone()
+        if let Some(actor) = self.actors.read().unwrap().get(&uid) {
+            actor.followers.read().unwrap().clone()
+        } else {
+            RoaringBitmap::new()
+        }
     }
 
     pub fn get_following(&self, uid: u32) -> RoaringBitmap {
-        self.actors
-            .read()
-            .unwrap()
-            .get(&uid)
-            .unwrap()
-            .following
-            .read()
-            .unwrap()
-            .clone()
+        if let Some(actor) = self.actors.read().unwrap().get(&uid) {
+            actor.following.read().unwrap().clone()
+        } else {
+            RoaringBitmap::new()
+        }
     }
 
     pub fn intersect_following_and_followers(&self, actor: u32, target: u32) -> RoaringBitmap {
