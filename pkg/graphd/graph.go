@@ -3,6 +3,8 @@ package graphd
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,6 +15,19 @@ import (
 	"github.com/RoaringBitmap/roaring"
 	"github.com/puzpuzpuz/xsync/v3"
 )
+
+const (
+	// FollowAction is the action to follow a user (for the pending queue)
+	FollowAction int = iota
+	// UnfollowAction is the action to unfollow a user (for the pending queue)
+	UnfollowAction
+)
+
+type QueueItem struct {
+	Action int
+	Actor  uint32
+	Target uint32
+}
 
 type Graph struct {
 	g *xsync.MapOf[uint32, *FollowMap]
@@ -27,8 +42,17 @@ type Graph struct {
 	nextLk  sync.Mutex
 
 	followCount *xsync.Counter
+	userCount   *xsync.Counter
 
-	userCount *xsync.Counter
+	pendingQueue chan *QueueItem
+	isLoaded     bool
+	loadLk       sync.Mutex
+
+	// For Persisting the graph
+	dbPath        string
+	db            *sql.DB
+	updatedActors *roaring.Bitmap
+	updatedLk     sync.RWMutex
 }
 
 type FollowMap struct {
@@ -39,14 +63,48 @@ type FollowMap struct {
 	followersLk sync.RWMutex
 }
 
-func NewGraph() *Graph {
-	return &Graph{
-		g:           xsync.NewMapOfPresized[uint32, *FollowMap](5_500_000),
-		followCount: xsync.NewCounter(),
-		userCount:   xsync.NewCounter(),
-		utd:         map[uint32]string{},
-		dtu:         map[string]uint32{},
+func NewGraph(dbPath string) (*Graph, error) {
+	// Open the database
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+
+	// Set pragmas
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL;`); err != nil {
+		return nil, fmt.Errorf("failed to set journal mode: %w", err)
+	}
+
+	if _, err := db.Exec(`PRAGMA synchronous=normal;`); err != nil {
+		return nil, fmt.Errorf("failed to set synchronous mode: %w", err)
+	}
+
+	// Create the tables if they don't exist
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS actors (
+		uid INTEGER PRIMARY KEY,
+		did TEXT NOT NULL,
+		following BLOB NOT NULL,
+		followers BLOB NOT NULL
+	);`); err != nil {
+		return nil, fmt.Errorf("failed to create actors table: %w", err)
+	}
+
+	return &Graph{
+		g:            xsync.NewMapOfPresized[uint32, *FollowMap](5_500_000),
+		followCount:  xsync.NewCounter(),
+		userCount:    xsync.NewCounter(),
+		utd:          map[uint32]string{},
+		dtu:          map[string]uint32{},
+		pendingQueue: make(chan *QueueItem, 100_000),
+		dbPath:       dbPath,
+		db:           db,
+	}, nil
+}
+
+func (g *Graph) IsLoaded() bool {
+	g.loadLk.Lock()
+	defer g.loadLk.Unlock()
+	return g.isLoaded
 }
 
 func (g *Graph) GetUsercount() uint32 {
@@ -143,6 +201,14 @@ func (g *Graph) AcquireDID(did string) uint32 {
 }
 
 func (g *Graph) AddFollow(actorUID, targetUID uint32) {
+	if g.IsLoaded() {
+		g.addFollow(actorUID, targetUID)
+	}
+	g.pendingQueue <- &QueueItem{Action: FollowAction, Actor: actorUID, Target: targetUID}
+	return
+}
+
+func (g *Graph) addFollow(actorUID, targetUID uint32) {
 	actorMap, _ := g.g.Load(actorUID)
 	actorMap.followingLk.Lock()
 	actorMap.followingBM.Add(uint32(targetUID))
@@ -154,10 +220,22 @@ func (g *Graph) AddFollow(actorUID, targetUID uint32) {
 	targetMap.followersLk.Unlock()
 
 	g.followCount.Inc()
+
+	g.updatedLk.Lock()
+	g.updatedActors.Add(uint32(actorUID))
+	g.updatedActors.Add(uint32(targetUID))
+	g.updatedLk.Unlock()
 }
 
-// RemoveFollow removes a follow from the graph if it exists
 func (g *Graph) RemoveFollow(actorUID, targetUID uint32) {
+	if g.IsLoaded() {
+		g.removeFollow(actorUID, targetUID)
+	}
+	g.pendingQueue <- &QueueItem{Action: UnfollowAction, Actor: actorUID, Target: targetUID}
+	return
+}
+
+func (g *Graph) removeFollow(actorUID, targetUID uint32) {
 	actorMap, _ := g.g.Load(actorUID)
 	actorMap.followingLk.Lock()
 	actorMap.followingBM.Remove(uint32(targetUID))
@@ -169,6 +247,11 @@ func (g *Graph) RemoveFollow(actorUID, targetUID uint32) {
 	targetMap.followersLk.Unlock()
 
 	g.followCount.Dec()
+
+	g.updatedLk.Lock()
+	g.updatedActors.Add(uint32(actorUID))
+	g.updatedActors.Add(uint32(targetUID))
+	g.updatedLk.Unlock()
 }
 
 func (g *Graph) GetFollowers(uid uint32) ([]uint32, error) {
@@ -370,7 +453,23 @@ func (g *Graph) LoadFromCSV(csvFile string) error {
 	close(bufs)
 	wg.Wait()
 
-	log.Info("total follows", "total", totalFollows, "duration", time.Since(start))
+	log.Info("loaded follows from CSV", "total", totalFollows, "duration", time.Since(start))
+
+	// Play the pending queue
+	g.loadLk.Lock()
+	g.isLoaded = true
+	for item := range g.pendingQueue {
+		switch item.Action {
+		case FollowAction:
+			g.addFollow(item.Actor, item.Target)
+		case UnfollowAction:
+			g.removeFollow(item.Actor, item.Target)
+		}
+	}
+	g.loadLk.Unlock()
+
+	close(g.pendingQueue)
+
 	return nil
 }
 
@@ -390,6 +489,72 @@ func (g *Graph) processCSVLine(b *bytes.Buffer) error {
 	targetUID := g.AcquireDID(targetDID)
 
 	g.AddFollow(actorUID, targetUID)
+
+	return nil
+}
+
+func (g *Graph) FlushUpdates(ctx context.Context) error {
+	log := slog.With("source", "graph_flush")
+	log.Info("flushing graph updates to disk")
+
+	start := time.Now()
+
+	// Insert the updated actors
+	g.updatedLk.Lock()
+	updatedActors := g.updatedActors.ToArray()
+	g.updatedActors.Clear()
+	g.updatedLk.Unlock()
+
+	_, err := g.db.Exec(`BEGIN CONCURRENT;`)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	stmt, err := g.db.Prepare(`INSERT OR REPLACE INTO actors (uid, did, following, followers) VALUES (?, ?, ?, ?);`)
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %w", err)
+	}
+
+	for _, uid := range updatedActors {
+		followMap, ok := g.g.Load(uint32(uid))
+		if !ok {
+			return fmt.Errorf("uid %d not found", uid)
+		}
+
+		followingBM := followMap.followingBM
+		followersBM := followMap.followersBM
+
+		followMap.followersLk.RLock()
+		followMap.followingLk.RLock()
+
+		followingBytes, err := followingBM.ToBytes()
+		if err != nil {
+			return fmt.Errorf("failed to serialize following bitmap: %w", err)
+		}
+
+		followersBytes, err := followersBM.ToBytes()
+		if err != nil {
+			return fmt.Errorf("failed to serialize followers bitmap: %w", err)
+		}
+
+		followMap.followersLk.RUnlock()
+		followMap.followingLk.RUnlock()
+
+		did, ok := g.GetDID(uint32(uid))
+		if !ok {
+			return fmt.Errorf("did not found for uid %d", uid)
+		}
+
+		if _, err := stmt.Exec(uid, did, followingBytes, followersBytes); err != nil {
+			return fmt.Errorf("failed to execute statement: %w", err)
+		}
+	}
+
+	if _, err := g.db.Exec(`COMMIT;`); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	log.Info("flushed graph updates", "duration", time.Since(start))
 
 	return nil
 }

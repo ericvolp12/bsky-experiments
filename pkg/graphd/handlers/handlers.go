@@ -406,3 +406,12 @@ func (h *Handlers) PostUnfollows(c echo.Context) error {
 
 	return c.JSON(200, "ok")
 }
+
+func (h *Handlers) GetFlushUpdates(c echo.Context) error {
+	err := h.graph.FlushUpdates(c.Request().Context())
+	if err != nil {
+		slog.Error("failed to flush updates", "err", err)
+		return c.JSON(500, "failed to flush updates")
+	}
+	return c.JSON(200, "ok")
+}
