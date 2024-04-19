@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	_ "github.com/joho/godotenv/autoload"
 
@@ -51,6 +52,12 @@ func main() {
 			EnvVars: []string{"GRAPHDB_SQLITE_PATH"},
 			Value:   "data/graphd.db",
 		},
+		&cli.DurationFlag{
+			Name:    "sync-interval",
+			Usage:   "interval to flush updates to disk",
+			EnvVars: []string{"GRAPHDB_SYNC_INTERVAL"},
+			Value:   5 * time.Second,
+		},
 	}
 
 	app.Action = GraphD
@@ -69,8 +76,11 @@ func GraphD(cctx *cli.Context) error {
 	}
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: logLevel,
+		Level:     logLevel,
+		AddSource: true,
 	})))
+
+	logger := slog.Default()
 
 	dbExists := true
 	_, err := os.Stat(cctx.String("graphdb-sqlite-path"))
@@ -83,7 +93,7 @@ func GraphD(cctx *cli.Context) error {
 		}
 	}
 
-	graph, err := graphd.NewGraph(cctx.String("graphdb-sqlite-path"))
+	graph, err := graphd.NewGraph(cctx.String("graphdb-sqlite-path"), cctx.Duration("sync-interval"), logger)
 	if err != nil {
 		slog.Error("failed to create graph", "error", err)
 		return err

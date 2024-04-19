@@ -25,12 +25,14 @@ type HealthStatus struct {
 	Message     string  `json:"msg,omitempty"`
 	UserCount   *uint32 `json:"userCount,omitempty"`
 	FollowCount *uint32 `json:"followCount,omitempty"`
+	IsLoaded    bool    `json:"isLoaded"`
 }
 
 func (h *Handlers) Health(c echo.Context) error {
 	s := HealthStatus{
-		Status:  "ok",
-		Version: "0.0.1",
+		Status:   "ok",
+		Version:  "0.0.1",
+		IsLoaded: h.graph.IsLoaded(),
 	}
 	if c.QueryParam("stats") == "true" {
 		userCount := h.graph.GetUsercount()
@@ -44,6 +46,10 @@ func (h *Handlers) Health(c echo.Context) error {
 }
 
 func (h *Handlers) GetFollowers(c echo.Context) error {
+	if !h.graph.IsLoaded() {
+		return c.JSON(503, "graph is still loading...")
+	}
+
 	did := c.QueryParam("did")
 
 	uid, ok := h.graph.GetUID(did)
@@ -90,6 +96,10 @@ func (h *Handlers) GetFollowing(c echo.Context) error {
 }
 
 func (h *Handlers) GetFollowersNotFollowing(c echo.Context) error {
+	if !h.graph.IsLoaded() {
+		return c.JSON(503, "graph is still loading...")
+	}
+
 	did := c.QueryParam("did")
 
 	uid, ok := h.graph.GetUID(did)
@@ -113,6 +123,10 @@ func (h *Handlers) GetFollowersNotFollowing(c echo.Context) error {
 }
 
 func (h *Handlers) GetDoesFollow(c echo.Context) error {
+	if !h.graph.IsLoaded() {
+		return c.JSON(503, "graph is still loading...")
+	}
+
 	actorDid := c.QueryParam("actorDid")
 	targetDid := c.QueryParam("targetDid")
 
@@ -136,6 +150,10 @@ func (h *Handlers) GetDoesFollow(c echo.Context) error {
 }
 
 func (h *Handlers) GetAreMoots(c echo.Context) error {
+	if !h.graph.IsLoaded() {
+		return c.JSON(503, "graph is still loading...")
+	}
+
 	didA := c.QueryParam("didA")
 	didB := c.QueryParam("didB")
 
@@ -168,6 +186,10 @@ func (h *Handlers) GetAreMoots(c echo.Context) error {
 }
 
 func (h *Handlers) GetIntersectFollowers(c echo.Context) error {
+	if !h.graph.IsLoaded() {
+		return c.JSON(503, "graph is still loading...")
+	}
+
 	if !c.QueryParams().Has("did") {
 		return c.JSON(400, "did query param is required")
 	}
@@ -197,6 +219,10 @@ func (h *Handlers) GetIntersectFollowers(c echo.Context) error {
 }
 
 func (h *Handlers) GetFollowsFollowing(c echo.Context) error {
+	if !h.graph.IsLoaded() {
+		return c.JSON(503, "graph is still loading...")
+	}
+
 	if !c.QueryParams().Has("actor_did") || !c.QueryParams().Has("target_did") {
 		return c.JSON(400, "actor_did and target_did query params are required")
 	}
@@ -230,6 +256,10 @@ func (h *Handlers) GetFollowsFollowing(c echo.Context) error {
 }
 
 func (h *Handlers) GetIntersectFollowing(c echo.Context) error {
+	if !h.graph.IsLoaded() {
+		return c.JSON(503, "graph is still loading...")
+	}
+
 	if !c.QueryParams().Has("did") {
 		return c.JSON(400, "did query param is required")
 	}
@@ -259,6 +289,10 @@ func (h *Handlers) GetIntersectFollowing(c echo.Context) error {
 }
 
 func (h *Handlers) GetMoots(c echo.Context) error {
+	if !h.graph.IsLoaded() {
+		return c.JSON(503, "graph is still loading...")
+	}
+
 	did := c.QueryParam("did")
 
 	uid, ok := h.graph.GetUID(did)

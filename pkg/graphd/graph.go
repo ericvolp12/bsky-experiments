@@ -32,7 +32,8 @@ type QueueItem struct {
 }
 
 type Graph struct {
-	g *xsync.MapOf[uint32, *FollowMap]
+	g      *xsync.MapOf[uint32, *FollowMap]
+	logger *slog.Logger
 
 	utd   map[uint32]string
 	utdLk sync.RWMutex
@@ -55,6 +56,8 @@ type Graph struct {
 	db            *sql.DB
 	updatedActors *roaring.Bitmap
 	updatedLk     sync.RWMutex
+	syncInterval  time.Duration
+	shutdown      chan chan struct{}
 }
 
 type FollowMap struct {
@@ -65,7 +68,7 @@ type FollowMap struct {
 	followersLk sync.RWMutex
 }
 
-func NewGraph(dbPath string) (*Graph, error) {
+func NewGraph(dbPath string, syncInterval time.Duration, logger *slog.Logger) (*Graph, error) {
 	// Open the database
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
@@ -91,8 +94,11 @@ func NewGraph(dbPath string) (*Graph, error) {
 		return nil, fmt.Errorf("failed to create actors table: %w", err)
 	}
 
-	return &Graph{
+	logger = logger.With("module", "graph")
+
+	g := Graph{
 		g:             xsync.NewMapOfPresized[uint32, *FollowMap](5_500_000),
+		logger:        logger,
 		followCount:   xsync.NewCounter(),
 		userCount:     xsync.NewCounter(),
 		utd:           map[uint32]string{},
@@ -101,7 +107,43 @@ func NewGraph(dbPath string) (*Graph, error) {
 		dbPath:        dbPath,
 		db:            db,
 		updatedActors: roaring.NewBitmap(),
-	}, nil
+		syncInterval:  syncInterval,
+		shutdown:      make(chan chan struct{}),
+	}
+
+	// Kick off the sync loop
+	go func() {
+		ticker := time.NewTicker(syncInterval)
+		defer ticker.Stop()
+		logger := g.logger.With("source", "graph_sync")
+		for {
+			select {
+			case finished := <-g.shutdown:
+				logger.Info("flushing updates on exit")
+				if err := g.FlushUpdates(context.Background()); err != nil {
+					logger.Error("failed to flush updates on exit", "error", err)
+				} else {
+					logger.Info("successfully flushed updates on exit")
+				}
+				close(finished)
+				return
+			case <-ticker.C:
+				if err := g.FlushUpdates(context.Background()); err != nil {
+					logger.Error("failed to flush updates", "error", err)
+				}
+			}
+		}
+	}()
+
+	return &g, nil
+}
+
+func (g *Graph) Shutdown() {
+	g.logger.Info("shutting down graph")
+	finished := make(chan struct{})
+	g.shutdown <- finished
+	<-finished
+	g.logger.Info("graph shut down")
 }
 
 func (g *Graph) IsLoaded() bool {
@@ -406,7 +448,7 @@ var bufPool = sync.Pool{
 }
 
 func (g *Graph) LoadFromCSV(csvFile string) error {
-	log := slog.With("source", "graph_load")
+	log := g.logger.With("source", "graph_csv_load")
 	start := time.Now()
 	totalFollows := 0
 
@@ -497,8 +539,8 @@ func (g *Graph) processCSVLine(b *bytes.Buffer) error {
 }
 
 func (g *Graph) LoadFromSQLite(ctx context.Context) error {
-	log := slog.With("source", "graph_load")
-	log.Info("loading actors from SQLite")
+	log := g.logger.With("source", "graph_sqlite_load")
+	log.Info("loading graph from SQLite")
 
 	start := time.Now()
 
@@ -509,7 +551,6 @@ func (g *Graph) LoadFromSQLite(ctx context.Context) error {
 	defer rows.Close()
 
 	nextUID := uint32(0)
-
 	totalActors := 0
 	for rows.Next() {
 		var uid uint32
@@ -551,11 +592,10 @@ func (g *Graph) LoadFromSQLite(ctx context.Context) error {
 		totalActors++
 	}
 
-	log.Info("loaded actors from SQLite", "total", totalActors, "duration", time.Since(start))
-
 	// Play the pending queue
 	g.loadLk.Lock()
 	g.isLoaded = true
+	close(g.pendingQueue)
 	for item := range g.pendingQueue {
 		switch item.Action {
 		case FollowAction:
@@ -565,24 +605,36 @@ func (g *Graph) LoadFromSQLite(ctx context.Context) error {
 		}
 	}
 	g.loadLk.Unlock()
-
-	close(g.pendingQueue)
+	log.Info("loaded graph from SQLite", "num_actors", totalActors, "duration", time.Since(start))
 
 	return nil
 
 }
 
 func (g *Graph) FlushUpdates(ctx context.Context) error {
-	log := slog.With("source", "graph_flush")
-	log.Info("flushing graph updates to disk")
-
+	log := g.logger.With("source", "graph_flush")
 	start := time.Now()
+
+	if !g.IsLoaded() {
+		log.Info("graph not finished loading, skipping flush")
+		return nil
+	}
 
 	// Insert the updated actors
 	g.updatedLk.Lock()
 	updatedActors := g.updatedActors.ToArray()
 	g.updatedActors.Clear()
 	g.updatedLk.Unlock()
+
+	numEnqueued := len(updatedActors)
+	numSucceeded := 0
+
+	if numEnqueued == 0 {
+		log.Info("no graph updates to flush")
+		return nil
+	}
+
+	log.Info("flushing graph updates to disk", "enqueued", numEnqueued)
 
 	stmt, err := g.db.Prepare(`INSERT OR REPLACE INTO actors (uid, did, following, followers) VALUES (?, ?, ?, ?);`)
 	if err != nil {
@@ -622,9 +674,11 @@ func (g *Graph) FlushUpdates(ctx context.Context) error {
 		if _, err := stmt.Exec(uid, did, followingBytes, followersBytes); err != nil {
 			return fmt.Errorf("failed to execute statement: %w", err)
 		}
+
+		numSucceeded++
 	}
 
-	log.Info("flushed graph updates", "duration", time.Since(start))
+	log.Info("flushed graph updates", "duration", time.Since(start), "enqueued", numEnqueued, "succeeded", numSucceeded)
 
 	return nil
 }
