@@ -153,6 +153,16 @@ empty-fanout:
 	@echo "Emptying Fanout keys in Redis..."
 	redis-cli --scan --pattern "cg:*" | xargs -L 1000 redis-cli DEL
 
+.PHONY: graphd-up
+graphd-up: # Runs graphd docker container
+	@echo "Starting GraphD..."
+	docker compose -f build/graphd/docker-compose.yml up --build -d
+
+.PHONY: graphd-down
+graphd-down: # Stops graphd docker container
+	@echo "Stopping GraphD..."
+	docker compose -f build/graphd/docker-compose.yml down
+
 .PHONY: rgraphd-up
 rgraphd-up: # Runs rgraphd docker container
 	@echo "Starting rGraphD..."
