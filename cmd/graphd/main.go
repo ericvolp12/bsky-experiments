@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -11,13 +12,13 @@ import (
 	"syscall"
 
 	_ "github.com/joho/godotenv/autoload"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/graphd"
-	graphdconnect "github.com/ericvolp12/bsky-experiments/pkg/graphd/gen/graphdconnect"
-	"github.com/ericvolp12/bsky-experiments/pkg/graphd/server"
+	"github.com/ericvolp12/bsky-experiments/pkg/graphd/handlers"
+	"github.com/labstack/echo-contrib/echoprometheus"
+	"github.com/labstack/echo/v4"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/urfave/cli/v2"
 )
 
@@ -33,10 +34,10 @@ func main() {
 			Name:  "debug",
 			Usage: "enable debug logging",
 		},
-		&cli.StringFlag{
-			Name:  "addr",
-			Usage: "listen addr for http server",
-			Value: ":1323",
+		&cli.IntFlag{
+			Name:  "port",
+			Usage: "listen port for http server",
+			Value: 1323,
 		},
 		&cli.StringFlag{
 			Name:    "graph-csv",
@@ -73,38 +74,64 @@ func GraphD(cctx *cli.Context) error {
 		return err
 	}
 
-	graphDServer := server.NewGraphDServer(graph)
+	e := echo.New()
 
-	mux := http.DefaultServeMux
-	mux.Handle("/metrics", promhttp.Handler())
+	h := handlers.NewHandlers(graph)
 
-	path, handler := graphdconnect.NewGraphDServiceHandler(graphDServer)
-	mux.Handle(path, handler)
+	e.GET("/_health", h.Health)
+	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()))
+	e.GET("/debug/*", echo.WrapHandler(http.DefaultServeMux))
 
-	s := http.Server{
-		Addr:     cctx.String("addr"),
-		Handler:  h2c.NewHandler(mux, &http2.Server{}),
-		ErrorLog: slog.NewLogLogger(slog.Default().Handler(), slog.LevelError),
+	echoProm := echoprometheus.NewMiddlewareWithConfig(echoprometheus.MiddlewareConfig{
+		Namespace: "graphd",
+		HistogramOptsFunc: func(opts prometheus.HistogramOpts) prometheus.HistogramOpts {
+			opts.Buckets = prometheus.ExponentialBuckets(0.00001, 2, 20)
+			return opts
+		},
+	})
+
+	e.Use(echoProm)
+
+	e.GET("/followers", h.GetFollowers)
+	e.GET("/following", h.GetFollowing)
+	e.GET("/moots", h.GetMoots)
+	e.GET("/followersNotFollowing", h.GetFollowersNotFollowing)
+
+	e.GET("/doesFollow", h.GetDoesFollow)
+	e.GET("/areMoots", h.GetAreMoots)
+	e.GET("/intersectFollowers", h.GetIntersectFollowers)
+	e.GET("/intersectFollowing", h.GetIntersectFollowing)
+	e.GET("/follows_following", h.GetFollowsFollowing)
+
+	e.POST("/follow", h.PostFollow)
+	e.POST("/follows", h.PostFollows)
+
+	e.POST("/unfollow", h.PostUnfollow)
+	e.POST("/unfollows", h.PostUnfollows)
+
+	s := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cctx.Int("port")),
+		Handler: e,
 	}
 
-	shutdownServer := make(chan struct{})
-	serverShutdown := make(chan struct{})
+	shutdownEcho := make(chan struct{})
+	echoShutdown := make(chan struct{})
 	go func() {
-		log := slog.With("source", "server")
+		log := slog.With("source", "echo")
 
-		log.Info("server listening", "addr", cctx.String("addr"))
+		log.Info("echo listening", "port", cctx.Int("port"))
 
 		go func() {
 			if err := s.ListenAndServe(); err != http.ErrServerClosed {
-				log.Error("failed to start server", "error", err)
+				log.Error("failed to start echo", "error", err)
 			}
 		}()
-		<-shutdownServer
+		<-shutdownEcho
 		if err := s.Shutdown(context.Background()); err != nil {
-			log.Error("failed to shutdown server", "error", err)
+			log.Error("failed to shutdown echo", "error", err)
 		}
-		log.Info("server shut down")
-		close(serverShutdown)
+		log.Info("echo shut down")
+		close(echoShutdown)
 	}()
 
 	// Trap SIGINT to trigger a shutdown.
@@ -117,9 +144,9 @@ func GraphD(cctx *cli.Context) error {
 	}
 
 	slog.Info("shutting down, waiting for workers to clean up...")
-	close(shutdownServer)
+	close(shutdownEcho)
 
-	<-serverShutdown
+	<-echoShutdown
 	slog.Info("shut down successfully")
 
 	return nil
