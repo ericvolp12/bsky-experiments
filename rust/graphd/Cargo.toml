@@ -17,6 +17,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_qs = "0.12.0"
 tokio = { version = "1.0", features = ["full"] }
 tower-http = "0.5.1"
+rusqlite = "0.31.0"
 
 [env]
 AXUM_HTTP_REQUESTS_TOTAL = "rgraphd_requests_total"

@@ -1,6 +1,7 @@
 use hashbrown::HashMap;
-use log::info;
+use log::{error, info};
 use roaring::bitmap::RoaringBitmap;
+use rusqlite::{Connection, Result};
 use std::{fs::File, io::BufReader, ops::BitAnd, sync::RwLock};
 
 use csv;
@@ -28,6 +29,8 @@ pub struct Graph {
     next_uid: RwLock<u32>,
     pending_queue: RwLock<Vec<QueueItem>>,
     pub is_loaded: RwLock<bool>,
+
+    updated_actors: RwLock<RoaringBitmap>,
 }
 
 impl Graph {
@@ -39,6 +42,7 @@ impl Graph {
             next_uid: RwLock::new(0),
             pending_queue: RwLock::new(Vec::new()),
             is_loaded: RwLock::new(false),
+            updated_actors: RwLock::new(RoaringBitmap::new()),
         }
     }
 
@@ -75,6 +79,10 @@ impl Graph {
             followers: RwLock::new(RoaringBitmap::new()),
         });
         target_map.followers.write().unwrap().insert(actor);
+
+        // Add to updated actors so we can update the on-disk representation
+        self.updated_actors.write().unwrap().insert(actor);
+        self.updated_actors.write().unwrap().insert(target);
     }
 
     pub fn remove_follow(&self, actor: u32, target: u32) {
@@ -86,6 +94,10 @@ impl Graph {
         if let Some(target_map) = actors.get_mut(&target) {
             target_map.followers.write().unwrap().remove(actor);
         }
+
+        // Add to updated actors so we can update the on-disk representation
+        self.updated_actors.write().unwrap().insert(actor);
+        self.updated_actors.write().unwrap().insert(target);
     }
 
     pub fn get_followers(&self, uid: u32) -> RoaringBitmap {
@@ -146,6 +158,63 @@ impl Graph {
 }
 
 impl Graph {
+    pub fn flush_updates(&self) -> Result<(), rusqlite::Error> {
+        let conn = Connection::open("data/graph.db")?;
+        conn.pragma_update(None, "journal_mode", &"WAL")?;
+        conn.pragma_update(None, "synchronous", &"NORMAL")?;
+        match conn.execute(
+            "CREATE TABLE IF NOT EXISTS actors (
+                uid INTEGER PRIMARY KEY,
+                did TEXT NOT NULL,
+                following BLOB NOT NULL,
+                followers BLOB NOT NULL
+            )",
+            [],
+        ) {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Error creating table: {:?}", e);
+            }
+        }
+
+        let mut stmt = conn.prepare(
+            "INSERT OR REPLACE INTO actors (uid, did, following, followers) VALUES (?, ?, ?, ?)",
+        )?;
+
+        let updated_actors = self.updated_actors.read().unwrap().clone();
+        let actors = self.actors.read().unwrap();
+
+        let mut num_updated = 0;
+        let total_updated = updated_actors.len();
+
+        for uid in updated_actors.iter() {
+            if num_updated % 100_000 == 0 {
+                info!("Updating actor {}/{}", num_updated, total_updated);
+            }
+
+            let actor = actors.get(&uid).unwrap();
+            let following = actor.following.read().unwrap();
+            let followers = actor.followers.read().unwrap();
+            let mut following_bytes = vec![];
+            let mut followers_bytes = vec![];
+            let did = self.get_did(uid).unwrap();
+
+            following.serialize_into(&mut following_bytes).unwrap();
+            followers.serialize_into(&mut followers_bytes).unwrap();
+
+            match stmt.execute((uid, did, following_bytes, followers_bytes)) {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("Error inserting row: {:?}", e);
+                }
+            }
+            num_updated += 1;
+        }
+
+        self.updated_actors.write().unwrap().clear();
+        Ok(())
+    }
+
     pub fn load_from_csv(&self, path: &str) -> std::io::Result<()> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);

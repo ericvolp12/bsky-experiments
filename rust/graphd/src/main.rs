@@ -80,6 +80,7 @@ async fn main() {
             get(handlers::get_intersect_following_and_followers),
         )
         .route("/does_follow", get(handlers::get_does_follow))
+        .route("/flush_updates", get(handlers::get_flush_updates))
         .layer(Extension(state))
         .route(
             "/metrics",

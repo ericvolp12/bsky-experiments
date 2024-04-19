@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
     Extension, Json,
 };
+use log::error;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -294,4 +295,15 @@ pub async fn post_unfollow(
 
     state.graph.remove_follow(actor_uid, target_uid);
     StatusCode::OK
+}
+
+pub async fn get_flush_updates(state: Extension<AppState>) -> impl IntoResponse {
+    match state.graph.flush_updates() {
+        Ok(_) => StatusCode::OK,
+        Err(e) => {
+            // Log the error
+            error!("Failed to flush updates: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
 }
