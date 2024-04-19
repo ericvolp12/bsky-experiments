@@ -316,8 +316,8 @@ func (h *Handlers) GetMoots(c echo.Context) error {
 }
 
 type Follow struct {
-	ActorDid  string `json:"actorDid"`
-	TargetDid string `json:"targetDid"`
+	ActorDid  string `json:"actor_did"`
+	TargetDid string `json:"target_did"`
 }
 
 func (h *Handlers) PostFollow(c echo.Context) error {
@@ -328,12 +328,12 @@ func (h *Handlers) PostFollow(c echo.Context) error {
 
 	actorDid, err := syntax.ParseDID(body.ActorDid)
 	if err != nil {
-		return c.JSON(400, fmt.Sprintf("invalid actor did: %s", err))
+		return c.JSON(400, fmt.Sprintf("invalid actor did %q: %s", body.ActorDid, err))
 	}
 
 	targetDid, err := syntax.ParseDID(body.TargetDid)
 	if err != nil {
-		return c.JSON(400, fmt.Sprintf("invalid target did: %s", err))
+		return c.JSON(400, fmt.Sprintf("invalid target did %q: %s", body.TargetDid, err))
 	}
 
 	actor := actorDid.String()
@@ -379,8 +379,8 @@ func (h *Handlers) PostFollows(c echo.Context) error {
 }
 
 type Unfollow struct {
-	ActorDid  string `json:"actorDid"`
-	TargetDid string `json:"targetDid"`
+	ActorDid  string `json:"actor_did"`
+	TargetDid string `json:"actor_did"`
 }
 
 func (h *Handlers) PostUnfollow(c echo.Context) error {

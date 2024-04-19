@@ -153,6 +153,11 @@ empty-fanout:
 	@echo "Emptying Fanout keys in Redis..."
 	redis-cli --scan --pattern "cg:*" | xargs -L 1000 redis-cli DEL
 
+.PHONY: build-graphd
+build-graphd:
+	@echo "Building GraphD..."
+	$(GO_CMD_W_CGO) build -v -o graphd cmd/graphd/*.go
+
 .PHONY: graphd-up
 graphd-up: # Runs graphd docker container
 	@echo "Starting GraphD..."

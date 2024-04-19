@@ -186,8 +186,10 @@ func GraphD(cctx *cli.Context) error {
 
 	slog.Info("shutting down, waiting for workers to clean up...")
 	close(shutdownEcho)
-
 	<-echoShutdown
+
+	graph.Shutdown()
+
 	slog.Info("shut down successfully")
 
 	return nil

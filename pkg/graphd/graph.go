@@ -248,6 +248,7 @@ func (g *Graph) AcquireDID(did string) uint32 {
 func (g *Graph) AddFollow(actorUID, targetUID uint32) {
 	if g.IsLoaded() {
 		g.addFollow(actorUID, targetUID)
+		return
 	}
 	g.pendingQueue <- &QueueItem{Action: FollowAction, Actor: actorUID, Target: targetUID}
 	return
@@ -275,6 +276,7 @@ func (g *Graph) addFollow(actorUID, targetUID uint32) {
 func (g *Graph) RemoveFollow(actorUID, targetUID uint32) {
 	if g.IsLoaded() {
 		g.removeFollow(actorUID, targetUID)
+		return
 	}
 	g.pendingQueue <- &QueueItem{Action: UnfollowAction, Actor: actorUID, Target: targetUID}
 	return
@@ -498,10 +500,9 @@ func (g *Graph) LoadFromCSV(csvFile string) error {
 	close(bufs)
 	wg.Wait()
 
-	log.Info("loaded follows from CSV", "total", totalFollows, "duration", time.Since(start))
-
 	// Play the pending queue
 	g.loadLk.Lock()
+	close(g.pendingQueue)
 	g.isLoaded = true
 	for item := range g.pendingQueue {
 		switch item.Action {
@@ -512,8 +513,7 @@ func (g *Graph) LoadFromCSV(csvFile string) error {
 		}
 	}
 	g.loadLk.Unlock()
-
-	close(g.pendingQueue)
+	log.Info("loaded follows from CSV", "total", totalFollows, "duration", time.Since(start))
 
 	return nil
 }
