@@ -25,6 +25,7 @@ require (
 	github.com/labstack/echo/v4 v4.11.3
 	github.com/labstack/gommon v0.4.1
 	github.com/lib/pq v1.10.9
+	github.com/mattn/go-sqlite3 v1.14.18
 	github.com/pemistahl/lingua-go v1.3.4
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.17.0

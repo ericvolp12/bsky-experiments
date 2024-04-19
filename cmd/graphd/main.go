@@ -45,6 +45,12 @@ func main() {
 			EnvVars: []string{"GRAPH_CSV"},
 			Value:   "data/follows.csv",
 		},
+		&cli.StringFlag{
+			Name:    "graphdb-sqlite-path",
+			Usage:   "path to graph db sqlite file",
+			EnvVars: []string{"GRAPHDB_SQLITE_PATH"},
+			Value:   "data/graphd.db",
+		},
 	}
 
 	app.Action = GraphD
@@ -66,13 +72,36 @@ func GraphD(cctx *cli.Context) error {
 		Level: logLevel,
 	})))
 
-	graph := graphd.NewGraph()
-
-	err := graph.LoadFromCSV(cctx.String("graph-csv"))
+	dbExists := true
+	_, err := os.Stat(cctx.String("graphdb-sqlite-path"))
 	if err != nil {
-		slog.Error("failed to load graph from file", "error", err)
+		if os.IsNotExist(err) {
+			dbExists = false
+		} else {
+			slog.Error("failed to stat graph db", "error", err)
+			return err
+		}
+	}
+
+	graph, err := graphd.NewGraph(cctx.String("graphdb-sqlite-path"))
+	if err != nil {
+		slog.Error("failed to create graph", "error", err)
 		return err
 	}
+
+	go func() {
+		if !dbExists {
+			err = graph.LoadFromCSV(cctx.String("graph-csv"))
+			if err != nil {
+				slog.Error("failed to load graph from file", "error", err)
+			}
+		} else {
+			err = graph.LoadFromSQLite(context.Background())
+			if err != nil {
+				slog.Error("failed to load graph from db", "error", err)
+			}
+		}
+	}()
 
 	e := echo.New()
 
@@ -108,6 +137,8 @@ func GraphD(cctx *cli.Context) error {
 
 	e.POST("/unfollow", h.PostUnfollow)
 	e.POST("/unfollows", h.PostUnfollows)
+
+	e.GET("/flush_updated", h.GetFlushUpdates)
 
 	s := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cctx.Int("port")),

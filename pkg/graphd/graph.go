@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
+
 	"github.com/RoaringBitmap/roaring"
 	"github.com/puzpuzpuz/xsync/v3"
 )
@@ -90,14 +92,15 @@ func NewGraph(dbPath string) (*Graph, error) {
 	}
 
 	return &Graph{
-		g:            xsync.NewMapOfPresized[uint32, *FollowMap](5_500_000),
-		followCount:  xsync.NewCounter(),
-		userCount:    xsync.NewCounter(),
-		utd:          map[uint32]string{},
-		dtu:          map[string]uint32{},
-		pendingQueue: make(chan *QueueItem, 100_000),
-		dbPath:       dbPath,
-		db:           db,
+		g:             xsync.NewMapOfPresized[uint32, *FollowMap](5_500_000),
+		followCount:   xsync.NewCounter(),
+		userCount:     xsync.NewCounter(),
+		utd:           map[uint32]string{},
+		dtu:           map[string]uint32{},
+		pendingQueue:  make(chan *QueueItem, 100_000),
+		dbPath:        dbPath,
+		db:            db,
+		updatedActors: roaring.NewBitmap(),
 	}, nil
 }
 
@@ -488,9 +491,85 @@ func (g *Graph) processCSVLine(b *bytes.Buffer) error {
 	actorUID := g.AcquireDID(actorDID)
 	targetUID := g.AcquireDID(targetDID)
 
-	g.AddFollow(actorUID, targetUID)
+	g.addFollow(actorUID, targetUID)
 
 	return nil
+}
+
+func (g *Graph) LoadFromSQLite(ctx context.Context) error {
+	log := slog.With("source", "graph_load")
+	log.Info("loading actors from SQLite")
+
+	start := time.Now()
+
+	rows, err := g.db.Query(`SELECT uid, did, following, followers FROM actors;`)
+	if err != nil {
+		return fmt.Errorf("failed to query actors: %w", err)
+	}
+	defer rows.Close()
+
+	nextUID := uint32(0)
+
+	totalActors := 0
+	for rows.Next() {
+		var uid uint32
+		var did string
+		var followingBytes []byte
+		var followersBytes []byte
+
+		if err := rows.Scan(&uid, &did, &followingBytes, &followersBytes); err != nil {
+			return fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		followingBM := roaring.NewBitmap()
+		_, err := followingBM.FromBuffer(followingBytes)
+		if err != nil {
+			return fmt.Errorf("failed to deserialize following bitmap: %w", err)
+		}
+
+		followersBM := roaring.NewBitmap()
+		_, err = followersBM.FromBuffer(followersBytes)
+		if err != nil {
+			return fmt.Errorf("failed to deserialize followers bitmap: %w", err)
+		}
+
+		followMap := &FollowMap{
+			followingBM: followingBM,
+			followersBM: followersBM,
+			followingLk: sync.RWMutex{},
+			followersLk: sync.RWMutex{},
+		}
+
+		g.g.Store(uid, followMap)
+		g.setUID(did, uid)
+		g.setDID(uid, did)
+
+		if uid > nextUID {
+			nextUID = uid
+		}
+
+		totalActors++
+	}
+
+	log.Info("loaded actors from SQLite", "total", totalActors, "duration", time.Since(start))
+
+	// Play the pending queue
+	g.loadLk.Lock()
+	g.isLoaded = true
+	for item := range g.pendingQueue {
+		switch item.Action {
+		case FollowAction:
+			g.addFollow(item.Actor, item.Target)
+		case UnfollowAction:
+			g.removeFollow(item.Actor, item.Target)
+		}
+	}
+	g.loadLk.Unlock()
+
+	close(g.pendingQueue)
+
+	return nil
+
 }
 
 func (g *Graph) FlushUpdates(ctx context.Context) error {
@@ -504,11 +583,6 @@ func (g *Graph) FlushUpdates(ctx context.Context) error {
 	updatedActors := g.updatedActors.ToArray()
 	g.updatedActors.Clear()
 	g.updatedLk.Unlock()
-
-	_, err := g.db.Exec(`BEGIN CONCURRENT;`)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
 
 	stmt, err := g.db.Prepare(`INSERT OR REPLACE INTO actors (uid, did, following, followers) VALUES (?, ?, ?, ?);`)
 	if err != nil {
@@ -548,10 +622,6 @@ func (g *Graph) FlushUpdates(ctx context.Context) error {
 		if _, err := stmt.Exec(uid, did, followingBytes, followersBytes); err != nil {
 			return fmt.Errorf("failed to execute statement: %w", err)
 		}
-	}
-
-	if _, err := g.db.Exec(`COMMIT;`); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	log.Info("flushed graph updates", "duration", time.Since(start))
