@@ -115,7 +115,7 @@ func NewGraph(dbPath string, syncInterval time.Duration, logger *slog.Logger) (*
 	go func() {
 		ticker := time.NewTicker(syncInterval)
 		defer ticker.Stop()
-		logger := g.logger.With("source", "graph_sync")
+		logger := g.logger.With("routine", "graph_sync")
 		for {
 			select {
 			case finished := <-g.shutdown:
@@ -450,7 +450,7 @@ var bufPool = sync.Pool{
 }
 
 func (g *Graph) LoadFromCSV(csvFile string) error {
-	log := g.logger.With("source", "graph_csv_load")
+	log := g.logger.With("routine", "graph_csv_load")
 	start := time.Now()
 	totalFollows := 0
 
@@ -539,7 +539,7 @@ func (g *Graph) processCSVLine(b *bytes.Buffer) error {
 }
 
 func (g *Graph) LoadFromSQLite(ctx context.Context) error {
-	log := g.logger.With("source", "graph_sqlite_load")
+	log := g.logger.With("routine", "graph_sqlite_load")
 	log.Info("loading graph from SQLite")
 
 	start := time.Now()
@@ -612,7 +612,7 @@ func (g *Graph) LoadFromSQLite(ctx context.Context) error {
 }
 
 func (g *Graph) FlushUpdates(ctx context.Context) error {
-	log := g.logger.With("source", "graph_flush")
+	log := g.logger.With("routine", "graph_flush")
 	start := time.Now()
 
 	if !g.IsLoaded() {

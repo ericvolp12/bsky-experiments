@@ -95,6 +95,10 @@ func (h *Handlers) GetFollowing(c echo.Context) error {
 	return c.JSON(200, dids)
 }
 
+type DidsResponse struct {
+	DIDs []string `json:"dids"`
+}
+
 func (h *Handlers) GetFollowersNotFollowing(c echo.Context) error {
 	if !h.graph.IsLoaded() {
 		return c.JSON(503, "graph is still loading...")
@@ -119,7 +123,11 @@ func (h *Handlers) GetFollowersNotFollowing(c echo.Context) error {
 		return c.JSON(500, fmt.Errorf("failed to get dids"))
 	}
 
-	return c.JSON(200, dids)
+	resp := DidsResponse{
+		DIDs: dids,
+	}
+
+	return c.JSON(200, resp)
 }
 
 func (h *Handlers) GetDoesFollow(c echo.Context) error {
@@ -380,7 +388,7 @@ func (h *Handlers) PostFollows(c echo.Context) error {
 
 type Unfollow struct {
 	ActorDid  string `json:"actor_did"`
-	TargetDid string `json:"actor_did"`
+	TargetDid string `json:"target_did"`
 }
 
 func (h *Handlers) PostUnfollow(c echo.Context) error {

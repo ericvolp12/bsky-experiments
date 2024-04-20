@@ -688,7 +688,7 @@ func (c *Consumer) HandleDeleteRecord(
 		if c.graphdClient != nil {
 			err = c.graphdClient.Unfollow(ctx, repo, follow.TargetDid)
 			if err != nil {
-				log.Errorf("failed to propagate follow to GraphD: %+v", err)
+				log.Errorf("failed to propagate unfollow to GraphD: %+v", err)
 			}
 		}
 
