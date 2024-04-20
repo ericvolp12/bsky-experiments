@@ -14,7 +14,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/RoaringBitmap/roaring"
+	roaring "github.com/dgraph-io/sroar"
 	"github.com/puzpuzpuz/xsync/v3"
 )
 
@@ -27,21 +27,21 @@ const (
 
 type QueueItem struct {
 	Action int
-	Actor  uint32
-	Target uint32
+	Actor  uint64
+	Target uint64
 }
 
 type Graph struct {
-	g      *xsync.MapOf[uint32, *FollowMap]
+	g      *xsync.MapOf[uint64, *FollowMap]
 	logger *slog.Logger
 
-	utd   map[uint32]string
+	utd   map[uint64]string
 	utdLk sync.RWMutex
 
-	dtu   map[string]uint32
+	dtu   map[string]uint64
 	dtuLk sync.RWMutex
 
-	uidNext uint32
+	uidNext uint64
 	nextLk  sync.Mutex
 
 	followCount *xsync.Counter
@@ -97,12 +97,12 @@ func NewGraph(dbPath string, syncInterval time.Duration, logger *slog.Logger) (*
 	logger = logger.With("module", "graph")
 
 	g := Graph{
-		g:             xsync.NewMapOfPresized[uint32, *FollowMap](5_500_000),
+		g:             xsync.NewMapOfPresized[uint64, *FollowMap](5_500_000),
 		logger:        logger,
 		followCount:   xsync.NewCounter(),
 		userCount:     xsync.NewCounter(),
-		utd:           map[uint32]string{},
-		dtu:           map[string]uint32{},
+		utd:           map[uint64]string{},
+		dtu:           map[string]uint64{},
 		pendingQueue:  make(chan *QueueItem, 100_000),
 		dbPath:        dbPath,
 		db:            db,
@@ -152,22 +152,22 @@ func (g *Graph) IsLoaded() bool {
 	return g.isLoaded
 }
 
-func (g *Graph) GetUsercount() uint32 {
-	return uint32(g.userCount.Value())
+func (g *Graph) GetUsercount() uint64 {
+	return uint64(g.userCount.Value())
 }
 
-func (g *Graph) GetFollowcount() uint32 {
-	return uint32(g.followCount.Value())
+func (g *Graph) GetFollowcount() uint64 {
+	return uint64(g.followCount.Value())
 }
 
-func (g *Graph) GetDID(uid uint32) (string, bool) {
+func (g *Graph) GetDID(uid uint64) (string, bool) {
 	g.utdLk.RLock()
 	defer g.utdLk.RUnlock()
 	did, ok := g.utd[uid]
 	return did, ok
 }
 
-func (g *Graph) GetDIDs(uids []uint32) ([]string, error) {
+func (g *Graph) GetDIDs(uids []uint64) ([]string, error) {
 	g.utdLk.RLock()
 	defer g.utdLk.RUnlock()
 	dids := make([]string, len(uids))
@@ -181,17 +181,17 @@ func (g *Graph) GetDIDs(uids []uint32) ([]string, error) {
 	return dids, nil
 }
 
-func (g *Graph) GetUID(did string) (uint32, bool) {
+func (g *Graph) GetUID(did string) (uint64, bool) {
 	g.dtuLk.RLock()
 	defer g.dtuLk.RUnlock()
 	uid, ok := g.dtu[did]
 	return uid, ok
 }
 
-func (g *Graph) GetUIDs(dids []string) ([]uint32, error) {
+func (g *Graph) GetUIDs(dids []string) ([]uint64, error) {
 	g.dtuLk.RLock()
 	defer g.dtuLk.RUnlock()
-	uids := make([]uint32, len(dids))
+	uids := make([]uint64, len(dids))
 	for i, did := range dids {
 		uid, ok := g.dtu[did]
 		if !ok {
@@ -202,13 +202,13 @@ func (g *Graph) GetUIDs(dids []string) ([]uint32, error) {
 	return uids, nil
 }
 
-func (g *Graph) setUID(did string, uid uint32) {
+func (g *Graph) setUID(did string, uid uint64) {
 	g.dtuLk.Lock()
 	defer g.dtuLk.Unlock()
 	g.dtu[did] = uid
 }
 
-func (g *Graph) setDID(uid uint32, did string) {
+func (g *Graph) setDID(uid uint64, did string) {
 	g.utdLk.Lock()
 	defer g.utdLk.Unlock()
 	g.utd[uid] = did
@@ -216,7 +216,7 @@ func (g *Graph) setDID(uid uint32, did string) {
 
 // AcquireDID links a DID to a UID, creating a new UID if necessary.
 // If the DID is already linked to a UID, that UID is returned
-func (g *Graph) AcquireDID(did string) uint32 {
+func (g *Graph) AcquireDID(did string) uint64 {
 	g.nextLk.Lock()
 	defer g.nextLk.Unlock()
 
@@ -245,7 +245,7 @@ func (g *Graph) AcquireDID(did string) uint32 {
 	return uid
 }
 
-func (g *Graph) AddFollow(actorUID, targetUID uint32) {
+func (g *Graph) AddFollow(actorUID, targetUID uint64) {
 	if g.IsLoaded() {
 		g.addFollow(actorUID, targetUID)
 		return
@@ -254,26 +254,26 @@ func (g *Graph) AddFollow(actorUID, targetUID uint32) {
 	return
 }
 
-func (g *Graph) addFollow(actorUID, targetUID uint32) {
+func (g *Graph) addFollow(actorUID, targetUID uint64) {
 	actorMap, _ := g.g.Load(actorUID)
 	actorMap.followingLk.Lock()
-	actorMap.followingBM.Add(uint32(targetUID))
+	actorMap.followingBM.Set(targetUID)
 	actorMap.followingLk.Unlock()
 
 	targetMap, _ := g.g.Load(targetUID)
 	targetMap.followersLk.Lock()
-	targetMap.followersBM.Add(uint32(actorUID))
+	targetMap.followersBM.Set(actorUID)
 	targetMap.followersLk.Unlock()
 
 	g.followCount.Inc()
 
 	g.updatedLk.Lock()
-	g.updatedActors.Add(uint32(actorUID))
-	g.updatedActors.Add(uint32(targetUID))
+	g.updatedActors.Set(actorUID)
+	g.updatedActors.Set(targetUID)
 	g.updatedLk.Unlock()
 }
 
-func (g *Graph) RemoveFollow(actorUID, targetUID uint32) {
+func (g *Graph) RemoveFollow(actorUID, targetUID uint64) {
 	if g.IsLoaded() {
 		g.removeFollow(actorUID, targetUID)
 		return
@@ -282,26 +282,26 @@ func (g *Graph) RemoveFollow(actorUID, targetUID uint32) {
 	return
 }
 
-func (g *Graph) removeFollow(actorUID, targetUID uint32) {
+func (g *Graph) removeFollow(actorUID, targetUID uint64) {
 	actorMap, _ := g.g.Load(actorUID)
 	actorMap.followingLk.Lock()
-	actorMap.followingBM.Remove(uint32(targetUID))
+	actorMap.followingBM.Remove(targetUID)
 	actorMap.followingLk.Unlock()
 
 	targetMap, _ := g.g.Load(targetUID)
 	targetMap.followersLk.Lock()
-	targetMap.followersBM.Remove(uint32(actorUID))
+	targetMap.followersBM.Remove(actorUID)
 	targetMap.followersLk.Unlock()
 
 	g.followCount.Dec()
 
 	g.updatedLk.Lock()
-	g.updatedActors.Add(uint32(actorUID))
-	g.updatedActors.Add(uint32(targetUID))
+	g.updatedActors.Set(actorUID)
+	g.updatedActors.Set(targetUID)
 	g.updatedLk.Unlock()
 }
 
-func (g *Graph) GetFollowers(uid uint32) ([]uint32, error) {
+func (g *Graph) GetFollowers(uid uint64) ([]uint64, error) {
 	followMap, ok := g.g.Load(uid)
 	if !ok {
 		return nil, fmt.Errorf("uid %d not found", uid)
@@ -312,7 +312,7 @@ func (g *Graph) GetFollowers(uid uint32) ([]uint32, error) {
 	return followMap.followersBM.ToArray(), nil
 }
 
-func (g *Graph) GetFollowing(uid uint32) ([]uint32, error) {
+func (g *Graph) GetFollowing(uid uint64) ([]uint64, error) {
 	followMap, ok := g.g.Load(uid)
 	if !ok {
 		return nil, fmt.Errorf("uid %d not found", uid)
@@ -323,7 +323,7 @@ func (g *Graph) GetFollowing(uid uint32) ([]uint32, error) {
 	return followMap.followingBM.ToArray(), nil
 }
 
-func (g *Graph) GetMoots(uid uint32) ([]uint32, error) {
+func (g *Graph) GetMoots(uid uint64) ([]uint64, error) {
 	followMap, ok := g.g.Load(uid)
 	if !ok {
 		return nil, fmt.Errorf("uid %d not found", uid)
@@ -334,12 +334,12 @@ func (g *Graph) GetMoots(uid uint32) ([]uint32, error) {
 	defer followMap.followingLk.RUnlock()
 	defer followMap.followersLk.RUnlock()
 
-	mootMap := roaring.ParAnd(4, followMap.followingBM, followMap.followersBM)
+	mootMap := roaring.FastAnd(followMap.followingBM, followMap.followersBM)
 
 	return mootMap.ToArray(), nil
 }
 
-func (g *Graph) IntersectFollowers(uids []uint32) ([]uint32, error) {
+func (g *Graph) IntersectFollowers(uids []uint64) ([]uint64, error) {
 	if len(uids) == 0 {
 		return nil, fmt.Errorf("uids must have at least one element")
 	}
@@ -359,12 +359,12 @@ func (g *Graph) IntersectFollowers(uids []uint32) ([]uint32, error) {
 		followerMaps[i] = followMap.followersBM
 	}
 
-	intersectMap := roaring.ParAnd(4, followerMaps...)
+	intersectMap := roaring.FastAnd(followerMaps...)
 
 	return intersectMap.ToArray(), nil
 }
 
-func (g *Graph) IntersectFollowing(uids []uint32) ([]uint32, error) {
+func (g *Graph) IntersectFollowing(uids []uint64) ([]uint64, error) {
 	if len(uids) == 0 {
 		return nil, fmt.Errorf("uids must have at least one element")
 	}
@@ -384,14 +384,14 @@ func (g *Graph) IntersectFollowing(uids []uint32) ([]uint32, error) {
 		followingMaps[i] = followMap.followingBM
 	}
 
-	intersectMap := roaring.ParAnd(4, followingMaps...)
+	intersectMap := roaring.FastAnd(followingMaps...)
 
 	return intersectMap.ToArray(), nil
 }
 
 // GetFollowersNotFollowing returns a list of followers of the given UID that
 // the given UID is not following
-func (g *Graph) GetFollowersNotFollowing(uid uint32) ([]uint32, error) {
+func (g *Graph) GetFollowersNotFollowing(uid uint64) ([]uint64, error) {
 	followMap, ok := g.g.Load(uid)
 	if !ok {
 		return nil, fmt.Errorf("uid %d not found", uid)
@@ -402,15 +402,17 @@ func (g *Graph) GetFollowersNotFollowing(uid uint32) ([]uint32, error) {
 	defer followMap.followersLk.RUnlock()
 	defer followMap.followingLk.RUnlock()
 
-	notFollowingMap := roaring.AndNot(followMap.followersBM, followMap.followingBM)
+	bm := followMap.followersBM.Clone()
 
-	return notFollowingMap.ToArray(), nil
+	bm.AndNot(followMap.followingBM)
+
+	return bm.ToArray(), nil
 
 }
 
 // IntersectFollowingAndFollowers returns the intersection of the following of the actorUID
 // and the followers of the targetUID
-func (g *Graph) IntersectFollowingAndFollowers(actorUID, targetUID uint32) ([]uint32, error) {
+func (g *Graph) IntersectFollowingAndFollowers(actorUID, targetUID uint64) ([]uint64, error) {
 	actorMap, ok := g.g.Load(actorUID)
 	if !ok {
 		return nil, fmt.Errorf("actor uid %d not found", actorUID)
@@ -426,12 +428,12 @@ func (g *Graph) IntersectFollowingAndFollowers(actorUID, targetUID uint32) ([]ui
 	defer actorMap.followingLk.RUnlock()
 	defer targetMap.followersLk.RUnlock()
 
-	intersectMap := roaring.ParAnd(4, actorMap.followingBM, targetMap.followersBM)
+	intersectMap := roaring.FastAnd(actorMap.followingBM, targetMap.followersBM)
 
 	return intersectMap.ToArray(), nil
 }
 
-func (g *Graph) DoesFollow(actorUID, targetUID uint32) (bool, error) {
+func (g *Graph) DoesFollow(actorUID, targetUID uint64) (bool, error) {
 	actorMap, ok := g.g.Load(actorUID)
 	if !ok {
 		return false, fmt.Errorf("actor uid %d not found", actorUID)
@@ -440,7 +442,7 @@ func (g *Graph) DoesFollow(actorUID, targetUID uint32) (bool, error) {
 	actorMap.followingLk.RLock()
 	defer actorMap.followingLk.RUnlock()
 
-	return actorMap.followingBM.Contains(uint32(targetUID)), nil
+	return actorMap.followingBM.Contains(uint64(targetUID)), nil
 }
 
 var bufPool = sync.Pool{
@@ -550,10 +552,10 @@ func (g *Graph) LoadFromSQLite(ctx context.Context) error {
 	}
 	defer rows.Close()
 
-	nextUID := uint32(0)
+	nextUID := uint64(0)
 	totalActors := 0
 	for rows.Next() {
-		var uid uint32
+		var uid uint64
 		var did string
 		var followingBytes []byte
 		var followersBytes []byte
@@ -562,17 +564,8 @@ func (g *Graph) LoadFromSQLite(ctx context.Context) error {
 			return fmt.Errorf("failed to scan row: %w", err)
 		}
 
-		followingBM := roaring.NewBitmap()
-		_, err := followingBM.FromBuffer(followingBytes)
-		if err != nil {
-			return fmt.Errorf("failed to deserialize following bitmap: %w", err)
-		}
-
-		followersBM := roaring.NewBitmap()
-		_, err = followersBM.FromBuffer(followersBytes)
-		if err != nil {
-			return fmt.Errorf("failed to deserialize followers bitmap: %w", err)
-		}
+		followingBM := roaring.FromBufferWithCopy(followingBytes)
+		followersBM := roaring.FromBufferWithCopy(followersBytes)
 
 		followMap := &FollowMap{
 			followingBM: followingBM,
@@ -623,7 +616,7 @@ func (g *Graph) FlushUpdates(ctx context.Context) error {
 	// Insert the updated actors
 	g.updatedLk.Lock()
 	updatedActors := g.updatedActors.ToArray()
-	g.updatedActors.Clear()
+	g.updatedActors = roaring.NewBitmap()
 	g.updatedLk.Unlock()
 
 	numEnqueued := len(updatedActors)
@@ -642,7 +635,7 @@ func (g *Graph) FlushUpdates(ctx context.Context) error {
 	}
 
 	for _, uid := range updatedActors {
-		followMap, ok := g.g.Load(uint32(uid))
+		followMap, ok := g.g.Load(uid)
 		if !ok {
 			return fmt.Errorf("uid %d not found", uid)
 		}
@@ -650,23 +643,24 @@ func (g *Graph) FlushUpdates(ctx context.Context) error {
 		followingBM := followMap.followingBM
 		followersBM := followMap.followersBM
 
-		followMap.followersLk.RLock()
 		followMap.followingLk.RLock()
+		followMap.followersLk.RLock()
 
-		followingBytes, err := followingBM.ToBytes()
-		if err != nil {
-			return fmt.Errorf("failed to serialize following bitmap: %w", err)
+		followingBytes := followingBM.ToBufferWithCopy()
+		followersBytes := followersBM.ToBufferWithCopy()
+
+		if len(followingBytes) == 0 {
+			followingBytes = []byte{}
 		}
 
-		followersBytes, err := followersBM.ToBytes()
-		if err != nil {
-			return fmt.Errorf("failed to serialize followers bitmap: %w", err)
+		if len(followersBytes) == 0 {
+			followersBytes = []byte{}
 		}
 
-		followMap.followersLk.RUnlock()
 		followMap.followingLk.RUnlock()
+		followMap.followersLk.RUnlock()
 
-		did, ok := g.GetDID(uint32(uid))
+		did, ok := g.GetDID(uid)
 		if !ok {
 			return fmt.Errorf("did not found for uid %d", uid)
 		}

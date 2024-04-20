@@ -23,8 +23,8 @@ type HealthStatus struct {
 	Status      string  `json:"status"`
 	Version     string  `json:"version"`
 	Message     string  `json:"msg,omitempty"`
-	UserCount   *uint32 `json:"userCount,omitempty"`
-	FollowCount *uint32 `json:"followCount,omitempty"`
+	UserCount   *uint64 `json:"userCount,omitempty"`
+	FollowCount *uint64 `json:"followCount,omitempty"`
 	IsLoaded    bool    `json:"isLoaded"`
 }
 
@@ -202,7 +202,7 @@ func (h *Handlers) GetIntersectFollowers(c echo.Context) error {
 		return c.JSON(400, "did query param is required")
 	}
 	qDIDs := c.QueryParams()["did"]
-	uids := make([]uint32, 0)
+	uids := make([]uint64, 0)
 	for _, qDID := range qDIDs {
 		uid, ok := h.graph.GetUID(qDID)
 		if !ok {
@@ -272,7 +272,7 @@ func (h *Handlers) GetIntersectFollowing(c echo.Context) error {
 		return c.JSON(400, "did query param is required")
 	}
 	qDIDs := c.QueryParams()["did"]
-	uids := make([]uint32, 0)
+	uids := make([]uint64, 0)
 	for _, qDID := range qDIDs {
 		uid, ok := h.graph.GetUID(qDID)
 		if !ok {
