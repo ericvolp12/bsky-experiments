@@ -95,6 +95,33 @@ func (h *Handlers) GetFollowing(c echo.Context) error {
 	return c.JSON(200, dids)
 }
 
+func (h *Handlers) GetMoots(c echo.Context) error {
+	if !h.graph.IsLoaded() {
+		return c.JSON(503, "graph is still loading...")
+	}
+
+	did := c.QueryParam("did")
+
+	uid, ok := h.graph.GetUID(did)
+	if !ok {
+		return c.JSON(404, "uid not found")
+	}
+
+	moots, err := h.graph.GetMoots(uid)
+	if err != nil {
+		slog.Error("failed to get moots", "err", err)
+		return c.JSON(500, fmt.Errorf("failed to get moots"))
+	}
+
+	dids, err := h.graph.GetDIDs(moots)
+	if err != nil {
+		slog.Error("failed to get dids", "err", err)
+		return c.JSON(500, fmt.Errorf("failed to get dids"))
+	}
+
+	return c.JSON(200, dids)
+}
+
 type DidsResponse struct {
 	DIDs []string `json:"dids"`
 }
@@ -135,8 +162,8 @@ func (h *Handlers) GetDoesFollow(c echo.Context) error {
 		return c.JSON(503, "graph is still loading...")
 	}
 
-	actorDid := c.QueryParam("actorDid")
-	targetDid := c.QueryParam("targetDid")
+	actorDid := c.QueryParam("actor_did")
+	targetDid := c.QueryParam("target_did")
 
 	actorUID, ok := h.graph.GetUID(actorDid)
 	if !ok {
@@ -162,68 +189,35 @@ func (h *Handlers) GetAreMoots(c echo.Context) error {
 		return c.JSON(503, "graph is still loading...")
 	}
 
-	didA := c.QueryParam("didA")
-	didB := c.QueryParam("didB")
+	actorDID := c.QueryParam("actor_did")
+	targetDID := c.QueryParam("target_did")
 
-	uidA, ok := h.graph.GetUID(didA)
+	actorUID, ok := h.graph.GetUID(actorDID)
 	if !ok {
 		return c.JSON(404, "actor uid not found")
 	}
 
-	uidB, ok := h.graph.GetUID(didB)
+	targetUID, ok := h.graph.GetUID(targetDID)
 	if !ok {
 		return c.JSON(404, "target uid not found")
 	}
 
-	aFollowsB := false
-	bFollowsA := false
+	actorFollowsTarget := false
+	targetFollowsActor := false
 
-	aFollowsB, err := h.graph.DoesFollow(uidA, uidB)
+	actorFollowsTarget, err := h.graph.DoesFollow(actorUID, targetUID)
 	if err != nil {
 		slog.Error("failed to check follows", "err", err)
 		return c.JSON(500, "failed to check follows")
 	}
 
-	bFollowsA, err = h.graph.DoesFollow(uidB, uidA)
+	targetFollowsActor, err = h.graph.DoesFollow(targetUID, actorUID)
 	if err != nil {
 		slog.Error("failed to check follows", "err", err)
 		return c.JSON(500, "failed to check follows")
 	}
 
-	return c.JSON(200, aFollowsB && bFollowsA)
-}
-
-func (h *Handlers) GetIntersectFollowers(c echo.Context) error {
-	if !h.graph.IsLoaded() {
-		return c.JSON(503, "graph is still loading...")
-	}
-
-	if !c.QueryParams().Has("did") {
-		return c.JSON(400, "did query param is required")
-	}
-	qDIDs := c.QueryParams()["did"]
-	uids := make([]uint32, 0)
-	for _, qDID := range qDIDs {
-		uid, ok := h.graph.GetUID(qDID)
-		if !ok {
-			return c.JSON(404, fmt.Sprintf("uid not found for did %s", qDID))
-		}
-		uids = append(uids, uid)
-	}
-
-	intersect, err := h.graph.IntersectFollowers(uids)
-	if err != nil {
-		slog.Error("failed to intersect followers", "err", err)
-		return c.JSON(500, "failed to intersect followers")
-	}
-
-	dids, err := h.graph.GetDIDs(intersect)
-	if err != nil {
-		slog.Error("failed to get dids", "err", err)
-		return c.JSON(500, fmt.Errorf("failed to get dids"))
-	}
-
-	return c.JSON(200, dids)
+	return c.JSON(200, actorFollowsTarget && targetFollowsActor)
 }
 
 func (h *Handlers) GetFollowsFollowing(c echo.Context) error {
@@ -263,6 +257,39 @@ func (h *Handlers) GetFollowsFollowing(c echo.Context) error {
 	return c.JSON(200, dids)
 }
 
+func (h *Handlers) GetIntersectFollowers(c echo.Context) error {
+	if !h.graph.IsLoaded() {
+		return c.JSON(503, "graph is still loading...")
+	}
+
+	if !c.QueryParams().Has("did") {
+		return c.JSON(400, "did query param is required")
+	}
+	qDIDs := c.QueryParams()["did"]
+	uids := make([]uint32, 0)
+	for _, qDID := range qDIDs {
+		uid, ok := h.graph.GetUID(qDID)
+		if !ok {
+			return c.JSON(404, fmt.Sprintf("uid not found for did %s", qDID))
+		}
+		uids = append(uids, uid)
+	}
+
+	intersect, err := h.graph.IntersectFollowers(uids)
+	if err != nil {
+		slog.Error("failed to intersect followers", "err", err)
+		return c.JSON(500, "failed to intersect followers")
+	}
+
+	dids, err := h.graph.GetDIDs(intersect)
+	if err != nil {
+		slog.Error("failed to get dids", "err", err)
+		return c.JSON(500, fmt.Errorf("failed to get dids"))
+	}
+
+	return c.JSON(200, dids)
+}
+
 func (h *Handlers) GetIntersectFollowing(c echo.Context) error {
 	if !h.graph.IsLoaded() {
 		return c.JSON(503, "graph is still loading...")
@@ -288,33 +315,6 @@ func (h *Handlers) GetIntersectFollowing(c echo.Context) error {
 	}
 
 	dids, err := h.graph.GetDIDs(intersect)
-	if err != nil {
-		slog.Error("failed to get dids", "err", err)
-		return c.JSON(500, fmt.Errorf("failed to get dids"))
-	}
-
-	return c.JSON(200, dids)
-}
-
-func (h *Handlers) GetMoots(c echo.Context) error {
-	if !h.graph.IsLoaded() {
-		return c.JSON(503, "graph is still loading...")
-	}
-
-	did := c.QueryParam("did")
-
-	uid, ok := h.graph.GetUID(did)
-	if !ok {
-		return c.JSON(404, "uid not found")
-	}
-
-	moots, err := h.graph.GetMoots(uid)
-	if err != nil {
-		slog.Error("failed to get moots", "err", err)
-		return c.JSON(500, fmt.Errorf("failed to get moots"))
-	}
-
-	dids, err := h.graph.GetDIDs(moots)
 	if err != nil {
 		slog.Error("failed to get dids", "err", err)
 		return c.JSON(500, fmt.Errorf("failed to get dids"))
@@ -446,14 +446,5 @@ func (h *Handlers) PostUnfollows(c echo.Context) error {
 		h.graph.RemoveFollow(actorUID, targetUID)
 	}
 
-	return c.JSON(200, "ok")
-}
-
-func (h *Handlers) GetFlushUpdates(c echo.Context) error {
-	err := h.graph.FlushUpdates(c.Request().Context())
-	if err != nil {
-		slog.Error("failed to flush updates", "err", err)
-		return c.JSON(500, "failed to flush updates")
-	}
 	return c.JSON(200, "ok")
 }

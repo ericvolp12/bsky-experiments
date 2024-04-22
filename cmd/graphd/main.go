@@ -145,10 +145,10 @@ func GraphD(cctx *cli.Context) error {
 	e.GET("/moots", h.GetMoots)
 	e.GET("/followers_not_following", h.GetFollowersNotFollowing)
 
-	e.GET("/doesFollow", h.GetDoesFollow)
-	e.GET("/areMoots", h.GetAreMoots)
-	e.GET("/intersectFollowers", h.GetIntersectFollowers)
-	e.GET("/intersectFollowing", h.GetIntersectFollowing)
+	e.GET("/does_follow", h.GetDoesFollow)
+	e.GET("/are_moots", h.GetAreMoots)
+	e.GET("/intersect_followers", h.GetIntersectFollowers)
+	e.GET("/intersect_following", h.GetIntersectFollowing)
 	e.GET("/follows_following", h.GetFollowsFollowing)
 
 	e.POST("/follow", h.PostFollow)
@@ -156,8 +156,6 @@ func GraphD(cctx *cli.Context) error {
 
 	e.POST("/unfollow", h.PostUnfollow)
 	e.POST("/unfollows", h.PostUnfollows)
-
-	e.GET("/flush_updated", h.GetFlushUpdates)
 
 	s := &http.Server{
 		Addr:    cctx.String("listen-addr"),
