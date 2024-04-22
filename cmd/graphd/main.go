@@ -8,6 +8,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -26,7 +27,7 @@ func main() {
 	app := cli.App{
 		Name:    "graphd",
 		Usage:   "relational graph daemon",
-		Version: "0.1.0",
+		Version: "0.1.1",
 	}
 
 	app.Flags = []cli.Flag{
@@ -52,9 +53,9 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:    "sqlite-path",
-			Usage:   "path to graph db sqlite file",
+			Usage:   "path to directory to store graphd sqlite dbs",
 			EnvVars: []string{"GRAPHD_SQLITE_PATH"},
-			Value:   "data/graphd.db",
+			Value:   "data/graphd/",
 		},
 		&cli.DurationFlag{
 			Name:    "sync-interval",
@@ -86,19 +87,26 @@ func GraphD(cctx *cli.Context) error {
 
 	logger := slog.Default()
 
+	absPath, err := filepath.Abs(cctx.String("sqlite-path"))
+	if err != nil {
+		slog.Error("failed to get absolute path", "error", err, "path", cctx.String("sqlite-path"))
+		return err
+	}
+	dbDir := filepath.Dir(absPath)
+
 	dbExists := true
-	_, err := os.Stat(cctx.String("sqlite-path"))
+	_, err = os.Stat(filepath.Join(dbDir, graphd.MetaDBName))
 	if err != nil {
 		if os.IsNotExist(err) {
 			dbExists = false
 		} else {
-			slog.Error("failed to stat graph db", "error", err)
+			slog.Error("failed to stat graph db directory", "error", err)
 			return err
 		}
 	}
 
 	graph, err := graphd.NewGraph(
-		cctx.String("sqlite-path"),
+		dbDir,
 		cctx.Duration("sync-interval"),
 		cctx.Int("expected-node-count"),
 		logger,

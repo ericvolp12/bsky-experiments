@@ -49,7 +49,8 @@ type Graph struct {
 
 	// For Persisting the graph
 	dbPath        string
-	db            *sql.DB
+	metaDB        *sql.DB
+	shardDBs      []*sql.DB
 	updatedActors *roaring.Bitmap
 	updatedLk     sync.RWMutex
 	syncInterval  time.Duration
@@ -65,32 +66,12 @@ type FollowMap struct {
 }
 
 func NewGraph(dbPath string, syncInterval time.Duration, expectedNodeCount int, logger *slog.Logger) (*Graph, error) {
-	// Open the database
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
-	}
-
-	// Set pragmas
-	if _, err := db.Exec(`PRAGMA journal_mode=WAL;`); err != nil {
-		return nil, fmt.Errorf("failed to set journal mode: %w", err)
-	}
-
-	if _, err := db.Exec(`PRAGMA synchronous=normal;`); err != nil {
-		return nil, fmt.Errorf("failed to set synchronous mode: %w", err)
-	}
-
-	// Create the tables if they don't exist
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS actors (
-		uid INTEGER PRIMARY KEY,
-		did TEXT NOT NULL,
-		following BLOB NOT NULL,
-		followers BLOB NOT NULL
-	);`); err != nil {
-		return nil, fmt.Errorf("failed to create actors table: %w", err)
-	}
-
 	logger = logger.With("module", "graph")
+
+	metaDB, err := initMetaDB(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize meta db: %w", err)
+	}
 
 	g := Graph{
 		g:             xsync.NewMapOfPresized[uint32, *FollowMap](expectedNodeCount),
@@ -101,7 +82,7 @@ func NewGraph(dbPath string, syncInterval time.Duration, expectedNodeCount int, 
 		dtu:           map[string]uint32{},
 		pendingQueue:  make(chan *QueueItem, 100_000),
 		dbPath:        dbPath,
-		db:            db,
+		metaDB:        metaDB,
 		updatedActors: roaring.NewBitmap(),
 		syncInterval:  syncInterval,
 		shutdown:      make(chan chan struct{}),
