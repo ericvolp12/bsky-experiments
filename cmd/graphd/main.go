@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -27,7 +26,7 @@ func main() {
 	app := cli.App{
 		Name:    "graphd",
 		Usage:   "relational graph daemon",
-		Version: "0.0.1",
+		Version: "0.1.0",
 	}
 
 	app.Flags = []cli.Flag{
@@ -35,27 +34,32 @@ func main() {
 			Name:  "debug",
 			Usage: "enable debug logging",
 		},
+		&cli.StringFlag{
+			Name:  "listen-addr",
+			Usage: "listen address for http server",
+			Value: ":1323",
+		},
 		&cli.IntFlag{
-			Name:  "port",
-			Usage: "listen port for http server",
-			Value: 1323,
+			Name:    "expected-node-count",
+			Usage:   "expected number of nodes in the graph",
+			EnvVars: []string{"GRAPHD_EXPECTED_NODE_COUNT"},
 		},
 		&cli.StringFlag{
-			Name:    "graph-csv",
+			Name:    "follows-csv",
 			Usage:   "path to graph csv file",
-			EnvVars: []string{"GRAPH_CSV"},
+			EnvVars: []string{"GRAPHD_FOLLOWS_CSV"},
 			Value:   "data/follows.csv",
 		},
 		&cli.StringFlag{
-			Name:    "graphdb-sqlite-path",
+			Name:    "sqlite-path",
 			Usage:   "path to graph db sqlite file",
-			EnvVars: []string{"GRAPHDB_SQLITE_PATH"},
+			EnvVars: []string{"GRAPHD_SQLITE_PATH"},
 			Value:   "data/graphd.db",
 		},
 		&cli.DurationFlag{
 			Name:    "sync-interval",
 			Usage:   "interval to flush updates to disk",
-			EnvVars: []string{"GRAPHDB_SYNC_INTERVAL"},
+			EnvVars: []string{"GRAPHD_SYNC_INTERVAL"},
 			Value:   5 * time.Second,
 		},
 	}
@@ -83,7 +87,7 @@ func GraphD(cctx *cli.Context) error {
 	logger := slog.Default()
 
 	dbExists := true
-	_, err := os.Stat(cctx.String("graphdb-sqlite-path"))
+	_, err := os.Stat(cctx.String("sqlite-path"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			dbExists = false
@@ -93,7 +97,12 @@ func GraphD(cctx *cli.Context) error {
 		}
 	}
 
-	graph, err := graphd.NewGraph(cctx.String("graphdb-sqlite-path"), cctx.Duration("sync-interval"), logger)
+	graph, err := graphd.NewGraph(
+		cctx.String("sqlite-path"),
+		cctx.Duration("sync-interval"),
+		cctx.Int("expected-node-count"),
+		logger,
+	)
 	if err != nil {
 		slog.Error("failed to create graph", "error", err)
 		return err
@@ -101,7 +110,7 @@ func GraphD(cctx *cli.Context) error {
 
 	go func() {
 		if !dbExists {
-			err = graph.LoadFromCSV(cctx.String("graph-csv"))
+			err = graph.LoadFromCSV(cctx.String("follows-csv"))
 			if err != nil {
 				slog.Error("failed to load graph from file", "error", err)
 			}
@@ -151,16 +160,16 @@ func GraphD(cctx *cli.Context) error {
 	e.GET("/flush_updated", h.GetFlushUpdates)
 
 	s := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cctx.Int("port")),
+		Addr:    cctx.String("listen-addr"),
 		Handler: e,
 	}
 
 	shutdownEcho := make(chan struct{})
 	echoShutdown := make(chan struct{})
 	go func() {
-		log := slog.With("source", "echo")
+		log := slog.With("component", "graphd_echo")
 
-		log.Info("echo listening", "port", cctx.Int("port"))
+		log.Info("graphd listening", "addr", cctx.String("listen-addr"))
 
 		go func() {
 			if err := s.ListenAndServe(); err != http.ErrServerClosed {

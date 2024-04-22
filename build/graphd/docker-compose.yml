@@ -7,10 +7,10 @@ services:
     image: graphd
     restart: always
     environment:
-      GRAPH_CSV: /data/follows.csv
-      GRAPHDB_SQLITE_PATH: /data/graph.db
-      EXPECTED_NODE_COUNT: 5_500_000
-      GRAPHDB_SYNC_INTERVAL: 5s
+      GRAPHD_FOLLOWS_CSV: /data/follows.csv
+      GRAPHD_SQLITE_PATH: /data/graph.db
+      GRAPHD_EXPECTED_NODE_COUNT: 5_500_000
+      GRAPHD_SYNC_INTERVAL: 5s
     network_mode: host # For higher performance avoid the Docker Bridge
     volumes:
       - ../../data:/data
