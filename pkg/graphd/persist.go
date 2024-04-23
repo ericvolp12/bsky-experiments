@@ -23,7 +23,11 @@ var bufPool = sync.Pool{
 
 // PartitionSize is the number of actors per SQLite partition
 var PartitionSize = 100_000
+
+// MetaDBName is the filename of the meta database
 var MetaDBName = "meta.db"
+
+// ShardDBPattern is the pattern for the shard database filenames
 var ShardDBPattern = "actors_%d.db"
 
 func (g *Graph) LoadFromCSV(csvFile string) error {
@@ -130,10 +134,9 @@ func (g *Graph) LoadFromSQLite(ctx context.Context) error {
 
 	totalActors := 0
 	nextUID := uint32(0)
+	var uid uint32
+	var did string
 	for rows.Next() {
-		var uid uint32
-		var did string
-
 		if err := rows.Scan(&uid, &did); err != nil {
 			return fmt.Errorf("failed to scan row: %w", err)
 		}
@@ -147,6 +150,11 @@ func (g *Graph) LoadFromSQLite(ctx context.Context) error {
 
 		totalActors++
 	}
+
+	// Update the next UID
+	g.nextLk.Lock()
+	g.uidNext = nextUID + 1
+	g.nextLk.Unlock()
 
 	numParts := int(math.Ceil(float64(totalActors) / float64(PartitionSize)))
 
