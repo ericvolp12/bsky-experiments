@@ -422,7 +422,6 @@ func (g *Group) initShardDB(ctx context.Context, shard int) (*sql.DB, error) {
 	// Create the table if it doesn't exist
 	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS entities (
 		uid INTEGER PRIMARY KEY,
-		string_id TEXT NOT NULL,
 		compressed_bitmap BLOB NOT NULL
 	);`); err != nil {
 		return nil, fmt.Errorf("failed to create entities table: %w", err)

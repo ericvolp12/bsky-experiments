@@ -80,47 +80,60 @@ func (g *Graph) LoadFromCSV(csvFile string) error {
 	close(bufs)
 	wg.Wait()
 
+	newWG := sync.WaitGroup{}
 	// Walk the graph and flush the caches
 	maxUID := g.followers.PeekNextUID()
-	for i := 1; i <= int(maxUID); i++ {
-		followers, err := g.followers.GetEntity(ctx, uint32(i))
-		if err != nil {
-			log.Error("failed to get followers", "error", err)
-			continue
-		}
+	for i := 0; i <= int(maxUID); i += PartitionSize {
+		newWG.Add(1)
+		go func(i int) {
+			defer newWG.Done()
+			for j := i; j < i+PartitionSize; j++ {
+				uid := uint32(j)
 
-		following, err := g.following.GetEntity(ctx, uint32(i))
-		if err != nil {
-			log.Error("failed to get following", "error", err)
-			continue
-		}
+				followers, err := g.followers.GetEntity(ctx, uid)
+				if err != nil {
+					log.Error("failed to get followers", "error", err)
+					continue
+				}
 
-		err = g.followers.UpdateEntity(ctx, uint32(i), followers.BM)
-		if err != nil {
-			log.Error("failed to update followers", "error", err)
-		}
+				following, err := g.following.GetEntity(ctx, uid)
+				if err != nil {
+					log.Error("failed to get following", "error", err)
+					continue
+				}
 
-		err = g.following.UpdateEntity(ctx, uint32(i), following.BM)
-		if err != nil {
-			log.Error("failed to update following", "error", err)
-		}
+				err = g.followers.UpdateEntity(ctx, uid, followers.BM)
+				if err != nil {
+					log.Error("failed to update followers", "error", err)
+				}
 
-		did, _, err := g.GetDID(ctx, uint32(i))
-		if err != nil {
-			log.Error("failed to get DID", "error", err)
-			continue
-		}
+				err = g.following.UpdateEntity(ctx, uid, following.BM)
+				if err != nil {
+					log.Error("failed to update following", "error", err)
+				}
 
-		err = g.followers.UpdateUIDMapping(ctx, uint32(i), did)
-		if err != nil {
-			log.Error("failed to update followers UID mapping", "error", err)
-		}
+				did, _, err := g.GetDID(ctx, uid)
+				if err != nil {
+					log.Error("failed to get DID", "error", err)
+					continue
+				}
 
-		err = g.following.UpdateUIDMapping(ctx, uint32(i), did)
-		if err != nil {
-			log.Error("failed to update following UID mapping", "error", err)
-		}
+				err = g.followers.UpdateUIDMapping(ctx, uid, did)
+				if err != nil {
+					log.Error("failed to update followers UID mapping", "error", err)
+				}
+
+				err = g.following.UpdateUIDMapping(ctx, uid, did)
+				if err != nil {
+					log.Error("failed to update following UID mapping", "error", err)
+				}
+			}
+		}(i)
 	}
+
+	newWG.Wait()
+
+	log.Info("loaded follows", "total", totalFollows, "duration", time.Since(start))
 
 	return nil
 }
