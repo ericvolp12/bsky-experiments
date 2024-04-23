@@ -49,7 +49,6 @@ func main() {
 			Name:    "follows-csv",
 			Usage:   "path to graph csv file",
 			EnvVars: []string{"GRAPHD_FOLLOWS_CSV"},
-			Value:   "data/follows.csv",
 		},
 		&cli.StringFlag{
 			Name:    "sqlite-path",
@@ -75,6 +74,7 @@ func main() {
 }
 
 func GraphD(cctx *cli.Context) error {
+	ctx := cctx.Context
 	logLevel := slog.LevelInfo
 	if cctx.Bool("debug") {
 		logLevel = slog.LevelDebug
@@ -92,23 +92,11 @@ func GraphD(cctx *cli.Context) error {
 		slog.Error("failed to get absolute path", "error", err, "path", cctx.String("sqlite-path"))
 		return err
 	}
-	dbDir := filepath.Dir(absPath)
-
-	dbExists := true
-	_, err = os.Stat(filepath.Join(dbDir, graphd.MetaDBName))
-	if err != nil {
-		if os.IsNotExist(err) {
-			dbExists = false
-		} else {
-			slog.Error("failed to stat graph db directory", "error", err)
-			return err
-		}
-	}
+	dbDir := filepath.Clean(absPath)
 
 	graph, err := graphd.NewGraph(
+		ctx,
 		dbDir,
-		cctx.Duration("sync-interval"),
-		cctx.Int("expected-node-count"),
 		logger,
 	)
 	if err != nil {
@@ -117,15 +105,10 @@ func GraphD(cctx *cli.Context) error {
 	}
 
 	go func() {
-		if !dbExists {
+		if cctx.IsSet("follows-csv") {
 			err = graph.LoadFromCSV(cctx.String("follows-csv"))
 			if err != nil {
 				slog.Error("failed to load graph from file", "error", err)
-			}
-		} else {
-			err = graph.LoadFromSQLite(context.Background())
-			if err != nil {
-				slog.Error("failed to load graph from db", "error", err)
 			}
 		}
 	}()

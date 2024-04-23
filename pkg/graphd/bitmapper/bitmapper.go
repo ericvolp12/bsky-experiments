@@ -41,6 +41,7 @@ type Group struct {
 
 	// LRU Cache for Entity Bitmaps
 	entities *arc.ARCCache[uint32, *Entity]
+	dbCache  *arc.ARCCache[int, *sql.DB]
 
 	// Bookkeeping for Persisting the Group
 	dbDir     string
@@ -52,6 +53,8 @@ type Bitmapper struct {
 	groups  map[string]*Group
 	groupLk sync.RWMutex
 
+	CrossGroupLk sync.RWMutex
+
 	// Root directory for SQLite files, one subfolder per group
 	dbDir string
 }
@@ -60,6 +63,7 @@ type GroupConfig struct {
 	Name      string
 	ShardSize uint32
 	CacheSize int
+	dbDir     string
 }
 
 type BitmapperConfig struct {
@@ -80,14 +84,22 @@ func NewGroup(ctx context.Context, cfg GroupConfig) (*Group, error) {
 		return nil, fmt.Errorf("failed to create entity cache: %w", err)
 	}
 
+	dbCache, err := arc.NewARC[int, *sql.DB](100)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create db cache: %w", err)
+	}
+
+	dbDir := fmt.Sprintf("%s/%s", cfg.dbDir, cfg.Name)
+
 	group := &Group{
 		name:      cfg.Name,
 		nextUID:   0,
 		uts:       make(map[uint32]string),
 		stu:       make(map[string]uint32),
 		entities:  ents,
-		dbDir:     cfg.Name,
+		dbDir:     dbDir,
 		shardSize: cfg.ShardSize,
+		dbCache:   dbCache,
 	}
 
 	metaDB, err := group.initMetaDB(ctx)
@@ -122,14 +134,16 @@ func NewBitmapper(ctx context.Context, cfg BitmapperConfig) (*Bitmapper, error) 
 	}
 
 	for _, groupCfg := range cfg.Groups {
-		group, err := NewGroup(ctx, groupCfg)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create group: %w", err)
-		}
-
 		// Create the group directory if it doesn't exist
 		if err := os.MkdirAll(fmt.Sprintf("%s/%s", cfg.DBDir, groupCfg.Name), 0755); err != nil {
 			return nil, fmt.Errorf("failed to create group directory: %w", err)
+		}
+
+		groupCfg.dbDir = cfg.DBDir
+
+		group, err := NewGroup(ctx, groupCfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create group: %w", err)
 		}
 
 		bitmapper.groups[groupCfg.Name] = group
@@ -155,18 +169,22 @@ func (b *Bitmapper) GetGroup(ctx context.Context, name string) (*Group, error) {
 	return group, nil
 }
 
+func (g *Group) PeekNextUID() uint32 {
+	g.nextLk.Lock()
+	defer g.nextLk.Unlock()
+
+	uid := g.nextUID
+
+	return uid
+}
+
 // ErrorUIDNotFound is returned when a UID is not found
 var ErrorUIDNotFound = fmt.Errorf("uid not found")
 
 // GetUID resolves a string ID to a UID
 // If the UID is not found and initOnMiss is true, a new UID is initialized
 // The bool return value indicates whether the UID was initialized
-func (g *Group) GetUID(ctx context.Context, stringID string, initOnMiss bool) (uint32, bool, error) {
-	ctx, span := tracer.Start(ctx, "resolveStringID")
-	defer span.End()
-
-	span.SetAttributes(attribute.String("string_id", stringID), attribute.String("group", g.name))
-
+func (g *Group) GetUID(ctx context.Context, stringID string, initOnMiss, flush bool) (uint32, bool, error) {
 	g.stuLk.RLock()
 	uid, ok := g.stu[stringID]
 	g.stuLk.RUnlock()
@@ -194,8 +212,10 @@ func (g *Group) GetUID(ctx context.Context, stringID string, initOnMiss bool) (u
 	g.uts[uid] = stringID
 	g.utsLk.Unlock()
 
-	if err := g.updateUIDMapping(ctx, uid, stringID); err != nil {
-		return 0, false, fmt.Errorf("failed to update uid mapping: %w", err)
+	if flush {
+		if err := g.UpdateUIDMapping(ctx, uid, stringID); err != nil {
+			return 0, false, fmt.Errorf("failed to update uid mapping: %w", err)
+		}
 	}
 
 	return uid, true, nil
@@ -203,11 +223,6 @@ func (g *Group) GetUID(ctx context.Context, stringID string, initOnMiss bool) (u
 
 // GetStringID resolves a UID to a string ID
 func (g *Group) GetStringID(ctx context.Context, uid uint32) (string, error) {
-	ctx, span := tracer.Start(ctx, "GetStringID")
-	defer span.End()
-
-	span.SetAttributes(attribute.Int("uid", int(uid)), attribute.String("group", g.name))
-
 	g.utsLk.RLock()
 	stringID, ok := g.uts[uid]
 	g.utsLk.RUnlock()
@@ -220,11 +235,6 @@ func (g *Group) GetStringID(ctx context.Context, uid uint32) (string, error) {
 
 // GetEntity retrieves an Entity from the cache or database
 func (g *Group) GetEntity(ctx context.Context, uid uint32) (*Entity, error) {
-	ctx, span := tracer.Start(ctx, "GetEntity")
-	defer span.End()
-
-	span.SetAttributes(attribute.Int("uid", int(uid)), attribute.String("group", g.name))
-
 	// Check the cache
 	if e, ok := g.entities.Get(uid); ok {
 		return e, nil
@@ -246,11 +256,6 @@ func (g *Group) GetEntity(ctx context.Context, uid uint32) (*Entity, error) {
 
 // UpdateEntity updates an Entity in the cache and database
 func (g *Group) UpdateEntity(ctx context.Context, uid uint32, bm *roaring.Bitmap) error {
-	ctx, span := tracer.Start(ctx, "UpdateEntity")
-	defer span.End()
-
-	span.SetAttributes(attribute.Int("uid", int(uid)), attribute.String("group", g.name))
-
 	// Update the cache
 	ent := &Entity{BM: bm, LK: sync.RWMutex{}}
 	g.entities.Add(uid, ent)
@@ -264,11 +269,6 @@ func (g *Group) UpdateEntity(ctx context.Context, uid uint32, bm *roaring.Bitmap
 }
 
 func (g *Group) loadBitmap(ctx context.Context, uid uint32) (*roaring.Bitmap, error) {
-	ctx, span := tracer.Start(ctx, "loadEntity")
-	defer span.End()
-
-	span.SetAttributes(attribute.Int("uid", int(uid)), attribute.String("group", g.name))
-
 	shard := int(uid / g.shardSize)
 	db, err := g.initShardDB(ctx, shard)
 	if err != nil {
@@ -293,11 +293,6 @@ func (g *Group) loadBitmap(ctx context.Context, uid uint32) (*roaring.Bitmap, er
 }
 
 func (g *Group) updateBitmap(ctx context.Context, uid uint32, bm *roaring.Bitmap) error {
-	ctx, span := tracer.Start(ctx, "updateEntity")
-	defer span.End()
-
-	span.SetAttributes(attribute.Int("uid", int(uid)), attribute.String("group", g.name))
-
 	shard := int(uid / g.shardSize)
 	db, err := g.initShardDB(ctx, shard)
 	if err != nil {
@@ -316,12 +311,7 @@ func (g *Group) updateBitmap(ctx context.Context, uid uint32, bm *roaring.Bitmap
 	return nil
 }
 
-func (g *Group) updateUIDMapping(ctx context.Context, uid uint32, stringID string) error {
-	ctx, span := tracer.Start(ctx, "updateUIDMapping")
-	defer span.End()
-
-	span.SetAttributes(attribute.Int("uid", int(uid)), attribute.String("string_id", stringID), attribute.String("group", g.name))
-
+func (g *Group) UpdateUIDMapping(ctx context.Context, uid uint32, stringID string) error {
 	if _, err := g.metaDB.ExecContext(ctx, `INSERT OR REPLACE INTO entity_map (uid, string_id) VALUES (?, ?);`, uid, stringID); err != nil {
 		return fmt.Errorf("failed to update uid mapping: %w", err)
 	}
@@ -372,21 +362,16 @@ func (g *Group) loadFromMetaDB(ctx context.Context) error {
 
 // initializes a MetaDB for the group at bitmapper_db_dir/group_name/meta.db
 func (g *Group) initMetaDB(ctx context.Context) (*sql.DB, error) {
-	ctx, span := tracer.Start(ctx, "initMetaDB")
-	defer span.End()
-
-	span.SetAttributes(attribute.String("group", g.name))
-
 	metaDBPath := fmt.Sprintf("%s/%s", g.dbDir, MetaDBName)
 	// Open the database
 	db, err := sql.Open("sqlite3", metaDBPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, fmt.Errorf("failed to open database at %q: %w", metaDBPath, err)
 	}
 
 	// Set pragmas
 	if _, err := db.ExecContext(ctx, `PRAGMA journal_mode=WAL;`); err != nil {
-		return nil, fmt.Errorf("failed to set journal mode: %w", err)
+		return nil, fmt.Errorf("failed to set journal mode at %q: %w", metaDBPath, err)
 	}
 
 	// Set synchronous mode to off to increase write performance
@@ -413,10 +398,10 @@ func (g *Group) initMetaDB(ctx context.Context) (*sql.DB, error) {
 
 // initializes a ShardDB for the group at bitmapper_db_dir/group_name/shard_%d.db
 func (g *Group) initShardDB(ctx context.Context, shard int) (*sql.DB, error) {
-	ctx, span := tracer.Start(ctx, "initShardDB")
-	defer span.End()
-
-	span.SetAttributes(attribute.Int("shard", shard), attribute.String("group", g.name))
+	db, ok := g.dbCache.Get(shard)
+	if ok {
+		return db, nil
+	}
 
 	dbPath := fmt.Sprintf("%s/"+ShardDBPattern, g.dbDir, shard)
 	// Open the database
@@ -442,6 +427,8 @@ func (g *Group) initShardDB(ctx context.Context, shard int) (*sql.DB, error) {
 	);`); err != nil {
 		return nil, fmt.Errorf("failed to create entities table: %w", err)
 	}
+
+	g.dbCache.Add(shard, db)
 
 	return db, nil
 }
