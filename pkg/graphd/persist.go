@@ -81,8 +81,32 @@ func (g *Graph) LoadFromCSV(csvFile string) error {
 	wg.Wait()
 
 	newWG := sync.WaitGroup{}
-	// Walk the graph and flush the caches
 	maxUID := g.followers.PeekNextUID()
+	// First flush the mapping in a separate goroutine
+	newWG.Add(1)
+	go func() {
+		defer newWG.Done()
+		for i := 0; i < int(maxUID); i++ {
+			uid := uint32(i)
+			did, _, err := g.GetDID(ctx, uid)
+			if err != nil {
+				log.Error("failed to get DID", "error", err)
+				continue
+			}
+
+			err = g.followers.UpdateUIDMapping(ctx, uid, did)
+			if err != nil {
+				log.Error("failed to update followers UID mapping", "error", err)
+			}
+
+			err = g.following.UpdateUIDMapping(ctx, uid, did)
+			if err != nil {
+				log.Error("failed to update following UID mapping", "error", err)
+			}
+		}
+	}()
+
+	// Then walk the graph and flush the bitmaps
 	for i := 0; i <= int(maxUID); i += PartitionSize {
 		newWG.Add(1)
 		go func(i int) {
@@ -110,22 +134,6 @@ func (g *Graph) LoadFromCSV(csvFile string) error {
 				err = g.following.UpdateEntity(ctx, uid, following.BM)
 				if err != nil {
 					log.Error("failed to update following", "error", err)
-				}
-
-				did, _, err := g.GetDID(ctx, uid)
-				if err != nil {
-					log.Error("failed to get DID", "error", err)
-					continue
-				}
-
-				err = g.followers.UpdateUIDMapping(ctx, uid, did)
-				if err != nil {
-					log.Error("failed to update followers UID mapping", "error", err)
-				}
-
-				err = g.following.UpdateUIDMapping(ctx, uid, did)
-				if err != nil {
-					log.Error("failed to update following UID mapping", "error", err)
 				}
 			}
 		}(i)

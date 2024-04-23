@@ -26,24 +26,42 @@ type Graph struct {
 var followingGKey = "following"
 var followersGKey = "followers"
 
-func NewGraph(ctx context.Context, dbPath string, logger *slog.Logger) (*Graph, error) {
+type GraphConfig struct {
+	DBPath    string
+	ShardSize uint32
+	CacheSize int
+}
+
+func DefaultGraphConfig() *GraphConfig {
+	return &GraphConfig{
+		DBPath:    "data/graphd/",
+		ShardSize: 100_000,
+		CacheSize: 100_000,
+	}
+}
+
+func NewGraph(ctx context.Context, logger *slog.Logger, cfg *GraphConfig) (*Graph, error) {
 	logger = logger.With("module", "graph")
+
+	if cfg == nil {
+		cfg = DefaultGraphConfig()
+	}
 
 	followingConfig := bitmapper.GroupConfig{
 		Name:      followingGKey,
-		ShardSize: 100_000,
-		CacheSize: 10_000_000,
+		ShardSize: cfg.ShardSize,
+		CacheSize: cfg.CacheSize,
 	}
 
 	followersConfig := bitmapper.GroupConfig{
 		Name:      followersGKey,
-		ShardSize: 100_000,
-		CacheSize: 10_000_000,
+		ShardSize: cfg.ShardSize,
+		CacheSize: cfg.CacheSize,
 	}
 
 	groupConfigs := []bitmapper.GroupConfig{followingConfig, followersConfig}
 	bmConfig := bitmapper.BitmapperConfig{
-		DBDir:  dbPath,
+		DBDir:  cfg.DBPath,
 		Groups: groupConfigs,
 	}
 
@@ -64,7 +82,7 @@ func NewGraph(ctx context.Context, dbPath string, logger *slog.Logger) (*Graph, 
 
 	g := Graph{
 		logger:    logger,
-		dbPath:    dbPath,
+		dbPath:    cfg.DBPath,
 		shutdown:  make(chan chan struct{}),
 		bm:        bm,
 		following: following,
@@ -76,9 +94,9 @@ func NewGraph(ctx context.Context, dbPath string, logger *slog.Logger) (*Graph, 
 
 func (g *Graph) Shutdown() {
 	g.logger.Info("shutting down graph")
-	finished := make(chan struct{})
-	g.shutdown <- finished
-	<-finished
+	// finished := make(chan struct{})
+	// g.shutdown <- finished
+	// <-finished
 	g.logger.Info("graph shut down")
 }
 

@@ -133,20 +133,37 @@ func NewBitmapper(ctx context.Context, cfg BitmapperConfig) (*Bitmapper, error) 
 		return nil, fmt.Errorf("failed to create root directory: %w", err)
 	}
 
-	for _, groupCfg := range cfg.Groups {
-		// Create the group directory if it doesn't exist
-		if err := os.MkdirAll(fmt.Sprintf("%s/%s", cfg.DBDir, groupCfg.Name), 0755); err != nil {
-			return nil, fmt.Errorf("failed to create group directory: %w", err)
-		}
+	wg := sync.WaitGroup{}
+	errs := make([]error, len(cfg.Groups))
 
-		groupCfg.dbDir = cfg.DBDir
+	for i, groupCfg := range cfg.Groups {
+		wg.Add(1)
+		go func(groupCfg GroupConfig) {
+			defer wg.Done()
+			// Create the group directory if it doesn't exist
+			if err := os.MkdirAll(fmt.Sprintf("%s/%s", cfg.DBDir, groupCfg.Name), 0755); err != nil {
+				errs[i] = fmt.Errorf("failed to create group directory: %w", err)
+				return
+			}
 
-		group, err := NewGroup(ctx, groupCfg)
+			groupCfg.dbDir = cfg.DBDir
+
+			group, err := NewGroup(ctx, groupCfg)
+			if err != nil {
+				errs[i] = fmt.Errorf("failed to create group: %w", err)
+				return
+			}
+
+			bitmapper.groups[groupCfg.Name] = group
+		}(groupCfg)
+	}
+
+	wg.Wait()
+
+	for _, err := range errs {
 		if err != nil {
-			return nil, fmt.Errorf("failed to create group: %w", err)
+			return nil, err
 		}
-
-		bitmapper.groups[groupCfg.Name] = group
 	}
 
 	return bitmapper, nil
@@ -386,11 +403,6 @@ func (g *Group) initMetaDB(ctx context.Context) (*sql.DB, error) {
 		string_id TEXT NOT NULL
 	);`); err != nil {
 		return nil, fmt.Errorf("failed to create entity_map table: %w", err)
-	}
-
-	// Initialize the string_id index if it doesn't exist
-	if _, err := db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS string_id_idx ON entity_map (string_id);`); err != nil {
-		return nil, fmt.Errorf("failed to create string_id index: %w", err)
 	}
 
 	return db, nil

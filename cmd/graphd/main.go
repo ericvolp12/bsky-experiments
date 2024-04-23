@@ -94,24 +94,34 @@ func GraphD(cctx *cli.Context) error {
 	}
 	dbDir := filepath.Clean(absPath)
 
-	graph, err := graphd.NewGraph(
-		ctx,
-		dbDir,
-		logger,
-	)
+	bulkMode := cctx.IsSet("follows-csv")
+	cfg := graphd.DefaultGraphConfig()
+	cfg.DBPath = dbDir
+	if bulkMode {
+		cfg.CacheSize = 10_000_000
+	}
+
+	start := time.Now()
+
+	logger.Info("initializing graph", "db_path", dbDir)
+
+	graph, err := graphd.NewGraph(ctx, logger, cfg)
 	if err != nil {
 		slog.Error("failed to create graph", "error", err)
 		return err
 	}
 
 	go func() {
-		if cctx.IsSet("follows-csv") {
+		if bulkMode {
+			slog.Info("loading graph from csv", "path", cctx.String("follows-csv"))
 			err = graph.LoadFromCSV(cctx.String("follows-csv"))
 			if err != nil {
 				slog.Error("failed to load graph from file", "error", err)
 			}
 		}
 	}()
+
+	logger.Info("graphd initialized", "duration", time.Since(start))
 
 	e := echo.New()
 
