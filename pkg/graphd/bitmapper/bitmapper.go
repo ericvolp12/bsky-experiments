@@ -170,7 +170,9 @@ func NewBitmapper(ctx context.Context, cfg Config) (*Bitmapper, error) {
 				return
 			}
 
+			bitmapper.groupLk.Lock()
 			bitmapper.groups[groupCfg.Name] = group
+			bitmapper.groupLk.Unlock()
 		}(groupCfg)
 	}
 
