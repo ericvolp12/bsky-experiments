@@ -66,7 +66,7 @@ type Group struct {
 
 // Entity is a member of a Group
 // It contains a Roaring Bitmap and a lock for concurrent access
-// Entities should not be modified directly, but instead through the Group's UpdateEntity method
+// After modifying an Entitiy, use the Group's UpdateEntity method to persist the changes
 type Entity struct {
 	LK sync.RWMutex
 	BM *roaring.Bitmap
