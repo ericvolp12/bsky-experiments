@@ -60,7 +60,7 @@ func NewGraph(ctx context.Context, logger *slog.Logger, cfg *GraphConfig) (*Grap
 	}
 
 	groupConfigs := []bitmapper.GroupConfig{followingConfig, followersConfig}
-	bmConfig := bitmapper.BitmapperConfig{
+	bmConfig := bitmapper.Config{
 		DBDir:  cfg.DBPath,
 		Groups: groupConfigs,
 	}
