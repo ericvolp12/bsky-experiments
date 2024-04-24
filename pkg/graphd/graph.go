@@ -208,14 +208,14 @@ func (g *Graph) AddFollow(ctx context.Context, actorUID, targetUID uint32, flush
 	actorFollowing.LK.Lock()
 	actorFollowing.BM.Add(targetUID)
 	if flush {
-		g.following.UpdateEntity(ctx, actorUID, actorFollowing.BM)
+		g.following.UpdateEntity(ctx, actorUID, actorFollowing)
 	}
 	actorFollowing.LK.Unlock()
 
 	targetFollowers.LK.Lock()
 	targetFollowers.BM.Add(actorUID)
 	if flush {
-		g.followers.UpdateEntity(ctx, targetUID, targetFollowers.BM)
+		g.followers.UpdateEntity(ctx, targetUID, targetFollowers)
 	}
 	targetFollowers.LK.Unlock()
 
@@ -237,14 +237,14 @@ func (g *Graph) RemoveFollow(ctx context.Context, actorUID, targetUID uint32, fl
 	actorFollowing.LK.Lock()
 	actorFollowing.BM.Remove(targetUID)
 	if flush {
-		g.following.UpdateEntity(ctx, actorUID, actorFollowing.BM)
+		g.following.UpdateEntity(ctx, actorUID, actorFollowing)
 	}
 	actorFollowing.LK.Unlock()
 
 	targetFollowers.LK.Lock()
 	targetFollowers.BM.Remove(actorUID)
 	if flush {
-		g.followers.UpdateEntity(ctx, targetUID, targetFollowers.BM)
+		g.followers.UpdateEntity(ctx, targetUID, targetFollowers)
 	}
 	targetFollowers.LK.Unlock()
 

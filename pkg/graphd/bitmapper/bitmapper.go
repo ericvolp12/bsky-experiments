@@ -68,7 +68,7 @@ type Group struct {
 // It contains a Roaring Bitmap and a lock for concurrent access
 // After modifying an Entitiy, use the Group's UpdateEntity method to persist the changes
 type Entity struct {
-	LK sync.RWMutex
+	LK *sync.RWMutex
 	BM *roaring.Bitmap
 }
 
@@ -284,7 +284,7 @@ func (g *Group) GetEntity(ctx context.Context, uid uint32) (*Entity, error) {
 		return nil, fmt.Errorf("failed to load entity: %w", err)
 	}
 
-	ent := &Entity{BM: bm, LK: sync.RWMutex{}}
+	ent := &Entity{BM: bm, LK: &sync.RWMutex{}}
 
 	// Add the entity to the cache
 	g.entities.Add(uid, ent)
@@ -293,13 +293,13 @@ func (g *Group) GetEntity(ctx context.Context, uid uint32) (*Entity, error) {
 }
 
 // UpdateEntity updates an Entity in the cache and database
-func (g *Group) UpdateEntity(ctx context.Context, uid uint32, bm *roaring.Bitmap) error {
+// Only call while holding the Entity's lock
+func (g *Group) UpdateEntity(ctx context.Context, uid uint32, ent *Entity) error {
 	// Update the cache
-	ent := &Entity{BM: bm, LK: sync.RWMutex{}}
 	g.entities.Add(uid, ent)
 
 	// Update the database
-	if err := g.updateBitmap(ctx, uid, bm); err != nil {
+	if err := g.updateBitmap(ctx, uid, ent.BM); err != nil {
 		return fmt.Errorf("failed to update entity: %w", err)
 	}
 

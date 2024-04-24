@@ -126,12 +126,12 @@ func (g *Graph) LoadFromCSV(csvFile string) error {
 					continue
 				}
 
-				err = g.followers.UpdateEntity(ctx, uid, followers.BM)
+				err = g.followers.UpdateEntity(ctx, uid, followers)
 				if err != nil {
 					log.Error("failed to update followers", "error", err)
 				}
 
-				err = g.following.UpdateEntity(ctx, uid, following.BM)
+				err = g.following.UpdateEntity(ctx, uid, following)
 				if err != nil {
 					log.Error("failed to update following", "error", err)
 				}
