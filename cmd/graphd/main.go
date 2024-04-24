@@ -49,7 +49,6 @@ func main() {
 			Name:    "follows-csv",
 			Usage:   "path to graph csv file",
 			EnvVars: []string{"GRAPHD_FOLLOWS_CSV"},
-			Value:   "data/follows.csv",
 		},
 		&cli.StringFlag{
 			Name:    "sqlite-path",
@@ -75,6 +74,7 @@ func main() {
 }
 
 func GraphD(cctx *cli.Context) error {
+	ctx := cctx.Context
 	logLevel := slog.LevelInfo
 	if cctx.Bool("debug") {
 		logLevel = slog.LevelDebug
@@ -92,43 +92,36 @@ func GraphD(cctx *cli.Context) error {
 		slog.Error("failed to get absolute path", "error", err, "path", cctx.String("sqlite-path"))
 		return err
 	}
-	dbDir := filepath.Dir(absPath)
+	dbDir := filepath.Clean(absPath)
 
-	dbExists := true
-	_, err = os.Stat(filepath.Join(dbDir, graphd.MetaDBName))
-	if err != nil {
-		if os.IsNotExist(err) {
-			dbExists = false
-		} else {
-			slog.Error("failed to stat graph db directory", "error", err)
-			return err
-		}
+	bulkMode := cctx.IsSet("follows-csv")
+	cfg := graphd.DefaultGraphConfig()
+	cfg.DBPath = dbDir
+	if bulkMode {
+		cfg.CacheSize = 10_000_000
 	}
 
-	graph, err := graphd.NewGraph(
-		dbDir,
-		cctx.Duration("sync-interval"),
-		cctx.Int("expected-node-count"),
-		logger,
-	)
+	start := time.Now()
+
+	logger.Info("initializing graph", "db_path", dbDir)
+
+	graph, err := graphd.NewGraph(ctx, logger, cfg)
 	if err != nil {
 		slog.Error("failed to create graph", "error", err)
 		return err
 	}
 
 	go func() {
-		if !dbExists {
+		if bulkMode {
+			slog.Info("loading graph from csv", "path", cctx.String("follows-csv"))
 			err = graph.LoadFromCSV(cctx.String("follows-csv"))
 			if err != nil {
 				slog.Error("failed to load graph from file", "error", err)
 			}
-		} else {
-			err = graph.LoadFromSQLite(context.Background())
-			if err != nil {
-				slog.Error("failed to load graph from db", "error", err)
-			}
 		}
 	}()
+
+	logger.Info("graphd initialized", "duration", time.Since(start))
 
 	e := echo.New()
 
