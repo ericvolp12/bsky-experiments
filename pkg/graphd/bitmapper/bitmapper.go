@@ -55,8 +55,9 @@ type Group struct {
 	stuLk sync.RWMutex
 
 	// LRU Cache for Entity Bitmaps
-	entities *arc.ARCCache[uint32, *Entity]
-	dbCache  *arc.ARCCache[int, *sql.DB]
+	entities  *arc.ARCCache[uint32, *Entity]
+	cacheLock sync.Mutex
+	dbCache   *arc.ARCCache[int, *sql.DB]
 
 	// Bookkeeping for Persisting the Group
 	dbDir     string
@@ -273,21 +274,27 @@ func (g *Group) GetStringID(ctx context.Context, uid uint32) (string, error) {
 
 // GetEntity retrieves an Entity from the cache or database
 func (g *Group) GetEntity(ctx context.Context, uid uint32) (*Entity, error) {
-	// Check the cache
+	// Grab the cache lock and check if the entity is already loaded
+	g.cacheLock.Lock()
 	if e, ok := g.entities.Get(uid); ok {
+		g.cacheLock.Unlock()
 		return e, nil
 	}
 
+	// Initialize a lock for the entity so anyone calling GetEntity will wait
+	// but not block calls to GetEntity for other UIDs while we load the entity
+	ent := &Entity{LK: &sync.RWMutex{}}
+	ent.LK.Lock()
+	defer ent.LK.Unlock()
+	g.entities.Add(uid, ent)
+	g.cacheLock.Unlock()
+
 	// Load the entity from the database
-	bm, err := g.loadBitmap(ctx, uid)
+	var err error
+	ent.BM, err = g.loadBitmap(ctx, uid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load entity: %w", err)
 	}
-
-	ent := &Entity{BM: bm, LK: &sync.RWMutex{}}
-
-	// Add the entity to the cache
-	g.entities.Add(uid, ent)
 
 	return ent, nil
 }
