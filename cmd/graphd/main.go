@@ -40,11 +40,6 @@ func main() {
 			Usage: "listen address for http server",
 			Value: ":1323",
 		},
-		&cli.IntFlag{
-			Name:    "expected-node-count",
-			Usage:   "expected number of nodes in the graph",
-			EnvVars: []string{"GRAPHD_EXPECTED_NODE_COUNT"},
-		},
 		&cli.StringFlag{
 			Name:    "follows-csv",
 			Usage:   "path to graph csv file",
@@ -55,12 +50,6 @@ func main() {
 			Usage:   "path to directory to store graphd sqlite dbs",
 			EnvVars: []string{"GRAPHD_SQLITE_PATH"},
 			Value:   "data/graphd/",
-		},
-		&cli.DurationFlag{
-			Name:    "sync-interval",
-			Usage:   "interval to flush updates to disk",
-			EnvVars: []string{"GRAPHD_SYNC_INTERVAL"},
-			Value:   5 * time.Second,
 		},
 	}
 
