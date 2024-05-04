@@ -156,3 +156,12 @@ ORDER BY p.created_at DESC,
     p.actor_did DESC,
     p.rkey DESC
 LIMIT sqlc.arg('limit');
+-- name: GetTopPostsInWindow :many
+SELECT p.*,
+    lc.num_likes
+from recent_posts p
+    JOIN like_counts lc on p.subject_id = lc.subject_id
+WHERE p.created_at > NOW() - MAKE_INTERVAL(hours := sqlc.arg('hours'))
+    AND lc.num_likes > 10
+ORDER BY lc.num_likes DESC
+LIMIT sqlc.arg('limit');

@@ -607,6 +607,85 @@ func (q *Queries) GetRecentPostsPageByInsertedAt(ctx context.Context, arg GetRec
 	return items, nil
 }
 
+const getTopPostsInWindow = `-- name: GetTopPostsInWindow :many
+SELECT p.actor_did, p.rkey, p.content, p.parent_post_actor_did, p.quote_post_actor_did, p.quote_post_rkey, p.parent_post_rkey, p.root_post_actor_did, p.root_post_rkey, p.facets, p.embed, p.langs, p.tags, p.subject_id, p.has_embedded_media, p.created_at, p.inserted_at,
+    lc.num_likes
+from recent_posts p
+    JOIN like_counts lc on p.subject_id = lc.subject_id
+WHERE p.created_at > NOW() - MAKE_INTERVAL(hours := $1)
+    AND lc.num_likes > 10
+ORDER BY lc.num_likes DESC
+LIMIT $2
+`
+
+type GetTopPostsInWindowParams struct {
+	Hours int32 `json:"hours"`
+	Limit int32 `json:"limit"`
+}
+
+type GetTopPostsInWindowRow struct {
+	ActorDid           string                `json:"actor_did"`
+	Rkey               string                `json:"rkey"`
+	Content            sql.NullString        `json:"content"`
+	ParentPostActorDid sql.NullString        `json:"parent_post_actor_did"`
+	QuotePostActorDid  sql.NullString        `json:"quote_post_actor_did"`
+	QuotePostRkey      sql.NullString        `json:"quote_post_rkey"`
+	ParentPostRkey     sql.NullString        `json:"parent_post_rkey"`
+	RootPostActorDid   sql.NullString        `json:"root_post_actor_did"`
+	RootPostRkey       sql.NullString        `json:"root_post_rkey"`
+	Facets             pqtype.NullRawMessage `json:"facets"`
+	Embed              pqtype.NullRawMessage `json:"embed"`
+	Langs              []string              `json:"langs"`
+	Tags               []string              `json:"tags"`
+	SubjectID          sql.NullInt64         `json:"subject_id"`
+	HasEmbeddedMedia   bool                  `json:"has_embedded_media"`
+	CreatedAt          sql.NullTime          `json:"created_at"`
+	InsertedAt         time.Time             `json:"inserted_at"`
+	NumLikes           int64                 `json:"num_likes"`
+}
+
+func (q *Queries) GetTopPostsInWindow(ctx context.Context, arg GetTopPostsInWindowParams) ([]GetTopPostsInWindowRow, error) {
+	rows, err := q.query(ctx, q.getTopPostsInWindowStmt, getTopPostsInWindow, arg.Hours, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTopPostsInWindowRow
+	for rows.Next() {
+		var i GetTopPostsInWindowRow
+		if err := rows.Scan(
+			&i.ActorDid,
+			&i.Rkey,
+			&i.Content,
+			&i.ParentPostActorDid,
+			&i.QuotePostActorDid,
+			&i.QuotePostRkey,
+			&i.ParentPostRkey,
+			&i.RootPostActorDid,
+			&i.RootPostRkey,
+			&i.Facets,
+			&i.Embed,
+			pq.Array(&i.Langs),
+			pq.Array(&i.Tags),
+			&i.SubjectID,
+			&i.HasEmbeddedMedia,
+			&i.CreatedAt,
+			&i.InsertedAt,
+			&i.NumLikes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const trimOldRecentPosts = `-- name: TrimOldRecentPosts :execrows
 DELETE FROM recent_posts
 WHERE created_at < NOW() - make_interval(hours := $1)

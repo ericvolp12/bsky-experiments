@@ -24,6 +24,16 @@ const (
 	maxPosts    = 3000
 )
 
+var topCacheKeys = map[int]string{
+	1:  "top-1h",
+	24: "top-24h",
+}
+
+var topCacheTTLs = map[int]time.Duration{
+	1:  1 * time.Minute,
+	24: 10 * time.Minute,
+}
+
 type HotFeed struct {
 	FeedActorDID string
 	Store        *store.Store
@@ -34,7 +44,7 @@ type NotFoundError struct {
 	error
 }
 
-var supportedFeeds = []string{"whats-hot", "wh-ja", "wh-ja-txt"}
+var supportedFeeds = []string{"whats-hot", "wh-ja", "wh-ja-txt", "top-1h", "top-24h"}
 
 var tracer = otel.Tracer("hot-feed")
 
@@ -52,9 +62,16 @@ func NewHotFeed(ctx context.Context, feedActorDID string, store *store.Store, re
 		Redis:        redis,
 	}
 
-	_, err := f.fetchAndCachePosts(ctx)
+	_, err := f.fetchAndCacheHotPosts(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error fetching and caching posts for feed (whats-hot): %w", err)
+	}
+
+	for hours := range topCacheKeys {
+		_, err := f.fetchAndCacheTopPosts(ctx, hours)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error fetching and caching posts for feed (top-%dh): %w", hours, err)
+		}
 	}
 
 	go func() {
@@ -66,7 +83,7 @@ func NewHotFeed(ctx context.Context, feedActorDID string, store *store.Store, re
 			case <-t.C:
 				ctx := context.Background()
 				logger.Info("refreshing cache")
-				_, err := f.fetchAndCachePosts(ctx)
+				_, err := f.fetchAndCacheHotPosts(ctx)
 				if err != nil {
 					logger.Error("error refreshing cache", "error", err)
 				}
@@ -75,10 +92,30 @@ func NewHotFeed(ctx context.Context, feedActorDID string, store *store.Store, re
 		}
 	}()
 
+	for hours, key := range topCacheKeys {
+		go func(hours int, key string) {
+			t := time.NewTicker(topCacheTTLs[hours])
+			logger := slog.With("source", fmt.Sprintf("top-%dh-refresh", hours))
+			defer t.Stop()
+			for {
+				select {
+				case <-t.C:
+					ctx := context.Background()
+					logger.Info("refreshing cache")
+					_, err := f.fetchAndCacheTopPosts(ctx, hours)
+					if err != nil {
+						logger.Error("error refreshing cache", "error", err)
+					}
+					logger.Info("cache refreshed")
+				}
+			}
+		}(hours, key)
+	}
+
 	return &f, supportedFeeds, nil
 }
 
-func (f *HotFeed) fetchAndCachePosts(ctx context.Context) ([]postRef, error) {
+func (f *HotFeed) fetchAndCacheHotPosts(ctx context.Context) ([]postRef, error) {
 	rawPosts, err := f.Store.Queries.GetHotPage(ctx, store_queries.GetHotPageParams{
 		Limit: int32(maxPosts),
 		Score: sql.NullFloat64{
@@ -118,6 +155,48 @@ func (f *HotFeed) fetchAndCachePosts(ctx context.Context) ([]postRef, error) {
 	return postRefs, nil
 }
 
+func (f *HotFeed) fetchAndCacheTopPosts(ctx context.Context, hours int) ([]postRef, error) {
+	rawPosts, err := f.Store.Queries.GetTopPostsInWindow(ctx, store_queries.GetTopPostsInWindowParams{
+		Hours: int32(hours),
+		Limit: int32(maxPosts),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	p := f.Redis.Pipeline()
+
+	key, ok := topCacheKeys[hours]
+	if !ok {
+		return nil, fmt.Errorf("no cache key for hours: %d", hours)
+	}
+
+	p.Del(ctx, key)
+
+	postRefs := []postRef{}
+	for _, post := range rawPosts {
+		postRef := postRef{
+			ActorDid: post.ActorDid,
+			Rkey:     post.Rkey,
+			Langs:    post.Langs,
+			HasMedia: post.HasEmbeddedMedia,
+		}
+		cacheValue, err := json.Marshal(postRef)
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling post: %w", err)
+		}
+		p.RPush(ctx, key, cacheValue)
+		postRefs = append(postRefs, postRef)
+	}
+
+	_, err = p.Exec(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error caching posts for feed (top-%dh): %w", hours, err)
+	}
+
+	return postRefs, nil
+}
+
 func (f *HotFeed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
 	ctx, span := tracer.Start(ctx, "GetPage")
 	defer span.End()
@@ -143,7 +222,20 @@ func (f *HotFeed) GetPage(ctx context.Context, feed string, userDID string, limi
 		textOnly = true
 	}
 
-	cached, err := f.Redis.LRange(ctx, hotCacheKey, offset, offset+(limit*10)).Result()
+	key := hotCacheKey
+	if strings.HasPrefix(feed, "top-") {
+		hours, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(feed, "top-"), "h"))
+		if err != nil {
+			return nil, nil, fmt.Errorf("error parsing hours from feed: %w", err)
+		}
+		var ok bool
+		key, ok = topCacheKeys[hours]
+		if !ok {
+			return nil, nil, fmt.Errorf("no cache key for hours: %d", hours)
+		}
+	}
+
+	cached, err := f.Redis.LRange(ctx, key, offset, offset+(limit*10)).Result()
 	if err != nil {
 		return nil, nil, fmt.Errorf("error getting posts from cache for feed (%s): %w", feed, err)
 	}

@@ -387,6 +387,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getTopPostsForActorStmt, err = db.PrepareContext(ctx, getTopPostsForActor); err != nil {
 		return nil, fmt.Errorf("error preparing query GetTopPostsForActor: %w", err)
 	}
+	if q.getTopPostsInWindowStmt, err = db.PrepareContext(ctx, getTopPostsInWindow); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTopPostsInWindow: %w", err)
+	}
 	if q.getTopUsersByPointsStmt, err = db.PrepareContext(ctx, getTopUsersByPoints); err != nil {
 		return nil, fmt.Errorf("error preparing query GetTopUsersByPoints: %w", err)
 	}
@@ -1066,6 +1069,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getTopPostsForActorStmt: %w", cerr)
 		}
 	}
+	if q.getTopPostsInWindowStmt != nil {
+		if cerr := q.getTopPostsInWindowStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTopPostsInWindowStmt: %w", cerr)
+		}
+	}
 	if q.getTopUsersByPointsStmt != nil {
 		if cerr := q.getTopUsersByPointsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getTopUsersByPointsStmt: %w", cerr)
@@ -1341,6 +1349,7 @@ type Queries struct {
 	getSubjectByIdStmt                        *sql.Stmt
 	getTopPostsStmt                           *sql.Stmt
 	getTopPostsForActorStmt                   *sql.Stmt
+	getTopPostsInWindowStmt                   *sql.Stmt
 	getTopUsersByPointsStmt                   *sql.Stmt
 	getTotalLikesGivenByActorStmt             *sql.Stmt
 	getTotalLikesReceivedByActorStmt          *sql.Stmt
@@ -1491,6 +1500,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getSubjectByIdStmt:                        q.getSubjectByIdStmt,
 		getTopPostsStmt:                           q.getTopPostsStmt,
 		getTopPostsForActorStmt:                   q.getTopPostsForActorStmt,
+		getTopPostsInWindowStmt:                   q.getTopPostsInWindowStmt,
 		getTopUsersByPointsStmt:                   q.getTopUsersByPointsStmt,
 		getTotalLikesGivenByActorStmt:             q.getTotalLikesGivenByActorStmt,
 		getTotalLikesReceivedByActorStmt:          q.getTotalLikesReceivedByActorStmt,
