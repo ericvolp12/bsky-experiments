@@ -193,13 +193,17 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 	return nil
 }
 
-type HourlyLikersResponse struct {
-	HourlyLikers int64 `json:"hourly_likers"`
+type HourlyStatsResponse struct {
+	HourlyLikers    int64 `json:"hourly_likers"`
+	HourlyPosters   int64 `json:"hourly_posters"`
+	HourlyReposters int64 `json:"hourly_reposters"`
+	HourlyBlockers  int64 `json:"hourly_blockers"`
+	HourlyFollowers int64 `json:"hourly_followers"`
 }
 
-func (api *API) GetHourlyLikers(c *gin.Context) {
+func (api *API) GetHourlyStats(c *gin.Context) {
 	ctx := c.Request.Context()
-	ctx, span := tracer.Start(ctx, "GetHourlyLikers")
+	ctx, span := tracer.Start(ctx, "GetHourlyStats")
 	defer span.End()
 
 	// Get the hourly likers count
@@ -212,38 +216,126 @@ func (api *API) GetHourlyLikers(c *gin.Context) {
 
 	hourlyLikers := int64(bm.GetCardinality())
 
-	c.JSON(http.StatusOK, HourlyLikersResponse{
-		HourlyLikers: hourlyLikers,
+	hourlyPostersBMKey := fmt.Sprintf("posts_hourly:%s", time.Now().Format("2006_01_02_15"))
+	bm, err = api.Bitmapper.GetBitmap(ctx, hourlyPostersBMKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get hourly posters count"})
+		return
+	}
+
+	hourlyPosters := int64(bm.GetCardinality())
+
+	hourlyRepostersBMKey := fmt.Sprintf("reposts_hourly:%s", time.Now().Format("2006_01_02_15"))
+	bm, err = api.Bitmapper.GetBitmap(ctx, hourlyRepostersBMKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get hourly reposters count"})
+		return
+	}
+
+	hourlyReposters := int64(bm.GetCardinality())
+
+	hourlyBlockersBMKey := fmt.Sprintf("blocks_hourly:%s", time.Now().Format("2006_01_02_15"))
+	bm, err = api.Bitmapper.GetBitmap(ctx, hourlyBlockersBMKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get hourly blockers count"})
+		return
+	}
+
+	hourlyBlockers := int64(bm.GetCardinality())
+
+	hourlyFollowersBMKey := fmt.Sprintf("follows_hourly:%s", time.Now().Format("2006_01_02_15"))
+	bm, err = api.Bitmapper.GetBitmap(ctx, hourlyFollowersBMKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get hourly followers count"})
+		return
+	}
+
+	hourlyFollowers := int64(bm.GetCardinality())
+
+	c.JSON(http.StatusOK, HourlyStatsResponse{
+		HourlyLikers:    hourlyLikers,
+		HourlyPosters:   hourlyPosters,
+		HourlyReposters: hourlyReposters,
+		HourlyBlockers:  hourlyBlockers,
+		HourlyFollowers: hourlyFollowers,
 	})
 }
 
-type MonthlyLikersResponse struct {
-	MonthlyLikers int64 `json:"monthly_likers"`
+type MonthlyStatsResponse struct {
+	MonthlyLikers    int64 `json:"monthly_likers"`
+	MonthlyPosters   int64 `json:"monthly_posters"`
+	MonthlyReposters int64 `json:"monthly_reposters"`
+	MonthlyBlockers  int64 `json:"monthly_blockers"`
+	MonthlyFollowers int64 `json:"monthly_followers"`
 }
 
-func (api *API) GetMonthlyLikers(c *gin.Context) {
+func (api *API) GetMonthlyStats(c *gin.Context) {
 	ctx := c.Request.Context()
-	ctx, span := tracer.Start(ctx, "GetMonthlyLikers")
+	ctx, span := tracer.Start(ctx, "GetMonthlyStats")
 	defer span.End()
 
 	// Generate keys for all hours in the last 30 days
 	monthlyLikeBMKeys := []string{}
+	monthlyPostBMKeys := []string{}
+	monthlyRepostBMKeys := []string{}
+	monthlyBlockBMKeys := []string{}
+	monthlyFollowsBMKeys := []string{}
 	for i := 0; i < 30; i++ {
 		for j := 0; j < 24; j++ {
 			monthlyLikeBMKeys = append(monthlyLikeBMKeys, fmt.Sprintf("likes_hourly:%s", time.Now().AddDate(0, 0, -i).Add(-time.Duration(j)*time.Hour).Format("2006_01_02_15")))
+			monthlyPostBMKeys = append(monthlyPostBMKeys, fmt.Sprintf("posts_hourly:%s", time.Now().AddDate(0, 0, -i).Add(-time.Duration(j)*time.Hour).Format("2006_01_02_15")))
+			monthlyRepostBMKeys = append(monthlyRepostBMKeys, fmt.Sprintf("reposts_hourly:%s", time.Now().AddDate(0, 0, -i).Add(-time.Duration(j)*time.Hour).Format("2006_01_02_15")))
+			monthlyBlockBMKeys = append(monthlyBlockBMKeys, fmt.Sprintf("blocks_hourly:%s", time.Now().AddDate(0, 0, -i).Add(-time.Duration(j)*time.Hour).Format("2006_01_02_15")))
+			monthlyFollowsBMKeys = append(monthlyFollowsBMKeys, fmt.Sprintf("follows_hourly:%s", time.Now().AddDate(0, 0, -i).Add(-time.Duration(j)*time.Hour).Format("2006_01_02_15")))
 		}
 	}
 
 	// Get the union of all the hourly likers bitmaps
-	bm, err := api.Bitmapper.GetUnion(ctx, monthlyLikeBMKeys)
+	likersBM, err := api.Bitmapper.GetUnion(ctx, monthlyLikeBMKeys)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get monthly likers count"})
 		return
 	}
 
-	monthlyLikers := int64(bm.GetCardinality())
+	// Get the union of all the hourly posters bitmaps
+	postsBM, err := api.Bitmapper.GetUnion(ctx, monthlyPostBMKeys)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get monthly posters count"})
+		return
+	}
 
-	c.JSON(http.StatusOK, MonthlyLikersResponse{
-		MonthlyLikers: monthlyLikers,
+	// Get the union of all the hourly reposters bitmaps
+	repostsBM, err := api.Bitmapper.GetUnion(ctx, monthlyRepostBMKeys)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get monthly reposters count"})
+		return
+	}
+
+	// Get the union of all the hourly blockers bitmaps
+	blocksBM, err := api.Bitmapper.GetUnion(ctx, monthlyBlockBMKeys)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get monthly blockers count"})
+		return
+	}
+
+	// Get the union of all the hourly followers bitmaps
+	followsBM, err := api.Bitmapper.GetUnion(ctx, monthlyFollowsBMKeys)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get monthly followers count"})
+		return
+	}
+
+	monthlyLikers := int64(likersBM.GetCardinality())
+	monthlyPosters := int64(postsBM.GetCardinality())
+	monthlyReposters := int64(repostsBM.GetCardinality())
+	monthlyBlockers := int64(blocksBM.GetCardinality())
+	monthlyFollowers := int64(followsBM.GetCardinality())
+
+	c.JSON(http.StatusOK, MonthlyStatsResponse{
+		MonthlyLikers:    monthlyLikers,
+		MonthlyPosters:   monthlyPosters,
+		MonthlyReposters: monthlyReposters,
+		MonthlyBlockers:  monthlyBlockers,
+		MonthlyFollowers: monthlyFollowers,
 	})
 }

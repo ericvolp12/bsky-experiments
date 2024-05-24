@@ -1136,6 +1136,14 @@ func (c *Consumer) HandleCreateRecord(
 				log.Errorf("failed to increment tag use counts: %+v", err)
 			}
 		}
+
+		// Track the user in the posters bitmap
+		hourlyPostBMKey := fmt.Sprintf("posts_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
+
+		err = c.bitmapper.AddMember(ctx, hourlyPostBMKey, repo)
+		if err != nil {
+			log.Errorf("failed to add member to posters bitmap: %+v", err)
+		}
 	case *bsky.FeedLike:
 		span.SetAttributes(attribute.String("record_type", "feed_like"))
 		recordsProcessedCounter.WithLabelValues("feed_like", c.SocketURL).Inc()
@@ -1250,6 +1258,13 @@ func (c *Consumer) HandleCreateRecord(
 			log.Errorf("failed to increment repost count: %+v", err)
 		}
 
+		// Track the user in the reposters bitmap
+		hourlyRepostBMKey := fmt.Sprintf("reposts_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
+
+		err = c.bitmapper.AddMember(ctx, hourlyRepostBMKey, repo)
+		if err != nil {
+			log.Errorf("failed to add member to reposters bitmap: %+v", err)
+		}
 	case *bsky.GraphBlock:
 		span.SetAttributes(attribute.String("record_type", "graph_block"))
 		recordsProcessedCounter.WithLabelValues("graph_block", c.SocketURL).Inc()
@@ -1277,6 +1292,14 @@ func (c *Consumer) HandleCreateRecord(
 		})
 		if err != nil {
 			log.Errorf("failed to create block: %+v", err)
+		}
+
+		// Track the user in the blockers bitmap
+		hourlyBlocksBMKey := fmt.Sprintf("blocks_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
+
+		err = c.bitmapper.AddMember(ctx, hourlyBlocksBMKey, repo)
+		if err != nil {
+			log.Errorf("failed to add member to blockers bitmap: %+v", err)
 		}
 	case *bsky.GraphFollow:
 		span.SetAttributes(attribute.String("record_type", "graph_follow"))
@@ -1328,6 +1351,14 @@ func (c *Consumer) HandleCreateRecord(
 			if err != nil {
 				log.Errorf("failed to propagate follow to GraphD: %+v", err)
 			}
+		}
+
+		// Track the user in the followers bitmap
+		hourlyFollowsBMKey := fmt.Sprintf("follows_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
+
+		err = c.bitmapper.AddMember(ctx, hourlyFollowsBMKey, repo)
+		if err != nil {
+			log.Errorf("failed to add member to followers bitmap: %+v", err)
 		}
 	case *bsky.ActorProfile:
 		span.SetAttributes(attribute.String("record_type", "actor_profile"))

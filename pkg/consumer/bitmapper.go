@@ -2,6 +2,8 @@ package consumer
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -73,8 +75,11 @@ func (bm *Bitmapper) loadBM(ctx context.Context, key string) error {
 	defer span.End()
 
 	bitmap, err := bm.Store.Queries.GetBitmapByID(ctx, key)
-	if err != nil {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("failed to get bitmap by ID: %w", err)
+	} else if errors.Is(err, sql.ErrNoRows) {
+		bm.ActiveBitmaps[key] = roaring.NewBitmap()
+		return nil
 	}
 
 	rbm := roaring.NewBitmap()
