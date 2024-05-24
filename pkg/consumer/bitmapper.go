@@ -2,9 +2,9 @@ package consumer
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
+	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
@@ -15,14 +15,103 @@ import (
 
 // Bitmapper is a service for tracking bitmaps
 type Bitmapper struct {
-	Store *store.Store
+	Store         *store.Store
+	ActiveBitmaps map[string]*roaring.Bitmap
+	lk            sync.RWMutex
+	shutdown      chan chan error
 }
 
 // NewBitmapper creates a new Bitmapper
 func NewBitmapper(store *store.Store) (*Bitmapper, error) {
-	return &Bitmapper{
-		Store: store,
-	}, nil
+	bm := &Bitmapper{
+		Store:         store,
+		ActiveBitmaps: make(map[string]*roaring.Bitmap),
+		shutdown:      make(chan chan error),
+	}
+
+	// Start a routine to save bitmaps every 30 seconds and clear the active bitmaps
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		for {
+			select {
+			case errCh := <-bm.shutdown:
+				bm.lk.Lock()
+				for key := range bm.ActiveBitmaps {
+					err := bm.saveBM(context.Background(), key)
+					if err != nil {
+						slog.Error("failed to save bitmap", "error", err)
+					}
+				}
+				bm.ActiveBitmaps = make(map[string]*roaring.Bitmap)
+				bm.lk.Unlock()
+				errCh <- nil
+			case <-ticker.C:
+				bm.lk.Lock()
+				for key := range bm.ActiveBitmaps {
+					err := bm.saveBM(context.Background(), key)
+					if err != nil {
+						slog.Error("failed to save bitmap", "error", err)
+					}
+				}
+				bm.ActiveBitmaps = make(map[string]*roaring.Bitmap)
+				bm.lk.Unlock()
+			}
+		}
+	}()
+
+	return bm, nil
+}
+
+func (bm *Bitmapper) Shutdown() error {
+	errCh := make(chan error)
+	bm.shutdown <- errCh
+	return <-errCh
+}
+
+func (bm *Bitmapper) loadBM(ctx context.Context, key string) error {
+	ctx, span := tracer.Start(ctx, "loadBM")
+	defer span.End()
+
+	bitmap, err := bm.Store.Queries.GetBitmapByID(ctx, key)
+	if err != nil {
+		return fmt.Errorf("failed to get bitmap by ID: %w", err)
+	}
+
+	rbm := roaring.NewBitmap()
+	_, err = rbm.FromBuffer(bitmap.Bitmap)
+	if err != nil {
+		return fmt.Errorf("failed to load bitmap from buffer: %w", err)
+	}
+
+	bm.ActiveBitmaps[key] = rbm
+
+	return nil
+}
+
+func (bm *Bitmapper) saveBM(ctx context.Context, key string) error {
+	ctx, span := tracer.Start(ctx, "saveBM")
+	defer span.End()
+
+	rbm, ok := bm.ActiveBitmaps[key]
+	if !ok {
+		return fmt.Errorf("bitmap not found")
+	}
+
+	bitmap, err := rbm.ToBytes()
+	if err != nil {
+		return fmt.Errorf("failed to convert bitmap to bytes: %w", err)
+	}
+
+	err = bm.Store.Queries.UpsertBitmap(ctx, store_queries.UpsertBitmapParams{
+		ID:        key,
+		Bitmap:    bitmap,
+		CreatedAt: time.Now(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to upsert bitmap: %w", err)
+	}
+
+	return nil
 }
 
 func (bm *Bitmapper) AddMember(ctx context.Context, key string, memberDID string) error {
@@ -35,47 +124,21 @@ func (bm *Bitmapper) AddMember(ctx context.Context, key string, memberDID string
 		return fmt.Errorf("failed to get actor by DID: %w", err)
 	}
 
-	// Load the bitmap in a transaction, add the member, and save the bitmap
-	tx, err := bm.Store.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
+	// Add the member to the bitmap
+	bm.lk.Lock()
+	defer bm.lk.Unlock()
 
-	qtx := bm.Store.Queries.WithTx(tx)
-	rbm := roaring.NewBitmap()
-	bitmap, err := qtx.GetBitmapByID(ctx, key)
-	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("failed to get bitmap by ID: %w", err)
-		}
-	} else {
-		_, err = rbm.FromBuffer(bitmap.Bitmap)
+	rbm, ok := bm.ActiveBitmaps[key]
+	if !ok {
+		err := bm.loadBM(ctx, key)
 		if err != nil {
-			return fmt.Errorf("failed to load bitmap from buffer: %w", err)
+			return fmt.Errorf("failed to load bitmap: %w", err)
 		}
+		rbm = bm.ActiveBitmaps[key]
 	}
 
 	if actor.ID.Valid {
 		rbm.Add(uint32(actor.ID.Int64))
-	}
-
-	newBitmap, err := rbm.ToBytes()
-	if err != nil {
-		return fmt.Errorf("failed to convert bitmap to bytes: %w", err)
-	}
-
-	err = qtx.UpsertBitmap(ctx, store_queries.UpsertBitmapParams{
-		ID:        key,
-		Bitmap:    newBitmap,
-		CreatedAt: time.Now(),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to upsert bitmap: %w", err)
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil
@@ -91,47 +154,21 @@ func (bm *Bitmapper) RemoveMember(ctx context.Context, key string, memberDID str
 		return fmt.Errorf("failed to get actor by DID: %w", err)
 	}
 
-	// Load the bitmap in a transaction, remove the member, and save the bitmap
-	tx, err := bm.Store.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
-	}
+	// Remove the member from the bitmap
+	bm.lk.Lock()
+	defer bm.lk.Unlock()
 
-	qtx := bm.Store.Queries.WithTx(tx)
-	rbm := roaring.NewBitmap()
-	bitmap, err := qtx.GetBitmapByID(ctx, key)
-	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("failed to get bitmap by ID: %w", err)
-		}
-	} else {
-		_, err = rbm.FromBuffer(bitmap.Bitmap)
+	rbm, ok := bm.ActiveBitmaps[key]
+	if !ok {
+		err := bm.loadBM(ctx, key)
 		if err != nil {
-			return fmt.Errorf("failed to load bitmap from buffer: %w", err)
+			return fmt.Errorf("failed to load bitmap: %w", err)
 		}
+		rbm = bm.ActiveBitmaps[key]
 	}
 
 	if actor.ID.Valid {
 		rbm.Remove(uint32(actor.ID.Int64))
-	}
-
-	newBitmap, err := rbm.ToBytes()
-	if err != nil {
-		return fmt.Errorf("failed to convert bitmap to bytes: %w", err)
-	}
-
-	err = qtx.UpsertBitmap(ctx, store_queries.UpsertBitmapParams{
-		ID:        key,
-		Bitmap:    newBitmap,
-		CreatedAt: time.Now(),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to upsert bitmap: %w", err)
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil
@@ -245,7 +282,7 @@ func (bm *Bitmapper) GetUnion(ctx context.Context, keys []string) (*roaring.Bitm
 	}
 
 	// Calculate the union
-	unionBM := roaring.FastAnd(bitmaps...)
+	unionBM := roaring.FastOr(bitmaps...)
 
 	return unionBM, nil
 }

@@ -418,6 +418,12 @@ func Consumer(cctx *cli.Context) error {
 	<-metricsShutdown
 	<-recentPostTrimmerShutdown
 	<-dailyStatsUpdaterShutdown
+
+	err = c.Shutdown()
+	if err != nil {
+		log.Errorf("failed to shut down consumer: %+v", err)
+	}
+
 	log.Info("shut down successfully")
 
 	return nil

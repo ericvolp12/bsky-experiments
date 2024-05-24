@@ -89,6 +89,10 @@ type Delete struct {
 
 var tracer = otel.Tracer("consumer")
 
+func (c *Consumer) Shutdown() error {
+	return c.bitmapper.Shutdown()
+}
+
 // WriteCursor writes the cursor to redis
 func (c *Consumer) WriteCursor(ctx context.Context) error {
 	ctx, span := tracer.Start(ctx, "WriteCursor")
