@@ -11,11 +11,13 @@ CREATE TABLE actors (
     created_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ,
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    id BIGSERIAL,
     PRIMARY KEY (did)
 );
 CREATE INDEX actors_created_at ON actors (created_at DESC);
 CREATE INDEX actors_handle ON actors (handle);
 CREATE INDEX actors_handle_trgm ON actors USING gin(handle gin_trgm_ops);
+CREATE INDEX actors_id_idx ON actors (id);
 CREATE INDEX actors_no_pro_pic ON actors (pro_pic_cid)
 WHERE pro_pic_cid IS NULL;
 -- Posts
@@ -302,3 +304,28 @@ CREATE TABLE daily_summary (
     "Daily Active Blockers" BIGINT NOT NULL
 );
 CREATE INDEX daily_summary_date ON daily_summary (date);
+-- Monthly Stats View
+CREATE TABLE monthly_summary (
+    date date PRIMARY KEY,
+    "Likes per Month" BIGINT NOT NULL,
+    "Monthly Active Likers" BIGINT NOT NULL,
+    "Monthly Active Posters" BIGINT NOT NULL,
+    "Posts per Month" BIGINT NOT NULL,
+    "Posts with Images per Month" BIGINT NOT NULL,
+    "Images per Month" BIGINT NOT NULL,
+    "Images with Alt Text per Month" BIGINT NOT NULL,
+    "First Time Posters" BIGINT NOT NULL,
+    "Follows per Month" BIGINT NOT NULL,
+    "Monthly Active Followers" BIGINT NOT NULL,
+    "Blocks per Month" BIGINT NOT NULL,
+    "Monthly Active Blockers" BIGINT NOT NULL
+);
+CREATE INDEX monthly_summary_date ON monthly_summary (date);
+-- Stats Roaring Bitmaps
+CREATE TABLE stats_bitmaps (
+    id TEXT PRIMARY KEY,
+    bitmap BYTEA,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE INDEX stats_bitmaps_updated_at ON stats_bitmaps (updated_at DESC);

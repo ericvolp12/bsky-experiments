@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bluesky-social/indigo/atproto/identity"
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/clusters"
@@ -38,6 +39,8 @@ type API struct {
 
 	CheckoutLimiter *rate.Limiter
 	MagicHeaderVal  string
+
+	Bitmapper *consumer.Bitmapper
 }
 
 var tracer = otel.Tracer("search-api")
@@ -71,6 +74,11 @@ func NewAPI(
 
 	dir := identity.DefaultDirectory()
 
+	bitmapper, err := consumer.NewBitmapper(store)
+	if err != nil {
+		return nil, fmt.Errorf("error initializing bitmapper: %w", err)
+	}
+
 	return &API{
 		PostRegistry:       postRegistry,
 		UserCount:          userCount,
@@ -86,5 +94,6 @@ func NewAPI(
 		StatsCacheTTL:      statsCacheTTL,
 		StatsCacheRWMux:    &sync.RWMutex{},
 		CheckoutLimiter:    rate.NewLimiter(rate.Every(2*time.Second), 1),
+		Bitmapper:          bitmapper,
 	}, nil
 }

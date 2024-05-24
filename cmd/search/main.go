@@ -232,6 +232,9 @@ func main() {
 	router.DELETE("/repo/cleanup", api.CancelCleanupJob)
 	router.GET("/repo/cleanup/stats", api.GetCleanupStats)
 
+	// Bitmappy stuff
+	router.GET("/stats/hourlyLikers", api.GetHourlyLikers)
+
 	go api.RunCleanupDaemon(ctx)
 
 	port := os.Getenv("PORT")

@@ -192,3 +192,27 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 
 	return nil
 }
+
+type HourlyLikersResponse struct {
+	HourlyLikers int64 `json:"hourly_likers"`
+}
+
+func (api *API) GetHourlyLikers(c *gin.Context) {
+	ctx := c.Request.Context()
+	ctx, span := tracer.Start(ctx, "GetHourlyLikers")
+	defer span.End()
+
+	// Get the hourly likers count
+	hourlyLikeBMKey := fmt.Sprintf("likes_hourly:%s", time.Now().Format("2006_01_02_15"))
+	bm, err := api.Bitmapper.GetBitmap(ctx, hourlyLikeBMKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get hourly likers count"})
+		return
+	}
+
+	hourlyLikers := int64(bm.GetCardinality())
+
+	c.JSON(http.StatusOK, HourlyLikersResponse{
+		HourlyLikers: hourlyLikers,
+	})
+}

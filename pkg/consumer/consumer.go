@@ -58,7 +58,8 @@ type Consumer struct {
 	graphdClient *graphdclient.Client
 	shardDB      *sharddb.ShardDB
 
-	tags *TagTracker
+	tags      *TagTracker
+	bitmapper *Bitmapper
 }
 
 // Progress is the cursor for the consumer
@@ -198,6 +199,14 @@ func NewConsumer(
 	}
 
 	c.tags = tagTracker
+
+	// Create a Bitmapper
+	bitmapper, err := NewBitmapper(store)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create bitmapper: %+v", err)
+	}
+
+	c.bitmapper = bitmapper
 
 	// Check to see if the cursor exists in redis
 	err = c.ReadCursor(context.Background())
@@ -1175,6 +1184,14 @@ func (c *Consumer) HandleCreateRecord(
 		})
 		if err != nil {
 			log.Errorf("failed to increment like count: %+v", err)
+		}
+
+		// Track the user in the likers bitmap
+		hourlyLikeBMKey := fmt.Sprintf("likes_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
+
+		err = c.bitmapper.AddMember(ctx, hourlyLikeBMKey, repo)
+		if err != nil {
+			log.Errorf("failed to add member to likers bitmap: %+v", err)
 		}
 	case *bsky.FeedRepost:
 		span.SetAttributes(attribute.String("record_type", "feed_repost"))

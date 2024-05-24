@@ -106,3 +106,11 @@ WHERE did = ANY(sqlc.arg('dids')::text []);
 SELECT actor_did
 FROM following_counts fc
 WHERE fc.num_following > 4000;
+-- name: GetActorByID :one
+SELECT *
+FROM actors
+WHERE id = $1;
+-- name: GetActorsByIDs :many
+SELECT *
+FROM actors
+WHERE id = ANY($1);

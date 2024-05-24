@@ -8,7 +8,6 @@ WITH stats AS (
             posts_with_images_per_day.date,
             images_per_day.date,
             images_with_alt_text_per_day.date,
-            first_time_posters.date,
             follows_per_day.date,
             daily_active_followers.date,
             blocks_per_day.date,
@@ -27,7 +26,6 @@ WITH stats AS (
             images_with_alt_text_per_day.images_with_alt_text_per_day,
             0
         ) AS images_with_alt_text_per_day,
-        COALESCE(first_time_posters.first_time_posters, 0) AS first_time_posters,
         COALESCE(follows_per_day.follows_per_day, 0) AS follows_per_day,
         COALESCE(daily_active_followers.daily_active_followers, 0) AS daily_active_followers,
         COALESCE(blocks_per_day.blocks_per_day, 0) AS blocks_per_day,
@@ -154,33 +152,6 @@ WITH stats AS (
             images_per_day.date
         ) = images_with_alt_text_per_day.date
         FULL OUTER JOIN (
-            SELECT date_trunc('day', p.first_post_time) AS date,
-                COUNT(*) AS first_time_posters
-            FROM (
-                    SELECT actor_did,
-                        MIN(created_at) AS first_post_time
-                    FROM posts
-                    WHERE created_at > date_trunc(
-                            'day',
-                            NOW() + make_interval(days := sqlc.arg('start_today_offset'))
-                        )
-                        AND created_at < date_trunc(
-                            'day',
-                            NOW() + make_interval(days := sqlc.arg('end_today_offset'))
-                        )
-                    GROUP BY actor_did
-                ) p
-            GROUP BY 1
-        ) AS first_time_posters ON COALESCE(
-            likes_per_day.date,
-            daily_active_likers.date,
-            daily_active_posters.date,
-            posts_per_day.date,
-            posts_with_images_per_day.date,
-            images_per_day.date,
-            images_with_alt_text_per_day.date
-        ) = first_time_posters.date
-        FULL OUTER JOIN (
             SELECT date_trunc('day', created_at) AS date,
                 COUNT(*) AS follows_per_day
             FROM follows
@@ -200,8 +171,7 @@ WITH stats AS (
             posts_per_day.date,
             posts_with_images_per_day.date,
             images_per_day.date,
-            images_with_alt_text_per_day.date,
-            first_time_posters.date
+            images_with_alt_text_per_day.date
         ) = follows_per_day.date
         FULL OUTER JOIN (
             SELECT date_trunc('day', created_at) AS date,
@@ -224,7 +194,6 @@ WITH stats AS (
             posts_with_images_per_day.date,
             images_per_day.date,
             images_with_alt_text_per_day.date,
-            first_time_posters.date,
             follows_per_day.date
         ) = daily_active_followers.date
         FULL OUTER JOIN (
@@ -248,7 +217,6 @@ WITH stats AS (
             posts_with_images_per_day.date,
             images_per_day.date,
             images_with_alt_text_per_day.date,
-            first_time_posters.date,
             follows_per_day.date,
             daily_active_followers.date
         ) = blocks_per_day.date
@@ -273,7 +241,6 @@ WITH stats AS (
             posts_with_images_per_day.date,
             images_per_day.date,
             images_with_alt_text_per_day.date,
-            first_time_posters.date,
             follows_per_day.date,
             daily_active_followers.date,
             blocks_per_day.date
@@ -302,7 +269,7 @@ SELECT date,
     posts_with_images_per_day,
     images_per_day,
     images_with_alt_text_per_day,
-    first_time_posters,
+    0,
     follows_per_day,
     daily_active_followers,
     blocks_per_day,

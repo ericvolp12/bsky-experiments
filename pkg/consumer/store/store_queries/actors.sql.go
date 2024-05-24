@@ -13,7 +13,7 @@ import (
 )
 
 const findActorsByHandle = `-- name: FindActorsByHandle :many
-SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at
+SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at, id
 FROM actors
 WHERE handle ILIKE concat('%', $1, '%')
 `
@@ -39,6 +39,7 @@ func (q *Queries) FindActorsByHandle(ctx context.Context, concat interface{}) ([
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.InsertedAt,
+			&i.ID,
 		); err != nil {
 			return nil, err
 		}
@@ -54,7 +55,7 @@ func (q *Queries) FindActorsByHandle(ctx context.Context, concat interface{}) ([
 }
 
 const getActorByDID = `-- name: GetActorByDID :one
-SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at
+SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at, id
 FROM actors
 WHERE did = $1
 `
@@ -74,12 +75,13 @@ func (q *Queries) GetActorByDID(ctx context.Context, did string) (Actor, error) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.InsertedAt,
+		&i.ID,
 	)
 	return i, err
 }
 
 const getActorByHandle = `-- name: GetActorByHandle :one
-SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at
+SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at, id
 FROM actors
 WHERE handle = $1
 `
@@ -99,6 +101,33 @@ func (q *Queries) GetActorByHandle(ctx context.Context, handle string) (Actor, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.InsertedAt,
+		&i.ID,
+	)
+	return i, err
+}
+
+const getActorByID = `-- name: GetActorByID :one
+SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at, id
+FROM actors
+WHERE id = $1
+`
+
+func (q *Queries) GetActorByID(ctx context.Context, id sql.NullInt64) (Actor, error) {
+	row := q.queryRow(ctx, q.getActorByIDStmt, getActorByID, id)
+	var i Actor
+	err := row.Scan(
+		&i.Did,
+		&i.Handle,
+		&i.DisplayName,
+		&i.Bio,
+		&i.HandleValid,
+		&i.LastValidated,
+		&i.ProPicCid,
+		&i.BannerCid,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.InsertedAt,
+		&i.ID,
 	)
 	return i, err
 }
@@ -185,8 +214,50 @@ func (q *Queries) GetActorTypeAhead(ctx context.Context, arg GetActorTypeAheadPa
 	return items, nil
 }
 
+const getActorsByIDs = `-- name: GetActorsByIDs :many
+SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at, id
+FROM actors
+WHERE id = ANY($1)
+`
+
+func (q *Queries) GetActorsByIDs(ctx context.Context, id sql.NullInt64) ([]Actor, error) {
+	rows, err := q.query(ctx, q.getActorsByIDsStmt, getActorsByIDs, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Actor
+	for rows.Next() {
+		var i Actor
+		if err := rows.Scan(
+			&i.Did,
+			&i.Handle,
+			&i.DisplayName,
+			&i.Bio,
+			&i.HandleValid,
+			&i.LastValidated,
+			&i.ProPicCid,
+			&i.BannerCid,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.InsertedAt,
+			&i.ID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getActorsForValidation = `-- name: GetActorsForValidation :many
-SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at
+SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at, id
 from actors
 WHERE last_validated is NULL
     OR last_validated < $1
@@ -220,6 +291,7 @@ func (q *Queries) GetActorsForValidation(ctx context.Context, arg GetActorsForVa
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.InsertedAt,
+			&i.ID,
 		); err != nil {
 			return nil, err
 		}
@@ -235,7 +307,7 @@ func (q *Queries) GetActorsForValidation(ctx context.Context, arg GetActorsForVa
 }
 
 const getActorsWithoutPropic = `-- name: GetActorsWithoutPropic :many
-SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at
+SELECT did, handle, display_name, bio, handle_valid, last_validated, pro_pic_cid, banner_cid, created_at, updated_at, inserted_at, id
 FROM actors
 WHERE pro_pic_cid IS NULL
 LIMIT $1
@@ -262,6 +334,7 @@ func (q *Queries) GetActorsWithoutPropic(ctx context.Context, limit int32) ([]Ac
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.InsertedAt,
+			&i.ID,
 		); err != nil {
 			return nil, err
 		}

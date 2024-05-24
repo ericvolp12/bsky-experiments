@@ -24,6 +24,7 @@ type Actor struct {
 	CreatedAt     sql.NullTime   `json:"created_at"`
 	UpdatedAt     sql.NullTime   `json:"updated_at"`
 	InsertedAt    time.Time      `json:"inserted_at"`
+	ID            sql.NullInt64  `json:"id"`
 }
 
 type ApiKey struct {
@@ -135,6 +136,22 @@ type LikeCount struct {
 	SubjectCreatedAt sql.NullTime `json:"subject_created_at"`
 }
 
+type MonthlySummary struct {
+	Date                      time.Time `json:"date"`
+	LikesPerMonth             int64     `json:"Likes per Month"`
+	MonthlyActiveLikers       int64     `json:"Monthly Active Likers"`
+	MonthlyActivePosters      int64     `json:"Monthly Active Posters"`
+	PostsPerMonth             int64     `json:"Posts per Month"`
+	PostsWithImagesPerMonth   int64     `json:"Posts with Images per Month"`
+	ImagesPerMonth            int64     `json:"Images per Month"`
+	ImagesWithAltTextPerMonth int64     `json:"Images with Alt Text per Month"`
+	FirstTimePosters          int64     `json:"First Time Posters"`
+	FollowsPerMonth           int64     `json:"Follows per Month"`
+	MonthlyActiveFollowers    int64     `json:"Monthly Active Followers"`
+	BlocksPerMonth            int64     `json:"Blocks per Month"`
+	MonthlyActiveBlockers     int64     `json:"Monthly Active Blockers"`
+}
+
 type PointAssignment struct {
 	ID        int64     `json:"id"`
 	EventID   int64     `json:"event_id"`
@@ -240,6 +257,13 @@ type RepostCount struct {
 	SubjectID  int64     `json:"subject_id"`
 	NumReposts int64     `json:"num_reposts"`
 	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type StatsBitmap struct {
+	ID        string    `json:"id"`
+	Bitmap    []byte    `json:"bitmap"`
+	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Subject struct {

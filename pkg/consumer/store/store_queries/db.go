@@ -186,14 +186,23 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getActorByHandleStmt, err = db.PrepareContext(ctx, getActorByHandle); err != nil {
 		return nil, fmt.Errorf("error preparing query GetActorByHandle: %w", err)
 	}
+	if q.getActorByIDStmt, err = db.PrepareContext(ctx, getActorByID); err != nil {
+		return nil, fmt.Errorf("error preparing query GetActorByID: %w", err)
+	}
 	if q.getActorTypeAheadStmt, err = db.PrepareContext(ctx, getActorTypeAhead); err != nil {
 		return nil, fmt.Errorf("error preparing query GetActorTypeAhead: %w", err)
+	}
+	if q.getActorsByIDsStmt, err = db.PrepareContext(ctx, getActorsByIDs); err != nil {
+		return nil, fmt.Errorf("error preparing query GetActorsByIDs: %w", err)
 	}
 	if q.getActorsForValidationStmt, err = db.PrepareContext(ctx, getActorsForValidation); err != nil {
 		return nil, fmt.Errorf("error preparing query GetActorsForValidation: %w", err)
 	}
 	if q.getActorsWithoutPropicStmt, err = db.PrepareContext(ctx, getActorsWithoutPropic); err != nil {
 		return nil, fmt.Errorf("error preparing query GetActorsWithoutPropic: %w", err)
+	}
+	if q.getBitmapByIDStmt, err = db.PrepareContext(ctx, getBitmapByID); err != nil {
+		return nil, fmt.Errorf("error preparing query GetBitmapByID: %w", err)
 	}
 	if q.getBlockStmt, err = db.PrepareContext(ctx, getBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query GetBlock: %w", err)
@@ -455,6 +464,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.upsertActorFromFirehoseStmt, err = db.PrepareContext(ctx, upsertActorFromFirehose); err != nil {
 		return nil, fmt.Errorf("error preparing query UpsertActorFromFirehose: %w", err)
+	}
+	if q.upsertBitmapStmt, err = db.PrepareContext(ctx, upsertBitmap); err != nil {
+		return nil, fmt.Errorf("error preparing query UpsertBitmap: %w", err)
 	}
 	if q.upsertRepoCleanupJobStmt, err = db.PrepareContext(ctx, upsertRepoCleanupJob); err != nil {
 		return nil, fmt.Errorf("error preparing query UpsertRepoCleanupJob: %w", err)
@@ -734,9 +746,19 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getActorByHandleStmt: %w", cerr)
 		}
 	}
+	if q.getActorByIDStmt != nil {
+		if cerr := q.getActorByIDStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getActorByIDStmt: %w", cerr)
+		}
+	}
 	if q.getActorTypeAheadStmt != nil {
 		if cerr := q.getActorTypeAheadStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getActorTypeAheadStmt: %w", cerr)
+		}
+	}
+	if q.getActorsByIDsStmt != nil {
+		if cerr := q.getActorsByIDsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getActorsByIDsStmt: %w", cerr)
 		}
 	}
 	if q.getActorsForValidationStmt != nil {
@@ -747,6 +769,11 @@ func (q *Queries) Close() error {
 	if q.getActorsWithoutPropicStmt != nil {
 		if cerr := q.getActorsWithoutPropicStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getActorsWithoutPropicStmt: %w", cerr)
+		}
+	}
+	if q.getBitmapByIDStmt != nil {
+		if cerr := q.getBitmapByIDStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getBitmapByIDStmt: %w", cerr)
 		}
 	}
 	if q.getBlockStmt != nil {
@@ -1184,6 +1211,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing upsertActorFromFirehoseStmt: %w", cerr)
 		}
 	}
+	if q.upsertBitmapStmt != nil {
+		if cerr := q.upsertBitmapStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing upsertBitmapStmt: %w", cerr)
+		}
+	}
 	if q.upsertRepoCleanupJobStmt != nil {
 		if cerr := q.upsertRepoCleanupJobStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing upsertRepoCleanupJobStmt: %w", cerr)
@@ -1282,9 +1314,12 @@ type Queries struct {
 	getActiveEventsForTargetStmt              *sql.Stmt
 	getActorByDIDStmt                         *sql.Stmt
 	getActorByHandleStmt                      *sql.Stmt
+	getActorByIDStmt                          *sql.Stmt
 	getActorTypeAheadStmt                     *sql.Stmt
+	getActorsByIDsStmt                        *sql.Stmt
 	getActorsForValidationStmt                *sql.Stmt
 	getActorsWithoutPropicStmt                *sql.Stmt
+	getBitmapByIDStmt                         *sql.Stmt
 	getBlockStmt                              *sql.Stmt
 	getBlocksByActorStmt                      *sql.Stmt
 	getBlocksByActorAndTargetStmt             *sql.Stmt
@@ -1372,6 +1407,7 @@ type Queries struct {
 	updateRepoBackfillRecordStmt              *sql.Stmt
 	upsertActorStmt                           *sql.Stmt
 	upsertActorFromFirehoseStmt               *sql.Stmt
+	upsertBitmapStmt                          *sql.Stmt
 	upsertRepoCleanupJobStmt                  *sql.Stmt
 }
 
@@ -1433,9 +1469,12 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getActiveEventsForTargetStmt:              q.getActiveEventsForTargetStmt,
 		getActorByDIDStmt:                         q.getActorByDIDStmt,
 		getActorByHandleStmt:                      q.getActorByHandleStmt,
+		getActorByIDStmt:                          q.getActorByIDStmt,
 		getActorTypeAheadStmt:                     q.getActorTypeAheadStmt,
+		getActorsByIDsStmt:                        q.getActorsByIDsStmt,
 		getActorsForValidationStmt:                q.getActorsForValidationStmt,
 		getActorsWithoutPropicStmt:                q.getActorsWithoutPropicStmt,
+		getBitmapByIDStmt:                         q.getBitmapByIDStmt,
 		getBlockStmt:                              q.getBlockStmt,
 		getBlocksByActorStmt:                      q.getBlocksByActorStmt,
 		getBlocksByActorAndTargetStmt:             q.getBlocksByActorAndTargetStmt,
@@ -1523,6 +1562,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		updateRepoBackfillRecordStmt:              q.updateRepoBackfillRecordStmt,
 		upsertActorStmt:                           q.upsertActorStmt,
 		upsertActorFromFirehoseStmt:               q.upsertActorFromFirehoseStmt,
+		upsertBitmapStmt:                          q.upsertBitmapStmt,
 		upsertRepoCleanupJobStmt:                  q.upsertRepoCleanupJobStmt,
 	}
 }
