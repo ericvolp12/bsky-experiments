@@ -216,3 +216,34 @@ func (api *API) GetHourlyLikers(c *gin.Context) {
 		HourlyLikers: hourlyLikers,
 	})
 }
+
+type MonthlyLikersResponse struct {
+	MonthlyLikers int64 `json:"monthly_likers"`
+}
+
+func (api *API) GetMonthlyLikers(c *gin.Context) {
+	ctx := c.Request.Context()
+	ctx, span := tracer.Start(ctx, "GetMonthlyLikers")
+	defer span.End()
+
+	// Generate keys for all hours in the last 30 days
+	monthlyLikeBMKeys := []string{}
+	for i := 0; i < 30; i++ {
+		for j := 0; j < 24; j++ {
+			monthlyLikeBMKeys = append(monthlyLikeBMKeys, fmt.Sprintf("likes_hourly:%s", time.Now().AddDate(0, 0, -i).Add(-time.Duration(j)*time.Hour).Format("2006_01_02_15")))
+		}
+	}
+
+	// Get the union of all the hourly likers bitmaps
+	bm, err := api.Bitmapper.GetUnion(ctx, monthlyLikeBMKeys)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get monthly likers count"})
+		return
+	}
+
+	monthlyLikers := int64(bm.GetCardinality())
+
+	c.JSON(http.StatusOK, MonthlyLikersResponse{
+		MonthlyLikers: monthlyLikers,
+	})
+}

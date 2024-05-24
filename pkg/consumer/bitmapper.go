@@ -172,7 +172,7 @@ func (bm *Bitmapper) GetIntersection(ctx context.Context, keys []string) (*roari
 	ctx, span := tracer.Start(ctx, "GetIntersection")
 	defer span.End()
 
-	bitmaps := make([]*roaring.Bitmap, len(keys))
+	foundBitmaps := make([]*roaring.Bitmap, len(keys))
 
 	// Fetch all bitmaps in parallel
 	sem := semaphore.NewWeighted(10)
@@ -186,7 +186,7 @@ func (bm *Bitmapper) GetIntersection(ctx context.Context, keys []string) (*roari
 			if err != nil {
 				return
 			}
-			bitmaps[j] = rbm
+			foundBitmaps[j] = rbm
 		}(i, key)
 	}
 
@@ -194,10 +194,12 @@ func (bm *Bitmapper) GetIntersection(ctx context.Context, keys []string) (*roari
 		return nil, fmt.Errorf("failed to acquire semaphore: %w", err)
 	}
 
-	// Check if any bitmaps failed to load
-	for i, rbm := range bitmaps {
-		if rbm == nil {
-			return nil, fmt.Errorf("failed to load bitmap for key %s", keys[i])
+	bitmaps := []*roaring.Bitmap{}
+
+	// Skip any nil bitmaps
+	for _, rbm := range foundBitmaps {
+		if rbm != nil {
+			bitmaps = append(bitmaps, rbm)
 		}
 	}
 
@@ -211,7 +213,7 @@ func (bm *Bitmapper) GetUnion(ctx context.Context, keys []string) (*roaring.Bitm
 	ctx, span := tracer.Start(ctx, "GetUnion")
 	defer span.End()
 
-	bitmaps := make([]*roaring.Bitmap, len(keys))
+	foundBitmaps := make([]*roaring.Bitmap, len(keys))
 
 	// Fetch all bitmaps in parallel
 	sem := semaphore.NewWeighted(10)
@@ -225,7 +227,7 @@ func (bm *Bitmapper) GetUnion(ctx context.Context, keys []string) (*roaring.Bitm
 			if err != nil {
 				return
 			}
-			bitmaps[j] = rbm
+			foundBitmaps[j] = rbm
 		}(i, key)
 	}
 
@@ -233,15 +235,17 @@ func (bm *Bitmapper) GetUnion(ctx context.Context, keys []string) (*roaring.Bitm
 		return nil, fmt.Errorf("failed to acquire semaphore: %w", err)
 	}
 
-	// Check if any bitmaps failed to load
-	for i, rbm := range bitmaps {
-		if rbm == nil {
-			return nil, fmt.Errorf("failed to load bitmap for key %s", keys[i])
+	bitmaps := []*roaring.Bitmap{}
+
+	// Skip any nil bitmaps
+	for _, rbm := range foundBitmaps {
+		if rbm != nil {
+			bitmaps = append(bitmaps, rbm)
 		}
 	}
 
 	// Calculate the union
-	unionBM := roaring.FastOr(bitmaps...)
+	unionBM := roaring.FastAnd(bitmaps...)
 
 	return unionBM, nil
 }
