@@ -12,6 +12,7 @@ import (
 	"github.com/RoaringBitmap/roaring"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
+	lru "github.com/hashicorp/golang-lru/arc/v2"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -21,14 +22,22 @@ type Bitmapper struct {
 	ActiveBitmaps map[string]*roaring.Bitmap
 	lk            sync.RWMutex
 	shutdown      chan chan error
+
+	didCache *lru.ARCCache[string, uint32]
 }
 
 // NewBitmapper creates a new Bitmapper
 func NewBitmapper(store *store.Store) (*Bitmapper, error) {
+	didCache, err := lru.NewARC[string, uint32](500_000)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DID cache: %w", err)
+	}
+
 	bm := &Bitmapper{
 		Store:         store,
 		ActiveBitmaps: make(map[string]*roaring.Bitmap),
 		shutdown:      make(chan chan error),
+		didCache:      didCache,
 	}
 
 	// Start a routine to save bitmaps every 30 seconds and clear the active bitmaps
@@ -123,10 +132,18 @@ func (bm *Bitmapper) AddMember(ctx context.Context, key string, memberDID string
 	ctx, span := tracer.Start(ctx, "AddMember")
 	defer span.End()
 
-	// Get the actor by DID
-	actor, err := bm.Store.Queries.GetActorByDID(ctx, memberDID)
-	if err != nil {
-		return fmt.Errorf("failed to get actor by DID: %w", err)
+	// Get the actorID by DID
+	actorID, ok := bm.didCache.Get(memberDID)
+	if !ok {
+		actor, err := bm.Store.Queries.GetActorByDID(ctx, memberDID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			return fmt.Errorf("failed to get actor by DID: %w", err)
+		}
+		actorID = uint32(actor.ID.Int64)
+		bm.didCache.Add(memberDID, actorID)
 	}
 
 	// Add the member to the bitmap
@@ -142,8 +159,8 @@ func (bm *Bitmapper) AddMember(ctx context.Context, key string, memberDID string
 		rbm = bm.ActiveBitmaps[key]
 	}
 
-	if actor.ID.Valid {
-		rbm.Add(uint32(actor.ID.Int64))
+	if actorID > 0 {
+		rbm.Add(actorID)
 	}
 
 	return nil
@@ -153,10 +170,18 @@ func (bm *Bitmapper) RemoveMember(ctx context.Context, key string, memberDID str
 	ctx, span := tracer.Start(ctx, "RemoveMember")
 	defer span.End()
 
-	// Get the actor by DID
-	actor, err := bm.Store.Queries.GetActorByDID(ctx, memberDID)
-	if err != nil {
-		return fmt.Errorf("failed to get actor by DID: %w", err)
+	// Get the actorID by DID
+	actorID, ok := bm.didCache.Get(memberDID)
+	if !ok {
+		actor, err := bm.Store.Queries.GetActorByDID(ctx, memberDID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			return fmt.Errorf("failed to get actor by DID: %w", err)
+		}
+		actorID = uint32(actor.ID.Int64)
+		bm.didCache.Add(memberDID, actorID)
 	}
 
 	// Remove the member from the bitmap
@@ -172,8 +197,8 @@ func (bm *Bitmapper) RemoveMember(ctx context.Context, key string, memberDID str
 		rbm = bm.ActiveBitmaps[key]
 	}
 
-	if actor.ID.Valid {
-		rbm.Remove(uint32(actor.ID.Int64))
+	if actorID > 0 {
+		rbm.Remove(actorID)
 	}
 
 	return nil
@@ -183,15 +208,16 @@ func (bm *Bitmapper) GetBitmap(ctx context.Context, key string) (*roaring.Bitmap
 	ctx, span := tracer.Start(ctx, "GetBitmap")
 	defer span.End()
 
-	bitmap, err := bm.Store.Queries.GetBitmapByID(ctx, key)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get bitmap by ID: %w", err)
-	}
+	bm.lk.Lock()
+	defer bm.lk.Unlock()
 
-	rbm := roaring.NewBitmap()
-	_, err = rbm.FromBuffer(bitmap.Bitmap)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load bitmap from buffer: %w", err)
+	rbm, ok := bm.ActiveBitmaps[key]
+	if !ok {
+		err := bm.loadBM(ctx, key)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load bitmap: %w", err)
+		}
+		rbm = bm.ActiveBitmaps[key]
 	}
 
 	return rbm, nil
@@ -210,6 +236,8 @@ func (bm *Bitmapper) GetMembers(ctx context.Context, key string) ([]uint32, erro
 	return members, nil
 }
 
+var parallelism = int64(50)
+
 func (bm *Bitmapper) GetIntersection(ctx context.Context, keys []string) (*roaring.Bitmap, error) {
 	ctx, span := tracer.Start(ctx, "GetIntersection")
 	defer span.End()
@@ -217,7 +245,7 @@ func (bm *Bitmapper) GetIntersection(ctx context.Context, keys []string) (*roari
 	foundBitmaps := make([]*roaring.Bitmap, len(keys))
 
 	// Fetch all bitmaps in parallel
-	sem := semaphore.NewWeighted(10)
+	sem := semaphore.NewWeighted(parallelism)
 	for i, key := range keys {
 		if err := sem.Acquire(ctx, 1); err != nil {
 			return nil, fmt.Errorf("failed to acquire semaphore: %w", err)
@@ -232,7 +260,7 @@ func (bm *Bitmapper) GetIntersection(ctx context.Context, keys []string) (*roari
 		}(i, key)
 	}
 
-	if err := sem.Acquire(ctx, 10); err != nil {
+	if err := sem.Acquire(ctx, parallelism); err != nil {
 		return nil, fmt.Errorf("failed to acquire semaphore: %w", err)
 	}
 
@@ -258,7 +286,7 @@ func (bm *Bitmapper) GetUnion(ctx context.Context, keys []string) (*roaring.Bitm
 	foundBitmaps := make([]*roaring.Bitmap, len(keys))
 
 	// Fetch all bitmaps in parallel
-	sem := semaphore.NewWeighted(10)
+	sem := semaphore.NewWeighted(parallelism)
 	for i, key := range keys {
 		if err := sem.Acquire(ctx, 1); err != nil {
 			return nil, fmt.Errorf("failed to acquire semaphore: %w", err)
@@ -273,7 +301,7 @@ func (bm *Bitmapper) GetUnion(ctx context.Context, keys []string) (*roaring.Bitm
 		}(i, key)
 	}
 
-	if err := sem.Acquire(ctx, 10); err != nil {
+	if err := sem.Acquire(ctx, parallelism); err != nil {
 		return nil, fmt.Errorf("failed to acquire semaphore: %w", err)
 	}
 

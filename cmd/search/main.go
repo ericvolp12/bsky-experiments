@@ -233,8 +233,7 @@ func main() {
 	router.GET("/repo/cleanup/stats", api.GetCleanupStats)
 
 	// Bitmappy stuff
-	router.GET("/stats/hourly", api.GetHourlyStats)
-	router.GET("/stats/monthly", api.GetMonthlyStats)
+	router.GET("/stats/period", api.GetStatsPeriod)
 
 	go api.RunCleanupDaemon(ctx)
 
