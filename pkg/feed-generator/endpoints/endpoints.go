@@ -2,7 +2,6 @@ package endpoints
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -17,7 +16,6 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/auth"
 	feedgenerator "github.com/ericvolp12/bsky-experiments/pkg/feed-generator"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
-	"github.com/ericvolp12/bsky-experiments/pkg/search/clusters"
 	"golang.org/x/time/rate"
 
 	"github.com/gin-gonic/gin"
@@ -274,90 +272,6 @@ func (ep *Endpoints) ProcessUser(feedName string, userDID string) {
 // Additional endpoints below are for private feeds only, not part of a standard Feed Generator implementation
 //
 //
-
-type assignment struct {
-	ClusterID int32
-	AuthorDID string
-}
-
-func (ep *Endpoints) UpdateClusterAssignments(c *gin.Context) {
-	tracer := otel.Tracer("feed-generator")
-	ctx, span := tracer.Start(c.Request.Context(), "FeedGenerator:Endpoints:UpdateClusterAssignments")
-	defer span.End()
-
-	log.Println("Updating cluster assignments...")
-	clusterManager, err := clusters.NewClusterManager(ep.GraphJSONUrl)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to create cluster manager: %s", err.Error())})
-		return
-	}
-
-	// Iterate over all authors in the Manager and update them in the registry
-	errs := make([]error, 0)
-	errStrings := make([]string, 0)
-
-	span.SetAttributes(attribute.Int("authors.length", len(clusterManager.DIDClusterMap)))
-	span.SetAttributes(attribute.Int("clusters.length", len(clusterManager.Clusters)))
-
-	assignmentChan := make(chan assignment, len(clusterManager.DIDClusterMap))
-
-	log.Printf("Enqueueing %d authors...\n", len(clusterManager.DIDClusterMap))
-
-	for _, author := range clusterManager.DIDClusterMap {
-		cluster := clusterManager.Clusters[author.ClusterID]
-		if cluster == nil {
-			continue
-		}
-
-		assignmentChan <- assignment{
-			ClusterID: cluster.DBIndex,
-			AuthorDID: author.UserDID,
-		}
-	}
-
-	log.Printf("Enqueued %d authors, closing channel...\n", len(clusterManager.DIDClusterMap))
-
-	close(assignmentChan)
-
-	errChan := make(chan error)
-	concurrency := 20
-	wg := sync.WaitGroup{}
-
-	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			for assignment := range assignmentChan {
-				err := ep.PostRegistry.AssignAuthorToCluster(ctx, assignment.AuthorDID, assignment.ClusterID)
-				if err != nil {
-					errChan <- fmt.Errorf("failed to assign author %s to cluster %d: %w", assignment.AuthorDID, assignment.ClusterID, err)
-				}
-			}
-			wg.Done()
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(errChan)
-		log.Printf("Finished processing %d authors\n", len(clusterManager.DIDClusterMap))
-	}()
-
-	for err := range errChan {
-		errs = append(errs, err)
-		errStrings = append(errStrings, err.Error())
-	}
-
-	log.Println("Finished updating cluster assignments")
-
-	span.SetAttributes(attribute.Int("errors.length", len(errs)))
-	span.SetAttributes(attribute.StringSlice("errors", errStrings))
-
-	c.JSON(http.StatusOK, gin.H{
-		"message":                "cluster assignments updated",
-		"successful_assignments": len(clusterManager.DIDClusterMap) - len(errs),
-		"errors":                 errStrings,
-	})
-}
 
 func (ep *Endpoints) AssignUserToFeed(c *gin.Context) {
 	tracer := otel.Tracer("feed-generator")

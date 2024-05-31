@@ -9,7 +9,6 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
-	"github.com/ericvolp12/bsky-experiments/pkg/search/clusters"
 	"golang.org/x/time/rate"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/usercount"
@@ -22,8 +21,6 @@ type API struct {
 	UserCount    *usercount.UserCount
 
 	Store *store.Store
-
-	ClusterManager *clusters.ClusterManager
 
 	LayoutServiceHost string
 
@@ -49,7 +46,6 @@ func NewAPI(
 	postRegistry *search.PostRegistry,
 	store *store.Store,
 	userCount *usercount.UserCount,
-	graphJSONUrl string,
 	layoutServiceHost string,
 	MagicHeaderVal string,
 	threadViewCacheTTL time.Duration,
@@ -67,11 +63,6 @@ func NewAPI(
 		return nil, fmt.Errorf("error initializing layout cache: %w", err)
 	}
 
-	clusterManager, err := clusters.NewClusterManager(graphJSONUrl)
-	if err != nil {
-		return nil, fmt.Errorf("error initializing cluster manager: %w", err)
-	}
-
 	dir := identity.DefaultDirectory()
 
 	bitmapper, err := consumer.NewBitmapper(store)
@@ -85,7 +76,6 @@ func NewAPI(
 		Store:              store,
 		Directory:          dir,
 		MagicHeaderVal:     MagicHeaderVal,
-		ClusterManager:     clusterManager,
 		LayoutServiceHost:  layoutServiceHost,
 		ThreadViewCacheTTL: threadViewCacheTTL,
 		ThreadViewCache:    threadViewCache,

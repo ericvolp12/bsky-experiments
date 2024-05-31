@@ -64,11 +64,6 @@ func main() {
 		layoutServiceHost = "http://localhost:8086"
 	}
 
-	graphJSONUrl := os.Getenv("GRAPH_JSON_URL")
-	if graphJSONUrl == "" {
-		graphJSONUrl = "https://s3.jazco.io/exported_graph_enriched.json"
-	}
-
 	redisAddress := os.Getenv("REDIS_ADDRESS")
 	if redisAddress == "" {
 		redisAddress = "localhost:6379"
@@ -130,7 +125,6 @@ func main() {
 		postRegistry,
 		store,
 		userCount,
-		graphJSONUrl,
 		layoutServiceHost,
 		magicHeaderVal,
 		10*time.Minute, // Thread View Cache TTL
@@ -218,10 +212,6 @@ func main() {
 	router.GET("/opted_out_authors", api.GetOptedOutAuthors)
 	router.POST("/opt_out", api.GraphOptOut)
 	router.POST("/opt_in", api.GraphOptIn)
-
-	router.GET("/clusters", api.GetClusterList)
-	router.GET("/users/by_handle/:handle/cluster", api.GetClusterForHandle)
-	router.GET("/users/by_did/:did/cluster", api.GetClusterForDID)
 
 	router.GET("/actors/type_ahead", api.SearchActorTypeAhead)
 	router.GET("/repo/:did", api.GetRepoAsJSON)

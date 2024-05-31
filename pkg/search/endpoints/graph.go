@@ -12,42 +12,6 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
-func (api *API) GetClusterForHandle(c *gin.Context) {
-	handle := c.Param("handle")
-	cluster, err := api.ClusterManager.GetClusterForHandle(c.Request.Context(), handle)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if cluster == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("handle '%s' not found or not assigned to a labeled cluster", handle)})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"cluster_id": cluster.ID, "cluster_name": cluster.Name})
-}
-
-func (api *API) GetClusterForDID(c *gin.Context) {
-	did := c.Param("did")
-	cluster, err := api.ClusterManager.GetClusterForDID(c.Request.Context(), did)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if cluster == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("did '%s' not found or not assigned to a labeled cluster", did)})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"cluster_id": cluster.ID, "cluster_name": cluster.Name})
-}
-
-func (api *API) GetClusterList(c *gin.Context) {
-	c.JSON(http.StatusOK, api.ClusterManager.Clusters)
-}
-
 type GraphOptRequest struct {
 	Username    string `json:"username"`
 	AppPassword string `json:"appPassword"`
