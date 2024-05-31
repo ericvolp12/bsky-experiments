@@ -1,13 +1,15 @@
 module github.com/ericvolp12/bsky-experiments
 
-go 1.21
+go 1.22
+
+toolchain go1.22.3
 
 require (
 	github.com/RoaringBitmap/roaring v1.9.3
 	github.com/XSAM/otelsql v0.23.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/bits-and-blooms/bloom/v3 v3.5.0
-	github.com/bluesky-social/indigo v0.0.0-20240313175749-733547c2ba2c
+	github.com/bluesky-social/indigo v0.0.0-20240529174714-c1b16d4592a8
 	github.com/ericvolp12/go-gin-prometheus v0.0.0-20221219081010-fc0e0436c283
 	github.com/ericvolp12/jwt-go-secp256k1 v0.0.2
 	github.com/gin-contrib/cors v1.4.0
@@ -25,7 +27,7 @@ require (
 	github.com/labstack/echo/v4 v4.11.3
 	github.com/labstack/gommon v0.4.1
 	github.com/lib/pq v1.10.9
-	github.com/mattn/go-sqlite3 v1.14.18
+	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/pemistahl/lingua-go v1.3.4
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.17.0
@@ -33,7 +35,7 @@ require (
 	github.com/redis/go-redis/extra/redisotel/v9 v9.0.5
 	github.com/redis/go-redis/v9 v9.3.0
 	github.com/sqlc-dev/pqtype v0.2.0
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli/v2 v2.25.7
 	github.com/whyrusleeping/cbor-gen v0.1.1-0.20240311221002-68b9f235c302
 	github.com/whyrusleeping/go-did v0.0.0-20230824162731-404d1707d5d6
@@ -51,7 +53,7 @@ require (
 	golang.org/x/sync v0.6.0
 	golang.org/x/text v0.14.0
 	golang.org/x/time v0.3.0
-	gorm.io/gorm v1.25.5
+	gorm.io/gorm v1.25.9
 )
 
 require (

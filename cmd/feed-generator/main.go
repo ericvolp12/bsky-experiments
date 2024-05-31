@@ -380,7 +380,6 @@ func FeedGenerator(cctx *cli.Context) error {
 		log.Fatalf("Failed to create Auth: %v", err)
 	}
 
-	router.GET("/update_cluster_assignments", endpoints.UpdateClusterAssignments)
 	router.GET("/.well-known/did.json", endpoints.GetWellKnownDID)
 
 	// JWT Auth middleware
