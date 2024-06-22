@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/ericvolp12/bsky-experiments/pkg/layout"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/gin-gonic/gin"
@@ -82,19 +83,17 @@ func (api *API) ProcessThreadRequest(c *gin.Context) {
 	}
 
 	if authorID == "" {
-		authors, err := api.PostRegistry.GetAuthorsByHandle(ctx, authorHandle)
+		handle, err := syntax.ParseHandle(authorHandle)
 		if err != nil {
-			log.Printf("Error getting authors: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid authorHandle '%s'", authorHandle)})
 			return
 		}
-		if len(authors) == 0 {
-			log.Printf("Author with handle '%s' not found", authorHandle)
+
+		ident, err := api.Directory.LookupHandle(ctx, handle)
+		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Author with handle '%s' not found", authorHandle)})
-			return
 		}
-		authorID = authors[0].DID
-		span.SetAttributes(attribute.String("author.resolved_id", authorID))
+		authorID = ident.DID.String()
 	}
 
 	// Get highest level post in thread
