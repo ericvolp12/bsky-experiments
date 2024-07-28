@@ -21,8 +21,8 @@ github.com/bits-and-blooms/bitset v1.12.0 h1:U/q1fAF7xXRhFCrhROzIfffYnu+dlS38vCZ
 github.com/bits-and-blooms/bitset v1.12.0/go.mod h1:7hO7Gc7Pp1vODcmWvKMRA9BNmbv6a/7QIWpPxHddWR8=
 github.com/bits-and-blooms/bloom/v3 v3.5.0 h1:AKDvi1V3xJCmSR6QhcBfHbCN4Vf8FfxeWkMNQfmAGhY=
 github.com/bits-and-blooms/bloom/v3 v3.5.0/go.mod h1:Y8vrn7nk1tPIlmLtW2ZPV+W7StdVMor6bC1xgpjMZFs=
-github.com/bluesky-social/indigo v0.0.0-20240529174714-c1b16d4592a8 h1:Hh5JUWu9qvf+7C1YyDA3cQYdT4e1Zaul7VoVmIu1haE=
-github.com/bluesky-social/indigo v0.0.0-20240529174714-c1b16d4592a8/go.mod h1:dBIOGhsiK0rgEETnxiGiuEyrSx6DKxEotHIPbiKD6WU=
+github.com/bluesky-social/indigo v0.0.0-20240720180436-a24c6825e724 h1:FG5de9K+0PDMSf7/FaAXKewkvXqy9BzfaUTUZmUj69k=
+github.com/bluesky-social/indigo v0.0.0-20240720180436-a24c6825e724/go.mod h1:dBIOGhsiK0rgEETnxiGiuEyrSx6DKxEotHIPbiKD6WU=
 github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 h1:DDGfHa7BWjL4YnC6+E63dPcxHo2sUxDIu8g3QgEJdRY=
 github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869/go.mod h1:Ekp36dRnpXw/yCqJaO+ZrUyxD+3VXMFFr56k5XYrpB4=
 github.com/bsm/ginkgo/v2 v2.7.0/go.mod h1:AiKlXPm7ItEHNc/2+OkrNG4E0ITzojb9/xWzvQ9XZ9w=
