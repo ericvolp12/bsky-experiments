@@ -51,6 +51,15 @@ func (api *API) RedirectAtURI(c *gin.Context) {
 			),
 		)
 		return
+	case "app.bsky.graph.starterpack":
+		c.Redirect(http.StatusFound,
+			fmt.Sprintf(
+				"https://bsky.app/starter-pack/%s/%s",
+				atURI.Authority().String(),
+				atURI.RecordKey().String(),
+			),
+		)
+		return
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Errorf("invalid atUri: %s", atURI.String()).Error()})
 	}

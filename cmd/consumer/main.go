@@ -244,7 +244,7 @@ func Consumer(cctx *cli.Context) error {
 	shutdownLivenessChecker := make(chan struct{})
 	livenessCheckerShutdown := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(15 * time.Second)
+		ticker := time.NewTicker(60 * time.Second)
 		lastSeq := int64(0)
 
 		rawlog, err := zap.NewProduction()
