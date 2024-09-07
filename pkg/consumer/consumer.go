@@ -14,6 +14,7 @@ import (
 	"github.com/araddon/dateparse"
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/api/bsky"
+	_ "github.com/bluesky-social/indigo/api/chat" // Register chat types
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
@@ -259,7 +260,7 @@ func NewConsumer(
 	logger.Infow("backfill records found", "count", totalRecords)
 
 	// Start the backfill processor
-	go c.BackfillProcessor(ctx)
+	// go c.BackfillProcessor(ctx)
 
 	return &c, nil
 }
@@ -401,19 +402,21 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 		}
 
 		c.BackfillStatus.Store(evt.Repo, backfill)
-
-		err := c.Store.Queries.CreateRepoBackfillRecord(ctx, store_queries.CreateRepoBackfillRecordParams{
-			Repo:         evt.Repo,
-			LastBackfill: time.Now(),
-			SeqStarted:   evt.Seq,
-			State:        state,
-		})
-		if err != nil {
-			log.Errorf("failed to create repo backfill record: %+v", err)
-		}
-
-		backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
 	}
+
+	// Skip backfilling for now
+	// 	err := c.Store.Queries.CreateRepoBackfillRecord(ctx, store_queries.CreateRepoBackfillRecordParams{
+	// 		Repo:         evt.Repo,
+	// 		LastBackfill: time.Now(),
+	// 		SeqStarted:   evt.Seq,
+	// 		State:        state,
+	// 	})
+	// 	if err != nil {
+	// 		log.Errorf("failed to create repo backfill record: %+v", err)
+	// 	}
+
+	// 	backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
+	// }
 
 	if evt.TooBig {
 		span.SetAttributes(attribute.Bool("too_big", true))
@@ -549,25 +552,24 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 			}
 		case repomgr.EvtKindDeleteRecord:
 			// Buffer the delete if a backfill is in progress
-			backfill.lk.Lock()
-			if backfill.State == "in_progress" || backfill.State == "enqueued" {
-				log.Debugf("backfill scheduled for %s, buffering delete (%+v)", evt.Repo, op.Path)
-				backfill.DeleteBuffer = append(backfill.DeleteBuffer, &Delete{
-					repo: evt.Repo,
-					path: op.Path,
-				})
-				backfill.lk.Unlock()
-				backfillDeletesBuffered.WithLabelValues(c.SocketURL).Inc()
-				return nil
-			}
-			backfill.lk.Unlock()
+			// backfill.lk.Lock()
+			// if backfill.State == "in_progress" || backfill.State == "enqueued" {
+			// 	log.Debugf("backfill scheduled for %s, buffering delete (%+v)", evt.Repo, op.Path)
+			// 	backfill.DeleteBuffer = append(backfill.DeleteBuffer, &Delete{
+			// 		repo: evt.Repo,
+			// 		path: op.Path,
+			// 	})
+			// 	backfill.lk.Unlock()
+			// 	backfillDeletesBuffered.WithLabelValues(c.SocketURL).Inc()
+			// 	return nil
+			// }
+			// backfill.lk.Unlock()
 
 			err := c.HandleDeleteRecord(ctx, evt.Repo, op.Path)
 			if err != nil {
 				log.Errorf("failed to handle delete record: %+v", err)
 			}
 		default:
-			log.Warnf("unknown event kind from op action: %+v", op.Action)
 		}
 	}
 
@@ -1410,8 +1412,7 @@ func (c *Consumer) HandleCreateRecord(
 		span.SetAttributes(attribute.String("record_type", "graph_listblock"))
 		recordsProcessedCounter.WithLabelValues("graph_listblock", c.SocketURL).Inc()
 	default:
-		span.SetAttributes(attribute.String("record_type", "unknown"))
-		log.Warnf("unknown record type: %+v", rec)
+		span.SetAttributes(attribute.String("record_type", "other"))
 	}
 	if parseError != nil {
 		return nil, fmt.Errorf("error parsing time: %w", parseError)

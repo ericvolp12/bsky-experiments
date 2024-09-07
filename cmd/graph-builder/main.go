@@ -4,32 +4,24 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	_ "net/http/pprof"
 
-	"github.com/bluesky-social/indigo/events"
-	"github.com/bluesky-social/indigo/events/schedulers/autoscaling"
 	intEvents "github.com/ericvolp12/bsky-experiments/pkg/events"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
-	"github.com/gorilla/websocket"
+	"github.com/ericvolp12/jetstream/pkg/client"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-)
-
-const (
-	maxBackoff       = 30 * time.Second
-	maxBackoffFactor = 2
 )
 
 var tracer trace.Tracer
@@ -83,11 +75,6 @@ func main() {
 		}()
 	}
 
-	// Replace with the WebSocket URL you want to connect to.
-	u := url.URL{Scheme: "wss", Host: "bsky.network", Path: "/xrpc/com.atproto.sync.subscribeRepos"}
-
-	includeLinks := os.Getenv("INCLUDE_LINKS") == "true"
-
 	workerCount := 20
 
 	postRegistryEnabled := false
@@ -131,7 +118,7 @@ func main() {
 	log.Info("initializing BSky Event Handler...")
 	bsky, err := intEvents.NewBSky(
 		ctx,
-		includeLinks, postRegistryEnabled,
+		postRegistryEnabled,
 		dbConnectionString, "graph_builder", plcDirectoryMirror,
 		redisClient,
 		workerCount,
@@ -160,11 +147,7 @@ func main() {
 
 	// Run a routine that handles the events from the WebSocket
 	log.Info("starting repo sync routine...")
-	err = handleRepoStreamWithRetry(ctx, bsky, log, u, &intEvents.RepoStreamCtxCallbacks{
-		RepoCommit: bsky.HandleRepoCommit,
-		RepoInfo:   intEvents.HandleRepoInfo,
-		Error:      bsky.HandleError,
-	})
+	err = handleRepoStreamWithRetry(ctx, bsky, log)
 
 	if err != nil {
 		log.Errorf("Error: %v", err)
@@ -176,33 +159,21 @@ func main() {
 	log.Info("routines finished, exiting...")
 }
 
-func getNextBackoff(currentBackoff time.Duration) time.Duration {
-	if currentBackoff == 0 {
-		return time.Second
-	}
-
-	return currentBackoff + time.Duration(rand.Int63n(int64(maxBackoffFactor*currentBackoff)))
-}
-
 func handleRepoStreamWithRetry(
 	ctx context.Context,
 	bsky *intEvents.BSky,
 	log *zap.SugaredLogger,
-	u url.URL,
-	callbacks *intEvents.RepoStreamCtxCallbacks,
 ) error {
-	var backoff time.Duration
-	// Create a new context with a cancel function
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Start a timer to check for graph updates
-	updateCheckDuration := 1 * time.Minute
-	updateCheckTimer := time.NewTicker(updateCheckDuration)
-	defer updateCheckTimer.Stop()
-
 	// Run a goroutine to handle the graph update check
 	go func() {
+		// Start a timer to check for graph updates
+		updateCheckDuration := 1 * time.Minute
+		updateCheckTimer := time.NewTicker(updateCheckDuration)
+		defer updateCheckTimer.Stop()
+
 		lastSeq := int64(0)
 		for {
 			select {
@@ -221,62 +192,38 @@ func handleRepoStreamWithRetry(
 		}
 	}()
 
-	for {
-		// Try to read the seq number from Redis
-		cursor := bsky.GetCursor(ctx)
-		if cursor != "" {
-			log.Infof("found cursor in redis: %s", cursor)
-			u.RawQuery = fmt.Sprintf("cursor=%s", cursor)
-		}
-
-		log.Info("connecting to BSky WebSocket...")
-		c, _, err := websocket.DefaultDialer.Dial(u.String(), http.Header{
-			"User-Agent": []string{"jaz-graph-builder/0.0.1"},
-		})
+	// Try to read the seq number from Redis
+	var cursor *int64
+	cursorStr := bsky.GetCursor(ctx)
+	if cursorStr != "" {
+		log.Infow("found cursor in Redis", "cursor", cursorStr)
+		cursorVal, err := strconv.ParseInt(cursorStr, 10, 64)
 		if err != nil {
-			log.Infof("failed to connect to websocket: %v", err)
-			continue
+			log.Errorf("failed to parse cursor from Redis: %v", err)
+		} else {
+			cursor = &cursorVal
 		}
-		defer c.Close()
-
-		go func() {
-			select {
-			case <-streamCtx.Done():
-				log.Info("closing websocket...")
-				c.Close()
-			}
-		}()
-
-		schedSettings := autoscaling.DefaultAutoscaleSettings()
-		scheduler := autoscaling.NewScheduler(schedSettings, "prod-firehose", func(ctx context.Context, xe *events.XRPCStreamEvent) error {
-			switch {
-			case xe.RepoCommit != nil:
-				callbacks.RepoCommit(ctx, xe.RepoCommit)
-			case xe.RepoInfo != nil:
-				callbacks.RepoInfo(ctx, xe.RepoInfo)
-			case xe.Error != nil:
-				callbacks.Error(ctx, xe.Error)
-			}
-			return nil
-		})
-
-		err = events.HandleRepoStream(streamCtx, c, scheduler)
-		log.Info("HandleRepoStream returned unexpectedly: %w...", err)
-		if err != nil {
-			log.Infof("Error in event handler routine: %v", err)
-			backoff = getNextBackoff(backoff)
-			if backoff > maxBackoff {
-				return fmt.Errorf("maximum backoff of %v reached, giving up", maxBackoff)
-			}
-
-			select {
-			case <-time.After(backoff):
-				log.Infof("Reconnecting after %v...", backoff)
-				continue
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
-		return nil
 	}
+
+	log.Info("connecting to Jetstream WebSocket...")
+	config := client.DefaultClientConfig()
+	config.WebsocketURL = "wss://jetstream.atproto.tools/subscribe"
+	config.WantedCollections = []string{
+		"app.bsky.feed.post",
+		"app.bsky.feed.like",
+		"app.bsky.graph.block",
+	}
+
+	c, err := client.NewClient(config)
+	if err != nil {
+		log.Fatalf("failed to create client: %v", err)
+	}
+	c.Handler = bsky
+
+	err = c.ConnectAndRead(streamCtx, cursor)
+	if err != nil {
+		log.Errorf("failed to connect and read: %v", err)
+	}
+
+	return fmt.Errorf("connect and read errored out: %v", err)
 }

@@ -93,6 +93,14 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 	ctx, span := tracer.Start(ctx, "RefreshSiteStats")
 	defer span.End()
 
+	// Get usercount from UserCount service
+	userCount, err := api.UserCount.GetUserCount(ctx)
+	if err != nil {
+		log.Printf("Error getting user count: %v", err)
+		return fmt.Errorf("error getting user count: %w", err)
+	}
+	totalUsers.Set(float64(userCount))
+
 	authorStats, err := api.PostRegistry.GetAuthorStats(ctx)
 	if err != nil {
 		log.Printf("Error getting author stats: %v", err)
@@ -102,13 +110,6 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 	if authorStats == nil {
 		log.Printf("Author stats returned nil")
 		return errors.New("author stats returned nil")
-	}
-
-	// Get usercount from UserCount service
-	userCount, err := api.UserCount.GetUserCount(ctx)
-	if err != nil {
-		log.Printf("Error getting user count: %v", err)
-		return fmt.Errorf("error getting user count: %w", err)
 	}
 
 	dailyDatapointsRaw, err := api.Store.Queries.GetDailySummaries(ctx)
@@ -162,7 +163,6 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 	}
 
 	// Update the metrics
-	totalUsers.Set(float64(userCount))
 	totalAuthors.Set(float64(authorStats.TotalAuthors))
 	meanPostCount.Set(authorStats.MeanPostCount)
 	totalPostCount.Set(float64(authorStats.TotalPosts))

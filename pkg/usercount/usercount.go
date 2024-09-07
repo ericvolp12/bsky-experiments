@@ -43,7 +43,7 @@ func NewUserCount(ctx context.Context, redisClient *redis.Client) *UserCount {
 	// We need to convert it to a slice of PDS structs
 	pdsSlice := []*PDS{}
 	for host, pdsString := range pdsList {
-		pds := NewPDS(host, 10)
+		pds := NewPDS(host, 25)
 		_, err := fmt.Sscanf(pdsString, "%d|%d|%s", &pds.UserCount, &pds.LastPageSize, &pds.LastCursor)
 		if err != nil {
 			log.Printf("error parsing pds string: %s\n", err)
@@ -55,7 +55,7 @@ func NewUserCount(ctx context.Context, redisClient *redis.Client) *UserCount {
 	// If there are no PDSs in redis, add the default list
 	if len(pdsSlice) == 0 {
 		for _, host := range PDSHostList {
-			pdsSlice = append(pdsSlice, NewPDS(host, 10))
+			pdsSlice = append(pdsSlice, NewPDS(host, 25))
 		}
 	}
 
@@ -143,6 +143,8 @@ func (uc *UserCount) GetUserCount(ctx context.Context) (int, error) {
 	resultCh := make(chan int, len(uc.PDSs))
 	errorCh := make(chan error, len(uc.PDSs))
 
+	slog.Info("refreshing user counts")
+
 	for _, pds := range uc.PDSs {
 		wg.Add(1)
 		go func(pds *PDS) {
@@ -166,7 +168,14 @@ func (uc *UserCount) GetUserCount(ctx context.Context) (int, error) {
 					return
 				}
 
-				pds.UserCount += len(repoOutput.Repos)
+				numActive := 0
+				for _, repo := range repoOutput.Repos {
+					if repo.Active != nil && *repo.Active {
+						numActive++
+					}
+				}
+
+				pds.UserCount += numActive
 				pds.LastPageSize = len(repoOutput.Repos)
 
 				if repoOutput.Cursor == nil {

@@ -170,7 +170,7 @@ func main() {
 				if c.GetString("rootPostAuthorDID") != "" {
 					fields = append(fields, zap.String("rootPostAuthorDID", c.GetString("rootPostAuthorDID")))
 				}
-				logger.Info(path,
+				logger.Debug(path,
 					fields...,
 				)
 			}
@@ -232,9 +232,9 @@ func main() {
 		port = "8080"
 	}
 
-	statsRefreshTicker := time.NewTicker(5 * time.Minute)
+	statsRefreshTicker := time.NewTicker(3 * time.Minute)
 
-	// Create a routine to refresh site stats every 30 seconds
+	// Create a routine to refresh site stats every 3 minutes
 	go func() {
 		for {
 			ctx, span := tracer.Start(context.Background(), "refreshSiteStats")

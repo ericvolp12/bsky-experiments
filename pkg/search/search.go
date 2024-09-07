@@ -53,6 +53,8 @@ func NewPostRegistry(connectionString string) (*PostRegistry, error) {
 		return nil, err
 	}
 
+	db.SetMaxOpenConns(20)
+
 	queries := search_queries.New(db)
 
 	registry := &PostRegistry{
