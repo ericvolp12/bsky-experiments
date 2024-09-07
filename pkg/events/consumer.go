@@ -164,7 +164,7 @@ func (bsky *BSky) OnEvent(ctx context.Context, evt *models.Event) error {
 
 	log := bsky.Logger.With("repo", evt.Did, "time_us", evt.TimeUS)
 
-	evtTime := time.Unix(0, evt.TimeUS)
+	evtTime := time.UnixMicro(evt.TimeUS)
 	lastSeqCreatedAt.Set(float64(evtTime.UnixNano()))
 	lastSeqProcessedAt.Set(float64(time.Now().UnixNano()))
 
