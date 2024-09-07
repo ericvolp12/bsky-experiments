@@ -34,30 +34,30 @@ func (bsky *BSky) worker(ctx context.Context, workerID int) {
 	bsky.Workers[workerID].Logger = log
 
 	defer func() {
-		log.Infof("shutting down worker %d...", workerID)
+		log.Info("worker teardown")
 		err := log.Sync()
 		if err != nil {
 			fmt.Printf("failed to sync logger on teardown: %+v\n", err.Error())
 		}
 	}()
 
-	log.Infof("starting worker %d\n", workerID)
+	log.Infow("worker started")
 
 	// Pull from the work queue and process posts as they come in
 	for {
 		select {
 		case postEvent, ok := <-bsky.PostQueue:
 			if !ok {
-				log.Infof("worker %d terminating: PostQueue has been closed\n", workerID)
+				log.Info("worker shutting down on channel close")
 				return
 			}
 
 			err := bsky.ProcessPost(postEvent.ctx, postEvent.repo, postEvent.rkey, postEvent.post, postEvent.workerID)
 			if err != nil {
-				log.Errorf("failed to process post: %v\n", err)
+				log.Errorw("error processing post", "error", err)
 			}
 		case <-ctx.Done():
-			log.Infof("worker %d terminating: context was cancelled\n", workerID)
+			log.Info("worker shutting down on context done")
 			return
 		}
 	}

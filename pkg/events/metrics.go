@@ -58,3 +58,8 @@ var lastSeqCreatedAt = promauto.NewGauge(prometheus.GaugeOpts{
 	Name: "bsky_last_seq_created_at",
 	Help: "The timestamp of the last sequence number created",
 })
+
+var eventsSeen = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "bsky_events_seen_total",
+	Help: "The total number of events seen",
+})

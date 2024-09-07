@@ -14,7 +14,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
-	"golang.org/x/time/rate"
+	"golang.org/x/sync/semaphore"
 )
 
 type PostEvent struct {
@@ -39,10 +39,7 @@ type BSky struct {
 	cursorKey      string
 	lastUpdatedKey string
 
-	PostQueue chan PostEvent
-
-	// Rate Limiter for requests against the BSky API
-	directoryLimiter *rate.Limiter
+	PostQueue chan *PostEvent
 
 	WorkerCount int
 	Workers     []*Worker
@@ -93,8 +90,7 @@ func NewBSky(
 		cursorKey:      redisPrefix + ":cursor",
 		lastUpdatedKey: redisPrefix + ":last-updated",
 
-		PostQueue:        make(chan PostEvent, 1),
-		directoryLimiter: rate.NewLimiter(rate.Every(time.Millisecond*125), 1),
+		PostQueue: make(chan *PostEvent, 1_000),
 
 		WorkerCount: workerCount,
 		Workers:     make([]*Worker, workerCount),
@@ -151,9 +147,13 @@ func (bsky *BSky) GetCursor(ctx context.Context) string {
 	return cursor
 }
 
+var sem = semaphore.NewWeighted(100)
+
 func (bsky *BSky) OnEvent(ctx context.Context, evt *models.Event) error {
 	ctx, span := tracer.Start(ctx, "OnEvent")
 	defer span.End()
+
+	eventsSeen.Inc()
 
 	bsky.SeqMux.Lock()
 	bsky.LastUpdated = time.Now()
@@ -195,7 +195,7 @@ func (bsky *BSky) OnEvent(ctx context.Context, evt *models.Event) error {
 		}
 
 		// Add the post to the queue
-		bsky.PostQueue <- PostEvent{
+		bsky.PostQueue <- &PostEvent{
 			ctx:  ctx,
 			post: &post,
 			repo: evt.Did,
@@ -217,11 +217,18 @@ func (bsky *BSky) OnEvent(ctx context.Context, evt *models.Event) error {
 		}
 
 		// Add the Like to the DB
-		err = bsky.PostRegistry.AddLikeToPost(ctx, subjectURI.RecordKey().String(), evt.Did)
-		if err != nil {
-			log.Errorf("failed to add like to post: %+v\n", err)
+		if err := sem.Acquire(ctx, 1); err != nil {
+			log.Errorf("failed to acquire semaphore: %+v\n", err)
+			return nil
 		}
-		likesProcessedCounter.Inc()
+		go func() {
+			defer sem.Release(1)
+			err = bsky.PostRegistry.AddLikeToPost(ctx, subjectURI.RecordKey().String(), evt.Did)
+			if err != nil {
+				log.Errorf("failed to add like to post: %+v\n", err)
+			}
+			likesProcessedCounter.Inc()
+		}()
 	case "app.bsky.graph.block":
 		var block appbsky.GraphBlock
 		err := json.Unmarshal(evt.Commit.Record, &block)
@@ -236,10 +243,17 @@ func (bsky *BSky) OnEvent(ctx context.Context, evt *models.Event) error {
 			return nil
 		}
 
-		err = bsky.PostRegistry.AddAuthorBlock(ctx, evt.Did, block.Subject, createdAt.Time())
-		if err != nil {
-			log.Errorf("failed to add author block to registry: %+v\n", err)
+		if err := sem.Acquire(ctx, 1); err != nil {
+			log.Errorf("failed to acquire semaphore: %+v\n", err)
+			return nil
 		}
+		go func() {
+			defer sem.Release(1)
+			err = bsky.PostRegistry.AddAuthorBlock(ctx, evt.Did, block.Subject, createdAt.Time())
+			if err != nil {
+				log.Errorf("failed to add author block to registry: %+v\n", err)
+			}
+		}()
 	}
 
 	return nil

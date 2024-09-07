@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -193,17 +192,17 @@ func handleRepoStreamWithRetry(
 	}()
 
 	// Try to read the seq number from Redis
-	var cursor *int64
-	cursorStr := bsky.GetCursor(ctx)
-	if cursorStr != "" {
-		log.Infow("found cursor in Redis", "cursor", cursorStr)
-		cursorVal, err := strconv.ParseInt(cursorStr, 10, 64)
-		if err != nil {
-			log.Errorf("failed to parse cursor from Redis: %v", err)
-		} else {
-			cursor = &cursorVal
-		}
-	}
+	// var cursor *int64
+	// cursorStr := bsky.GetCursor(ctx)
+	// if cursorStr != "" {
+	// 	log.Infow("found cursor in Redis", "cursor", cursorStr)
+	// 	cursorVal, err := strconv.ParseInt(cursorStr, 10, 64)
+	// 	if err != nil {
+	// 		log.Errorf("failed to parse cursor from Redis: %v", err)
+	// 	} else {
+	// 		cursor = &cursorVal
+	// 	}
+	// }
 
 	log.Info("connecting to Jetstream WebSocket...")
 	config := client.DefaultClientConfig()
@@ -220,7 +219,7 @@ func handleRepoStreamWithRetry(
 	}
 	c.Handler = bsky
 
-	err = c.ConnectAndRead(streamCtx, cursor)
+	err = c.ConnectAndRead(streamCtx, nil)
 	if err != nil {
 		log.Errorf("failed to connect and read: %v", err)
 	}
