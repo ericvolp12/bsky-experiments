@@ -2,19 +2,12 @@ package events
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
-	"go.uber.org/zap"
 )
-
-type Worker struct {
-	WorkerID int
-	Logger   *zap.SugaredLogger
-}
 
 type ImageMeta struct {
 	CID      string `json:"cid"`
@@ -22,57 +15,13 @@ type ImageMeta struct {
 	AltText  string `json:"alt_text"`
 }
 
-func (bsky *BSky) worker(ctx context.Context, workerID int) {
-	// Create a logger for this worker
-	rawlog, err := zap.NewProduction()
-	if err != nil {
-		fmt.Printf("failed to create logger: %+v\n", err)
-	}
-
-	log := rawlog.Sugar().With("worker_id", workerID)
-
-	bsky.Workers[workerID].Logger = log
-
-	defer func() {
-		log.Info("worker teardown")
-		err := log.Sync()
-		if err != nil {
-			fmt.Printf("failed to sync logger on teardown: %+v\n", err.Error())
-		}
-	}()
-
-	log.Infow("worker started")
-
-	// Pull from the work queue and process posts as they come in
-	for {
-		select {
-		case postEvent, ok := <-bsky.PostQueue:
-			if !ok {
-				log.Info("worker shutting down on channel close")
-				return
-			}
-
-			err := bsky.ProcessPost(postEvent.ctx, postEvent.repo, postEvent.rkey, postEvent.post, postEvent.workerID)
-			if err != nil {
-				log.Errorw("error processing post", "error", err)
-			}
-		case <-ctx.Done():
-			log.Info("worker shutting down on context done")
-			return
-		}
-	}
-
-}
-
 // ProcessPost processes a post from the Jetstream Firehose
-func (bsky *BSky) ProcessPost(ctx context.Context, repo, rkey string, post *appbsky.FeedPost, workerID int) error {
+func (bsky *BSky) ProcessPost(ctx context.Context, repo, rkey string, post *appbsky.FeedPost) error {
 	ctx, span := tracer.Start(ctx, "ProcessPost")
 	defer span.End()
 	start := time.Now()
 
-	log := bsky.Workers[workerID].Logger
-
-	log = log.With("did", repo)
+	log := bsky.logger.With("did", repo)
 
 	indexedAt := time.Now()
 
@@ -85,7 +34,7 @@ func (bsky *BSky) ProcessPost(ctx context.Context, repo, rkey string, post *appb
 		if post.Reply.Parent != nil {
 			u, err := syntax.ParseATURI(post.Reply.Parent.Uri)
 			if err != nil {
-				log.Errorf("error parsing reply parent URI: %+v\n", err)
+				log.Error("error parsing reply parent URI", "error", err, "uri", post.Reply.Parent.Uri)
 				return nil
 			}
 			// Increment the reply count metric
@@ -97,7 +46,7 @@ func (bsky *BSky) ProcessPost(ctx context.Context, repo, rkey string, post *appb
 		if post.Reply.Root != nil {
 			u, err := syntax.ParseATURI(post.Reply.Root.Uri)
 			if err != nil {
-				log.Errorf("error parsing reply root URI: %+v\n", err)
+				log.Error("error parsing reply root URI", "error", err, "uri", post.Reply.Root.Uri)
 				return nil
 			}
 			rootRkey = u.RecordKey().String()
@@ -108,7 +57,7 @@ func (bsky *BSky) ProcessPost(ctx context.Context, repo, rkey string, post *appb
 	if post.Embed != nil && post.Embed.EmbedRecord != nil && post.Embed.EmbedRecord.Record != nil {
 		u, err := syntax.ParseATURI(post.Embed.EmbedRecord.Record.Uri)
 		if err != nil {
-			log.Errorf("error parsing quoting URI: %+v\n", err)
+			log.Error("error parsing quote URI", "error", err, "uri", post.Embed.EmbedRecord.Record.Uri)
 			return nil
 		}
 		// Increment the quote count metric
@@ -137,7 +86,7 @@ func (bsky *BSky) ProcessPost(ctx context.Context, repo, rkey string, post *appb
 	createdAt := indexedAt
 	createdAtDT, err := syntax.ParseDatetimeLenient(post.CreatedAt)
 	if err != nil {
-		log.Errorf("error parsing created at time: %+v\n", err)
+		log.Error("error parsing post created at", "error", err, "created_at", post.CreatedAt)
 	} else {
 		createdAt = createdAtDT.Time()
 	}
@@ -171,12 +120,12 @@ func (bsky *BSky) ProcessPost(ctx context.Context, repo, rkey string, post *appb
 
 		err = bsky.PostRegistry.AddAuthor(ctx, &author)
 		if err != nil {
-			log.Errorf("error writing author to registry: %+v\n", err)
+			log.Error("error writing author to registry", "error", err)
 		}
 
 		err = bsky.PostRegistry.AddPost(ctx, &dbPost)
 		if err != nil {
-			log.Errorf("error writing post to registry: %+v\n", err)
+			log.Error("error writing post to registry", "error", err, "post", dbPost)
 		}
 
 		// If there are images, write them to the registry
@@ -194,7 +143,7 @@ func (bsky *BSky) ProcessPost(ctx context.Context, repo, rkey string, post *appb
 				span.AddEvent("AddImageToRegistry")
 				err = bsky.PostRegistry.AddImage(ctx, &registryImage)
 				if err != nil {
-					log.Errorf("error writing image to registry: %+v\n", err)
+					log.Error("error writing image to registry", "error", err, "image", registryImage)
 				}
 			}
 		}

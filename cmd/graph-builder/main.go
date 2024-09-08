@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -20,7 +21,6 @@ import (
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 )
 
 var tracer trace.Tracer
@@ -44,25 +44,17 @@ func main() {
 		}
 	}()
 
-	rawlog, err := zap.NewProduction()
-	if err != nil {
-		log.Fatalf("failed to create logger: %+v\n", err)
-	}
-	defer func() {
-		log.Printf("main function teardown\n")
-		err := rawlog.Sync()
-		if err != nil {
-			log.Printf("failed to sync logger on teardown: %+v", err.Error())
-		}
-	}()
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level:     slog.LevelInfo,
+		AddSource: true,
+	})))
+	logger := slog.Default().With("source", "graph_builder_main")
 
-	log := rawlog.Sugar().With("source", "graph_builder_main")
-
-	log.Info("starting graph builder...")
+	logger.Info("starting graph builder...")
 
 	// Registers a tracer Provider globally if the exporter endpoint is set
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
-		log.Info("initializing tracer...")
+		logger.Info("initializing tracer...")
 		shutdown, err := tracing.InstallExportPipeline(ctx, "BSkyGraphBuilder", 0.2)
 		if err != nil {
 			log.Fatal(err)
@@ -74,17 +66,9 @@ func main() {
 		}()
 	}
 
-	workerCount := 20
-
-	postRegistryEnabled := false
 	dbConnectionString := os.Getenv("REGISTRY_DB_CONNECTION_STRING")
-	if dbConnectionString != "" {
-		postRegistryEnabled = true
-	}
-
-	plcDirectoryMirror := os.Getenv("PLC_DIRECTORY_MIRROR")
-	if plcDirectoryMirror == "" {
-		plcDirectoryMirror = "https://plc.jazco.io"
+	if dbConnectionString == "" {
+		log.Fatal("REGISTRY_DB_CONNECTION_STRING is required")
 	}
 
 	redisAddress := os.Getenv("REDIS_ADDRESS")
@@ -92,33 +76,26 @@ func main() {
 		redisAddress = "localhost:6379"
 	}
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     redisAddress,
-		Password: "",
-		DB:       0,
-	})
+	redisClient := redis.NewClient(&redis.Options{Addr: redisAddress})
 
 	// Enable tracing instrumentation.
 	if err := redisotel.InstrumentTracing(redisClient); err != nil {
 		log.Fatalf("failed to instrument redis with tracing: %+v\n", err)
 	}
 
-	// Enable metrics instrumentation.
-	if err := redisotel.InstrumentMetrics(redisClient); err != nil {
-		log.Fatalf("failed to instrument redis with metrics: %+v\n", err)
-	}
-
 	// Test the connection to redis
-	_, err = redisClient.Ping(ctx).Result()
+	_, err := redisClient.Ping(ctx).Result()
 	if err != nil {
 		log.Fatalf("failed to connect to redis: %+v\n", err)
 	}
 
-	log.Info("initializing BSky Event Handler...")
+	workerCount := 20
+	logger.Info("initializing BSky Event Handler...")
 	bsky, err := intEvents.NewBSky(
 		ctx,
-		postRegistryEnabled,
-		dbConnectionString, "graph_builder", plcDirectoryMirror,
+		logger,
+		dbConnectionString,
+		"graph_builder",
 		redisClient,
 		workerCount,
 	)
@@ -126,60 +103,51 @@ func main() {
 		log.Fatal(err)
 	}
 
-	quit := make(chan struct{})
-
-	wg := &sync.WaitGroup{}
-
 	// Server for pprof and prometheus via promhttp
 	go func() {
-		rawlog, err := zap.NewProduction()
-		if err != nil {
-			log.Fatalf("failed to create logger: %+v\n", err)
-		}
-		log := rawlog.Sugar().With("source", "pprof_server")
-		log.Info("starting pprof and prometheus server...")
+		logger := logger.With("source", "pprof_server")
+		logger.Info("starting pprof and prometheus server...")
 		http.Handle("/metrics", promhttp.Handler())
-		log.Info(http.ListenAndServe("0.0.0.0:6060", nil))
+		err := http.ListenAndServe("0.0.0.0:6060", nil)
+		if err != nil {
+			logger.Error("pprof and prometheus server failed", "error", err)
+		}
+		logger.Info("pprof and prometheus server stopped")
 	}()
 
-	log = log.With("source", "repo_stream_main_loop")
+	logger = logger.With("source", "repo_stream_main_loop")
 
 	// Run a routine that handles the events from the WebSocket
-	log.Info("starting repo sync routine...")
-	err = handleRepoStreamWithRetry(ctx, bsky, log)
-
+	err = connectToJetstream(ctx, bsky, logger)
 	if err != nil {
-		log.Errorf("Error: %v", err)
+		logger.Error("disconnecting from Jetstream", "error", err)
 	}
 
-	log.Info("waiting for routines to finish...")
-	close(quit)
-	wg.Wait()
-	log.Info("routines finished, exiting...")
+	logger.Info("graph builder stopped")
 }
 
-func handleRepoStreamWithRetry(
+func connectToJetstream(
 	ctx context.Context,
 	bsky *intEvents.BSky,
-	log *zap.SugaredLogger,
+	logger *slog.Logger,
 ) error {
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Run a goroutine to handle the graph update check
+	// Liveness check
 	go func() {
-		// Start a timer to check for graph updates
-		updateCheckDuration := 1 * time.Minute
-		updateCheckTimer := time.NewTicker(updateCheckDuration)
-		defer updateCheckTimer.Stop()
+		interval := 1 * time.Minute
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		logger := logger.With("source", "liveness_check")
 
 		lastSeq := int64(0)
 		for {
 			select {
-			case <-updateCheckTimer.C:
+			case <-t.C:
 				bsky.SeqMux.RLock()
 				if lastSeq >= bsky.LastSeq {
-					fmt.Printf("lastSeq: %d, bsky.LastSeq: %d | progress hasn't been made in %v, exiting...\n", lastSeq, bsky.LastSeq, updateCheckDuration)
+					logger.Warn("no new events in the last minute", "last_seq", lastSeq, "current_seq", bsky.LastSeq)
 					bsky.SeqMux.RUnlock()
 					cancel()
 				}
@@ -192,19 +160,19 @@ func handleRepoStreamWithRetry(
 	}()
 
 	// Try to read the seq number from Redis
-	// var cursor *int64
-	// cursorStr := bsky.GetCursor(ctx)
-	// if cursorStr != "" {
-	// 	log.Infow("found cursor in Redis", "cursor", cursorStr)
-	// 	cursorVal, err := strconv.ParseInt(cursorStr, 10, 64)
-	// 	if err != nil {
-	// 		log.Errorf("failed to parse cursor from Redis: %v", err)
-	// 	} else {
-	// 		cursor = &cursorVal
-	// 	}
-	// }
+	var cursor *int64
+	cursorStr := bsky.GetCursor(ctx)
+	if cursorStr != "" {
+		logger.Info("found cursor in Redis", "cursor", cursorStr)
+		cursorVal, err := strconv.ParseInt(cursorStr, 10, 64)
+		if err != nil {
+			logger.Error("failed to parse cursor from Redis, starting without a cursor", "error", err)
+		} else {
+			cursor = &cursorVal
+		}
+	}
 
-	log.Info("connecting to Jetstream WebSocket...")
+	logger.Info("connecting to Jetstream WebSocket...")
 	config := client.DefaultClientConfig()
 	config.WebsocketURL = "wss://jetstream.atproto.tools/subscribe"
 	config.WantedCollections = []string{
@@ -213,15 +181,14 @@ func handleRepoStreamWithRetry(
 		"app.bsky.graph.block",
 	}
 
-	c, err := client.NewClient(config)
+	c, err := client.NewClient(config, logger, bsky.Scheduler)
 	if err != nil {
-		log.Fatalf("failed to create client: %v", err)
+		log.Fatalf("failed to create Jetstream client: %v", err)
 	}
-	c.Handler = bsky
 
-	err = c.ConnectAndRead(streamCtx, nil)
+	err = c.ConnectAndRead(streamCtx, cursor)
 	if err != nil {
-		log.Errorf("failed to connect and read: %v", err)
+		logger.Error("failed to connect and read from Jetstream", "error", err)
 	}
 
 	return fmt.Errorf("connect and read errored out: %v", err)

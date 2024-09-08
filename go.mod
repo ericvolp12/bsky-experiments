@@ -11,7 +11,7 @@ require (
 	github.com/bits-and-blooms/bloom/v3 v3.5.0
 	github.com/bluesky-social/indigo v0.0.0-20240905024844-a4f38639767f
 	github.com/ericvolp12/go-gin-prometheus v0.0.0-20221219081010-fc0e0436c283
-	github.com/ericvolp12/jetstream v0.0.0-20240907222419-999514be39b5
+	github.com/ericvolp12/jetstream v0.0.0-20240908055227-e32d04843c4c
 	github.com/ericvolp12/jwt-go-secp256k1 v0.0.2
 	github.com/gin-contrib/cors v1.4.0
 	github.com/gin-contrib/zap v0.1.0
