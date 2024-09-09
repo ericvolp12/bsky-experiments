@@ -36,7 +36,7 @@ var deleteRecordsProcessed = promauto.NewCounter(prometheus.CounterOpts{
 var postProcessingDurationHistogram = promauto.NewHistogram(prometheus.HistogramOpts{
 	Name:    "bsky_post_processing_duration_seconds",
 	Help:    "The duration of processing posts",
-	Buckets: prometheus.ExponentialBuckets(0.01, 2, 15),
+	Buckets: prometheus.ExponentialBuckets(0.0001, 2, 18),
 })
 
 var likesProcessedCounter = promauto.NewCounter(prometheus.CounterOpts{

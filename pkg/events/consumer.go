@@ -33,8 +33,7 @@ type BSky struct {
 	WorkerCount int
 	Scheduler   *parallel.Scheduler
 
-	PostRegistryEnabled bool
-	PostRegistry        *search.PostRegistry
+	PostRegistry *search.PostRegistry
 }
 
 var tracer = otel.Tracer("graph-builder")

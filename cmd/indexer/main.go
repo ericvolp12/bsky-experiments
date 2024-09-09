@@ -7,10 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -27,22 +28,18 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/atomic"
-	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
-	"golang.org/x/time/rate"
 )
 
 type Index struct {
 	PostRegistry *search.PostRegistry
 	Detection    *objectdetection.ObjectDetectionImpl
 	Sentiment    *sentiment.Sentiment
-	Logger       *zap.SugaredLogger
+	Logger       *slog.Logger
 	Store        *store.Store
 
 	PositiveConfidenceThreshold float64
 	NegativeConfidenceThreshold float64
-
-	Limiter *rate.Limiter
 }
 
 func main() {
@@ -128,11 +125,8 @@ func Indexer(cctx *cli.Context) error {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
-	rawLogger, err := zap.NewProduction()
-	if err != nil {
-		return fmt.Errorf("failed to initialize logger: %w", err)
-	}
-	logger := rawLogger.Sugar()
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
 
 	logger.Info("Starting up BSky indexer...")
 
@@ -145,23 +139,23 @@ func Indexer(cctx *cli.Context) error {
 		}
 		defer func() {
 			if err := shutdown(cctx.Context); err != nil {
-				logger.Errorf("failed to shutdown tracing: %+v", err)
+				logger.Error("failed to shutdown tracing", "error", err)
 			}
 		}()
 	}
 
 	var postRegistry *search.PostRegistry
 	if cctx.String("registry-postgres-url") != "" {
-		postRegistry, err = search.NewPostRegistry(cctx.String("registry-postgres-url"))
+		postRegistry, err := search.NewPostRegistry(cctx.String("registry-postgres-url"))
 		if err != nil {
 			return fmt.Errorf("failed to initialize post registry: %w", err)
 		}
 		defer postRegistry.Close()
 	}
 
-	var st *store.Store
+	var s *store.Store
 	if cctx.String("store-postgres-url") != "" {
-		st, err = store.NewStore(cctx.String("store-postgres-url"))
+		st, err := store.NewStore(cctx.String("store-postgres-url"))
 		if err != nil {
 			return fmt.Errorf("failed to initialize store: %w", err)
 		}
@@ -183,6 +177,7 @@ func Indexer(cctx *cli.Context) error {
 	// Start up a Metrics and Profiling goroutine
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/debug/pprof/", http.DefaultServeMux)
 
 	metricServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cctx.Int("port")),
@@ -194,18 +189,18 @@ func Indexer(cctx *cli.Context) error {
 
 	// Startup metrics server
 	go func() {
-		logger := logger.With("source", "metrics_server")
+		logger := logger.With("component", "metrics_server")
 
-		logger.Info("metrics server listening on port %d", cctx.Int("port"))
+		logger.Info("metrics server listening", "port", cctx.Int("port"))
 
 		go func() {
 			if err := metricServer.ListenAndServe(); err != http.ErrServerClosed {
-				logger.Error("failed to start metrics server: %+v\n", err)
+				logger.Error("failed to start metrics server", "error", err)
 			}
 		}()
 		<-shutdownMetrics
 		if err := metricServer.Shutdown(ctx); err != nil {
-			logger.Error("failed to shutdown metrics server: %+v\n", err)
+			logger.Error("failed to shutdown metrics server", "error", err)
 		}
 		close(metricsShutdown)
 
@@ -218,11 +213,10 @@ func Indexer(cctx *cli.Context) error {
 		PositiveConfidenceThreshold: cctx.Float64("positive-confidence-threshold"),
 		NegativeConfidenceThreshold: cctx.Float64("negative-confidence-threshold"),
 		Logger:                      logger,
-		Limiter:                     rate.NewLimiter(rate.Limit(4), 1),
 	}
 
-	if st != nil {
-		index.Store = st
+	if s != nil {
+		index.Store = s
 	}
 	if postRegistry != nil {
 		index.PostRegistry = postRegistry
@@ -232,7 +226,7 @@ func Indexer(cctx *cli.Context) error {
 	shutdownImages := make(chan struct{})
 	imagesShutdown := make(chan struct{})
 	go func() {
-		logger := logger.With("source", "image_indexer")
+		logger := logger.With("component", "image_indexer")
 		if index.PostRegistry == nil {
 			logger.Info("no post registry, skipping image indexing loop...")
 			close(imagesShutdown)
@@ -258,7 +252,7 @@ func Indexer(cctx *cli.Context) error {
 	shutdownSentiments := make(chan struct{})
 	sentimentsShutdown := make(chan struct{})
 	go func() {
-		logger := logger.With("source", "sentiment_indexer")
+		logger := logger.With("component", "sentiment_indexer")
 		if index.PostRegistry == nil {
 			logger.Info("no post registry, skipping sentiment indexing loop...")
 			close(sentimentsShutdown)
@@ -284,7 +278,7 @@ func Indexer(cctx *cli.Context) error {
 	shutdownNewSentiments := make(chan struct{})
 	newSentimentsShutdown := make(chan struct{})
 	go func() {
-		logger := logger.With("source", "new_sentiment_indexer")
+		logger := logger.With("component", "new_sentiment_indexer")
 		if index.Store == nil {
 			logger.Info("no store, skipping new sentiment indexing loop...")
 			close(newSentimentsShutdown)
@@ -356,14 +350,14 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 	ctx, span := tracer.Start(ctx, "IndexNewPostSentiments")
 	defer span.End()
 
-	log := index.Logger.With("source", "new_post_indexer")
-	log.Info("new index loop waking up...")
+	logger := index.Logger.With("component", "new_post_indexer")
+	logger.Info("new index loop waking up...")
 	start := time.Now()
-	log.Info("getting unindexed posts...")
+	logger.Info("getting unindexed posts...")
 
 	jobs, err := index.Store.Queries.GetUnprocessedSentimentJobs(ctx, pageSize)
 	if err != nil {
-		log.Error("failed to get unprocessed sentiment jobs: %+v", err)
+		logger.Error("failed to get unprocessed sentiment jobs", "error", err)
 		return false
 	}
 
@@ -372,13 +366,13 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 	postsIndexedCounter.WithLabelValues("store").Add(float64(numJobs))
 
 	if numJobs == 0 {
-		log.Info("no posts to index, sleeping...")
+		logger.Info("no posts to index, sleeping...")
 		return false
 	}
 
 	fetchDone := time.Now()
 
-	log.Info("submtting posts for Sentiment Analysis...")
+	logger.Info("submtting posts for Sentiment Analysis...")
 
 	sentimentPosts := []*sentiment.SentimentPost{}
 	for i := range jobs {
@@ -395,7 +389,7 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 	sentimentResults, err := index.Sentiment.GetPostsSentiment(ctx, sentimentPosts)
 	if err != nil {
 		span.SetAttributes(attribute.String("sentiment.error", err.Error()))
-		log.Error("failed to get posts sentiment: %+v", err)
+		logger.Error("failed to get posts sentiment", "error", err)
 		return false
 	}
 
@@ -461,7 +455,7 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 
 	span.AddEvent("SetSentimentForPost")
 
-	log.Info("setting sentiment results...")
+	logger.Info("setting sentiment results...")
 	sem := semaphore.NewWeighted(10)
 
 	for i := range dbSentimentParams {
@@ -470,7 +464,7 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 			defer sem.Release(1)
 			err := index.Store.Queries.SetSentimentForPost(context.Background(), dbSentimentParams[i])
 			if err != nil {
-				log.Error("failed to set sentiment for post: %+v", err)
+				logger.Error("failed to set sentiment for post", "error", err)
 				return
 			}
 		}(i)
@@ -490,7 +484,7 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 		attribute.String("update_time", updateDone.Sub(mlDone).String()),
 	)
 
-	log.Infow("finished indexing posts, sleeping...",
+	logger.Info("finished indexing posts, sleeping...",
 		"posts_indexed", numJobs,
 		"posts_analyzed", postsAnalyzed,
 		"posts_labeled_with_sentiment", len(dbSentimentParams),
@@ -511,24 +505,24 @@ func (index *Index) IndexPostSentiments(ctx context.Context, pageSize int32) {
 	ctx, span := tracer.Start(ctx, "IndexPostSentiments")
 	defer span.End()
 
-	log := index.Logger.With("source", "post_indexer")
-	log.Info("index loop waking up...")
+	logger := index.Logger.With("component", "post_indexer")
+	logger.Info("index loop waking up...")
 	start := time.Now()
-	log.Info("getting unindexed posts...")
+	logger.Info("getting unindexed posts...")
 	posts, err := index.PostRegistry.GetUnindexedPostPage(ctx, pageSize, 0)
 	if err != nil {
 		// Check if error is a not found error
 		if errors.Is(err, search.PostsNotFound) {
-			log.Info("no posts to index, sleeping...")
+			logger.Info("no posts to index, sleeping...")
 			return
 		}
-		log.Errorf("error getting posts: %v", err)
+		logger.Error("error getting posts", "error", err)
 		return
 	}
 
 	fetchDone := time.Now()
 
-	log.Info("submtting posts for Sentiment Analysis...")
+	logger.Info("submtting posts for Sentiment Analysis...")
 	// If sentiment is enabled, get the sentiment for the post
 	span.AddEvent("GetPostsSentiment")
 	sentimentPosts := []*sentiment.SentimentPost{}
@@ -543,14 +537,14 @@ func (index *Index) IndexPostSentiments(ctx context.Context, pageSize int32) {
 	sentimentResults, err := index.Sentiment.GetPostsSentiment(ctx, sentimentPosts)
 	if err != nil {
 		span.SetAttributes(attribute.String("sentiment.error", err.Error()))
-		log.Errorf("error getting sentiment for posts: %+v\n", err)
+		logger.Error("error getting sentiment for posts", "error", err)
 	}
 	sentimentDone := time.Now()
 
-	log.Info("setting sentiment results...")
+	logger.Info("setting sentiment results...")
 	errs := index.PostRegistry.SetSentimentResults(ctx, sentimentResults)
 	if len(errs) > 0 {
-		log.Errorf("error(s) setting sentiment results: %+v\n", errs)
+		logger.Error("error(s) setting sentiment results", "errors", errs)
 	}
 
 	postIDsToLabel := make([]string, 0)
@@ -579,10 +573,10 @@ func (index *Index) IndexPostSentiments(ctx context.Context, pageSize int32) {
 		}
 	}
 
-	log.Infof("setting %d sentiment labels...", len(labels))
+	logger.Info("setting sentiment labels...", "num_labels", len(postIDsToLabel))
 	err = index.PostRegistry.AddOneLabelPerPost(ctx, labels, postIDsToLabel, authorDIDsToLabel)
 	if err != nil {
-		log.Errorf("error setting sentiment labels: %+v\n", err)
+		logger.Error("error setting sentiment labels", "error", err)
 	}
 
 	appliedSentimentDone := time.Now()
@@ -595,10 +589,10 @@ func (index *Index) IndexPostSentiments(ctx context.Context, pageSize int32) {
 
 	postsIndexedCounter.WithLabelValues("registry").Add(float64(len(postIds)))
 
-	log.Infof("setting indexed at timestamp on %d posts...", len(postIds))
+	logger.Info("setting indexed at timestamp...", "num_posts", len(postIds))
 	err = index.PostRegistry.SetIndexedAtTimestamp(ctx, postIds, time.Now())
 	if err != nil {
-		log.Errorf("error setting indexed at timestamp: %v", err)
+		logger.Error("error setting indexed at timestamp", "error", err)
 		return
 	}
 
@@ -616,7 +610,7 @@ func (index *Index) IndexPostSentiments(ctx context.Context, pageSize int32) {
 		attribute.String("sentiment_db_time", appliedSentimentDone.Sub(sentimentDone).String()),
 	)
 
-	log.Infow("finished indexing posts, sleeping...",
+	logger.Info("finished indexing posts, sleeping...",
 		"posts_indexed", len(posts),
 		"posts_analyzed", postsAnalyzed,
 		"posts_labeled_with_sentiment", len(postIDsToLabel),
@@ -648,23 +642,23 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 	ctx, span := tracer.Start(ctx, "IndexImages")
 	defer span.End()
 
-	log := index.Logger.With("source", "image_processor")
-	log.Info("Processing images...")
+	logger := index.Logger.With("component", "image_processor")
+	logger.Info("Processing images...")
 	start := time.Now()
 
 	unprocessedImages, err := index.PostRegistry.GetUnprocessedImages(ctx, pageSize)
 	if err != nil {
 		if errors.As(err, &search.NotFoundError{}) {
-			log.Info("No unprocessed images found, skipping process cycle...")
+			logger.Info("No unprocessed images found, skipping process cycle...")
 
 		} else {
-			log.Errorf("Failed to get unprocessed images, skipping process cycle: %v", err)
+			logger.Error("Failed to get unprocessed images, skipping process cycle", "error", err)
 		}
 		return
 	}
 
 	if len(unprocessedImages) == 0 {
-		log.Info("No unprocessed images found, skipping process cycle...")
+		logger.Info("No unprocessed images found, skipping process cycle...")
 		return
 	}
 
@@ -684,7 +678,7 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 
 	results, err := index.Detection.ProcessImages(ctx, imageMetas)
 	if err != nil {
-		log.Errorf("Failed to process images: %v", err)
+		logger.Error("Failed to process images", "error", err)
 		return
 	}
 
@@ -693,13 +687,12 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 	successCount := atomic.NewInt32(0)
 
 	sem := semaphore.NewWeighted(10)
-	wg := sync.WaitGroup{}
-
 	for _, result := range results {
-		wg.Add(1)
-		sem.Acquire(ctx, 1)
+		if err := sem.Acquire(ctx, 1); err != nil {
+			logger.Error("Failed to acquire semaphore", "error", err)
+			break
+		}
 		go func(result *objectdetection.ImageResult) {
-			defer wg.Done()
 			defer sem.Release(1)
 
 			if len(result.Results) > 0 {
@@ -708,7 +701,7 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 
 			cvClasses, err := json.Marshal(result.Results)
 			if err != nil {
-				log.Errorf("Failed to marshal classes: %v", err)
+				logger.Error("Failed to marshal classes", "error", err)
 				return
 			}
 
@@ -720,7 +713,7 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 				cvClasses,
 			)
 			if err != nil {
-				log.Errorf("Failed to update image: %v", err)
+				logger.Error("Failed to update image", "error", err)
 				return
 			}
 
@@ -735,14 +728,16 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 				postLabel := fmt.Sprintf("%s:%s", "cv", label)
 				err = index.PostRegistry.AddPostLabel(ctx, result.Meta.PostID, result.Meta.ActorDID, postLabel)
 				if err != nil {
-					log.Errorf("Failed to add label to post: %v", err)
+					logger.Error("Failed to add label to post", "error", err)
 					continue
 				}
 			}
 		}(result)
 	}
 
-	wg.Wait()
+	if err := sem.Acquire(ctx, 10); err != nil {
+		logger.Error("Failed to acquire semaphore", "error", err)
+	}
 
 	successes := int(successCount.Load())
 
@@ -755,7 +750,7 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 		attribute.String("processing_time", time.Since(start).String()),
 	)
 
-	log.Infow("Finished processing images...",
+	logger.Info("Finished processing images...",
 		"batch_size", len(unprocessedImages),
 		"successfully_processed_image_count", successes,
 		"processing_time", time.Since(start),

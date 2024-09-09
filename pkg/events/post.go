@@ -92,59 +92,57 @@ func (bsky *BSky) ProcessPost(ctx context.Context, repo, rkey string, post *appb
 	}
 
 	// Write the post to the Post Registry if enabled
-	if bsky.PostRegistryEnabled {
-		author := search.Author{
-			DID: repo,
-		}
+	author := search.Author{
+		DID: repo,
+	}
 
-		dbPost := search.Post{
-			ID:        rkey,
-			Text:      post.Text,
-			AuthorDID: repo,
-			CreatedAt: createdAt,
-		}
+	dbPost := search.Post{
+		ID:        rkey,
+		Text:      post.Text,
+		AuthorDID: repo,
+		CreatedAt: createdAt,
+	}
 
-		if parentRkey != "" {
-			dbPost.ParentPostID = &parentRkey
-		}
-		if rootRkey != "" {
-			dbPost.RootPostID = &rootRkey
-		}
+	if parentRkey != "" {
+		dbPost.ParentPostID = &parentRkey
+	}
+	if rootRkey != "" {
+		dbPost.RootPostID = &rootRkey
+	}
 
-		if post.Embed != nil && post.Embed.EmbedImages != nil {
-			dbPost.HasEmbeddedMedia = true
-		}
-		if parentRelationship != "" {
-			dbPost.ParentRelationship = &parentRelationship
-		}
+	if post.Embed != nil && post.Embed.EmbedImages != nil {
+		dbPost.HasEmbeddedMedia = true
+	}
+	if parentRelationship != "" {
+		dbPost.ParentRelationship = &parentRelationship
+	}
 
-		err = bsky.PostRegistry.AddAuthor(ctx, &author)
-		if err != nil {
-			log.Error("error writing author to registry", "error", err)
-		}
+	err = bsky.PostRegistry.AddAuthor(ctx, &author)
+	if err != nil {
+		log.Error("error writing author to registry", "error", err)
+	}
 
-		err = bsky.PostRegistry.AddPost(ctx, &dbPost)
-		if err != nil {
-			log.Error("error writing post to registry", "error", err, "post", dbPost)
-		}
+	err = bsky.PostRegistry.AddPost(ctx, &dbPost)
+	if err != nil {
+		log.Error("error writing post to registry", "error", err, "post", dbPost)
+	}
 
-		// If there are images, write them to the registry
-		if len(images) > 0 {
-			for _, image := range images {
-				altText := image.AltText
-				registryImage := search.Image{
-					CID:       image.CID,
-					PostID:    rkey,
-					AuthorDID: repo,
-					MimeType:  image.MimeType,
-					AltText:   &altText,
-					CreatedAt: indexedAt,
-				}
-				span.AddEvent("AddImageToRegistry")
-				err = bsky.PostRegistry.AddImage(ctx, &registryImage)
-				if err != nil {
-					log.Error("error writing image to registry", "error", err, "image", registryImage)
-				}
+	// If there are images, write them to the registry
+	if len(images) > 0 {
+		for _, image := range images {
+			altText := image.AltText
+			registryImage := search.Image{
+				CID:       image.CID,
+				PostID:    rkey,
+				AuthorDID: repo,
+				MimeType:  image.MimeType,
+				AltText:   &altText,
+				CreatedAt: indexedAt,
+			}
+			span.AddEvent("AddImageToRegistry")
+			err = bsky.PostRegistry.AddImage(ctx, &registryImage)
+			if err != nil {
+				log.Error("error writing image to registry", "error", err, "image", registryImage)
 			}
 		}
 	}
