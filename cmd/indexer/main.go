@@ -145,8 +145,10 @@ func Indexer(cctx *cli.Context) error {
 	}
 
 	var postRegistry *search.PostRegistry
+	var err error
+
 	if cctx.String("registry-postgres-url") != "" {
-		postRegistry, err := search.NewPostRegistry(cctx.String("registry-postgres-url"))
+		postRegistry, err = search.NewPostRegistry(cctx.String("registry-postgres-url"))
 		if err != nil {
 			return fmt.Errorf("failed to initialize post registry: %w", err)
 		}
@@ -155,11 +157,11 @@ func Indexer(cctx *cli.Context) error {
 
 	var s *store.Store
 	if cctx.String("store-postgres-url") != "" {
-		st, err := store.NewStore(cctx.String("store-postgres-url"))
+		s, err = store.NewStore(cctx.String("store-postgres-url"))
 		if err != nil {
 			return fmt.Errorf("failed to initialize store: %w", err)
 		}
-		defer st.Close()
+		defer s.Close()
 	}
 
 	if cctx.String("object-detection-service-host") == "" {
