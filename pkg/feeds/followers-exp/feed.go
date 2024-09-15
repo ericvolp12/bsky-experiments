@@ -3,6 +3,7 @@ package followersexp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -26,6 +27,9 @@ type FollowersFeed struct {
 
 	spamFollowers map[string]struct{}
 	sfLk          sync.RWMutex
+
+	initLk sync.Mutex
+	init   bool
 }
 
 type NotFoundError struct {
@@ -36,15 +40,26 @@ var supportedFeeds = []string{"my-followers-ex", "my-followers"}
 
 var tracer = otel.Tracer("my-followers-ex")
 
-func NewFollowersFeed(ctx context.Context, feedActorDID string, gClient *graphdclient.Client, rClient *redis.Client, shardDB *sharddb.ShardDB, store *store.Store) (*FollowersFeed, []string, error) {
+func NewFollowersFeed(ctx context.Context, feedActorDID string, gClient *graphdclient.Client, rClient *redis.Client, shardDBNodes []string, store *store.Store) (*FollowersFeed, []string, error) {
 	f := FollowersFeed{
 		FeedActorDID:  feedActorDID,
 		GraphD:        gClient,
 		Redis:         rClient,
-		ShardDB:       shardDB,
 		Store:         store,
 		spamFollowers: map[string]struct{}{},
 	}
+
+	// Start the sharddb client in the background
+	go func() {
+		slog.Info("starting sharddb client (backgrounded)")
+		shardDBClient, err := sharddb.NewShardDB(ctx, shardDBNodes, slog.Default())
+		if err != nil {
+			slog.Error("error starting sharddb client", "error", err)
+		}
+
+		f.ShardDB = shardDBClient
+		f.setReady()
+	}()
 
 	// Refresh the spam followers
 	go func() {
@@ -147,12 +162,33 @@ func (f *FollowersFeed) getSpamFollowers(ctx context.Context) map[string]struct{
 	return f.spamFollowers
 }
 
+func (f *FollowersFeed) isReady() bool {
+	f.initLk.Lock()
+	defer f.initLk.Unlock()
+
+	return f.init
+}
+
+func (f *FollowersFeed) setReady() {
+	f.initLk.Lock()
+	defer f.initLk.Unlock()
+
+	f.init = true
+}
+
+var ErrStartingUp = fmt.Errorf("feed is starting up")
+
 func (f *FollowersFeed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
 	ctx, span := tracer.Start(ctx, "GetPage")
 	defer span.End()
 
 	if userDID == "" {
 		return nil, nil, fmt.Errorf("feed %s requires authentication", feed)
+	}
+
+	// If we're not ready, return an empty feed
+	if !f.isReady() {
+		return nil, nil, ErrStartingUp
 	}
 
 	var err error

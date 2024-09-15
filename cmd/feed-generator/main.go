@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,7 +22,6 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/postlabel"
 	"github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
-	"github.com/ericvolp12/bsky-experiments/pkg/sharddb"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	ginprometheus "github.com/ericvolp12/go-gin-prometheus"
 	"github.com/gin-contrib/cors"
@@ -191,14 +189,6 @@ func FeedGenerator(cctx *cli.Context) error {
 	}
 	graphdClient := client.NewClient(cctx.String("graphd-root"), &h)
 
-	var shardDBClient *sharddb.ShardDB
-	if len(cctx.StringSlice("shard-db-nodes")) > 0 {
-		shardDBClient, err = sharddb.NewShardDB(ctx, cctx.StringSlice("shard-db-nodes"), slog.Default())
-		if err != nil {
-			log.Fatalf("Failed to create ShardDB: %v", err)
-		}
-	}
-
 	feedActorDID := cctx.String("feed-actor-did")
 
 	// Set the acceptable DIDs for the feed generator to respond to
@@ -242,7 +232,7 @@ func FeedGenerator(cctx *cli.Context) error {
 
 	// Create an authorlabel feed
 	log.Print("initializing authorlabel feed")
-	authorLabelFeed, authorLabelFeedAliases, err := authorlabel.NewAuthorLabelFeed(ctx, feedActorDID, postRegistry)
+	authorLabelFeed, authorLabelFeedAliases, err := authorlabel.NewAuthorLabelFeed(ctx, feedActorDID, store)
 	if err != nil {
 		log.Fatalf("Failed to create AuthorLabelFeed: %v", err)
 	}
@@ -272,16 +262,6 @@ func FeedGenerator(cctx *cli.Context) error {
 	}
 	feedGenerator.AddFeed(hotFeedAliases, hotFeed)
 
-	if shardDBClient != nil {
-		// Create Experimental Followers feed
-		log.Print("initializing followers feed")
-		followersExpFeed, followersExpFeedAliases, err := followersexp.NewFollowersFeed(ctx, feedActorDID, graphdClient, redisClient, shardDBClient, store)
-		if err != nil {
-			log.Fatalf("Failed to create FollowersExpFeed: %v", err)
-		}
-		feedGenerator.AddFeed(followersExpFeedAliases, followersExpFeed)
-	}
-
 	// Create a My Pins feed
 	log.Print("initializing pins feed")
 	pinsFeed, pinsFeedAliases, err := pins.NewPinsFeed(ctx, feedActorDID, store)
@@ -289,6 +269,17 @@ func FeedGenerator(cctx *cli.Context) error {
 		log.Fatalf("Failed to create PinsFeed: %v", err)
 	}
 	feedGenerator.AddFeed(pinsFeedAliases, pinsFeed)
+
+	shardNodes := cctx.StringSlice("shard-db-nodes")
+	if len(shardNodes) > 0 {
+		// Create Experimental Followers feed
+		log.Print("initializing followers feed")
+		followersFeed, followersFeedAliases, err := followersexp.NewFollowersFeed(ctx, feedActorDID, graphdClient, redisClient, shardNodes, store)
+		if err != nil {
+			log.Fatalf("Failed to create FollowersExpFeed: %v", err)
+		}
+		feedGenerator.AddFeed(followersFeedAliases, followersFeed)
+	}
 
 	router := gin.New()
 

@@ -200,7 +200,7 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 	}
 
 	// If the actor has a label, update the label feed (for root posts only)
-	if rootActorDid != "" && rootActorRkey != "" {
+	if rec.Reply == nil {
 		// Fetch the labels for the actor
 		labels, err := c.Store.Queries.ListActorLabels(ctx, repo)
 		if err != nil {
