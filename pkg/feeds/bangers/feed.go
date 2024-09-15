@@ -24,7 +24,7 @@ const (
 	maxPosts     = 3000
 )
 
-type BangersFeed struct {
+type Feed struct {
 	FeedActorDID string
 	Store        *store.Store
 	Redis        *redis.Client
@@ -34,8 +34,8 @@ type NotFoundError struct {
 	error
 }
 
-func NewBangersFeed(ctx context.Context, feedActorDID string, store *store.Store, redis *redis.Client) (*BangersFeed, []string, error) {
-	return &BangersFeed{
+func NewFeed(ctx context.Context, feedActorDID string, store *store.Store, redis *redis.Client) (*Feed, []string, error) {
+	return &Feed{
 		FeedActorDID: feedActorDID,
 		Store:        store,
 		Redis:        redis,
@@ -49,7 +49,7 @@ type postRef struct {
 	Rkey     string `json:"rkey"`
 }
 
-func (f *BangersFeed) fetchAndCachePosts(ctx context.Context, userDID string, feed string) ([]postRef, error) {
+func (f *Feed) fetchAndCachePosts(ctx context.Context, userDID string, feed string) ([]postRef, error) {
 	var posts []store_queries.Post
 	var err error
 
@@ -106,7 +106,7 @@ func (f *BangersFeed) fetchAndCachePosts(ctx context.Context, userDID string, fe
 	return postRefs, nil
 }
 
-func (f *BangersFeed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
+func (f *Feed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
 	ctx, span := tracer.Start(ctx, "GetPage")
 	defer span.End()
 
@@ -201,7 +201,7 @@ func (f *BangersFeed) GetPage(ctx context.Context, feed string, userDID string, 
 	return feedPosts, &newCursor, nil
 }
 
-func (f *BangersFeed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {
+func (f *Feed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {
 	ctx, span := tracer.Start(ctx, "Describe")
 	defer span.End()
 

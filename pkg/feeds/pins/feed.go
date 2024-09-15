@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-type PinsFeed struct {
+type Feed struct {
 	FeedActorDID string
 	Store        *store.Store
 }
@@ -20,8 +20,8 @@ type NotFoundError struct {
 	error
 }
 
-func NewPinsFeed(ctx context.Context, feedActorDID string, store *store.Store) (*PinsFeed, []string, error) {
-	return &PinsFeed{
+func NewFeed(ctx context.Context, feedActorDID string, store *store.Store) (*Feed, []string, error) {
+	return &Feed{
 		FeedActorDID: feedActorDID,
 		Store:        store,
 	}, []string{"my-pins"}, nil
@@ -34,7 +34,7 @@ type postRef struct {
 	Rkey     string `json:"rkey"`
 }
 
-func (f *PinsFeed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
+func (f *Feed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
 	ctx, span := tracer.Start(ctx, "GetPage")
 	defer span.End()
 	var err error
@@ -71,7 +71,7 @@ func (f *PinsFeed) GetPage(ctx context.Context, feed string, userDID string, lim
 	return feedPosts, &newCursor, nil
 }
 
-func (f *PinsFeed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {
+func (f *Feed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {
 	ctx, span := tracer.Start(ctx, "Describe")
 	defer span.End()
 

@@ -15,7 +15,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/authorlabel"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/bangers"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/firehose"
-	followersexp "github.com/ericvolp12/bsky-experiments/pkg/feeds/followers-exp"
+	"github.com/ericvolp12/bsky-experiments/pkg/feeds/followers"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/hot"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/language"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/pins"
@@ -216,7 +216,7 @@ func FeedGenerator(cctx *cli.Context) error {
 
 	// Create a language feed
 	log.Print("initializing language feed")
-	languageFeed, languageFeedAliases, err := language.NewLanguageFeed(ctx, feedActorDID, store)
+	languageFeed, languageFeedAliases, err := language.NewFeed(ctx, feedActorDID, store)
 	if err != nil {
 		log.Fatalf("Failed to create LanguageFeed: %v", err)
 	}
@@ -224,7 +224,7 @@ func FeedGenerator(cctx *cli.Context) error {
 
 	// Create a postlabel feed
 	log.Print("initializing postlabel feed")
-	postLabelFeed, postLabelFeedAliases, err := postlabel.NewPostLabelFeed(ctx, feedActorDID, postRegistry)
+	postLabelFeed, postLabelFeedAliases, err := postlabel.NewFeed(ctx, feedActorDID, postRegistry)
 	if err != nil {
 		log.Fatalf("Failed to create PostLabelFeed: %v", err)
 	}
@@ -232,7 +232,7 @@ func FeedGenerator(cctx *cli.Context) error {
 
 	// Create an authorlabel feed
 	log.Print("initializing authorlabel feed")
-	authorLabelFeed, authorLabelFeedAliases, err := authorlabel.NewAuthorLabelFeed(ctx, feedActorDID, store)
+	authorLabelFeed, authorLabelFeedAliases, err := authorlabel.NewFeed(ctx, feedActorDID, store)
 	if err != nil {
 		log.Fatalf("Failed to create AuthorLabelFeed: %v", err)
 	}
@@ -240,7 +240,7 @@ func FeedGenerator(cctx *cli.Context) error {
 
 	// Create a firehose feed
 	log.Print("initializing firehose feed")
-	firehoseFeed, firehoseFeedAliases, err := firehose.NewFirehoseFeed(ctx, feedActorDID, store)
+	firehoseFeed, firehoseFeedAliases, err := firehose.NewFeed(ctx, feedActorDID, store)
 	if err != nil {
 		log.Fatalf("Failed to create FirehoseFeed: %v", err)
 	}
@@ -248,7 +248,7 @@ func FeedGenerator(cctx *cli.Context) error {
 
 	// Create a Bangers feed
 	log.Print("initializing bangers feed")
-	bangersFeed, bangersFeedAliases, err := bangers.NewBangersFeed(ctx, feedActorDID, store, redisClient)
+	bangersFeed, bangersFeedAliases, err := bangers.NewFeed(ctx, feedActorDID, store, redisClient)
 	if err != nil {
 		log.Fatalf("Failed to create BangersFeed: %v", err)
 	}
@@ -256,7 +256,7 @@ func FeedGenerator(cctx *cli.Context) error {
 
 	// Create a What's Hot feed
 	log.Print("initializing hot feed")
-	hotFeed, hotFeedAliases, err := hot.NewHotFeed(ctx, feedActorDID, store, redisClient)
+	hotFeed, hotFeedAliases, err := hot.NewFeed(ctx, feedActorDID, store, redisClient)
 	if err != nil {
 		log.Fatalf("Failed to create HotFeed: %v", err)
 	}
@@ -264,7 +264,7 @@ func FeedGenerator(cctx *cli.Context) error {
 
 	// Create a My Pins feed
 	log.Print("initializing pins feed")
-	pinsFeed, pinsFeedAliases, err := pins.NewPinsFeed(ctx, feedActorDID, store)
+	pinsFeed, pinsFeedAliases, err := pins.NewFeed(ctx, feedActorDID, store)
 	if err != nil {
 		log.Fatalf("Failed to create PinsFeed: %v", err)
 	}
@@ -274,7 +274,7 @@ func FeedGenerator(cctx *cli.Context) error {
 	if len(shardNodes) > 0 {
 		// Create Experimental Followers feed
 		log.Print("initializing followers feed")
-		followersFeed, followersFeedAliases, err := followersexp.NewFollowersFeed(ctx, feedActorDID, graphdClient, redisClient, shardNodes, store)
+		followersFeed, followersFeedAliases, err := followers.NewFeed(ctx, feedActorDID, graphdClient, redisClient, shardNodes, store)
 		if err != nil {
 			log.Fatalf("Failed to create FollowersExpFeed: %v", err)
 		}

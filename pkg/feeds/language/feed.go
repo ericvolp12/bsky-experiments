@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-type LanguageFeed struct {
+type Feed struct {
 	FeedActorDID         string
 	DefaultLookbackHours int32
 	Store                *store.Store
@@ -34,13 +34,13 @@ var feedAliases = map[string]string{
 	"cl-brasil":   "cluster-brasil",
 }
 
-func NewLanguageFeed(ctx context.Context, feedActorDID string, store *store.Store) (*LanguageFeed, []string, error) {
+func NewFeed(ctx context.Context, feedActorDID string, store *store.Store) (*Feed, []string, error) {
 	feeds := []string{}
 	for alias := range feedAliases {
 		feeds = append(feeds, alias)
 	}
 
-	return &LanguageFeed{
+	return &Feed{
 		FeedActorDID:         feedActorDID,
 		Store:                store,
 		DefaultLookbackHours: 24,
@@ -49,7 +49,7 @@ func NewLanguageFeed(ctx context.Context, feedActorDID string, store *store.Stor
 
 var tracer = otel.Tracer("cluster-feed")
 
-func (f *LanguageFeed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
+func (f *Feed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
 	ctx, span := tracer.Start(ctx, "GetPage")
 	defer span.End()
 
@@ -110,7 +110,7 @@ func (f *LanguageFeed) GetPage(ctx context.Context, feed string, userDID string,
 	return posts, &newCursor, nil
 }
 
-func (f *LanguageFeed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {
+func (f *Feed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {
 	feeds := []appbsky.FeedDescribeFeedGenerator_Feed{}
 	for alias := range feedAliases {
 		feeds = append(feeds, appbsky.FeedDescribeFeedGenerator_Feed{

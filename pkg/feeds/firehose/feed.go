@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
-type FirehoseFeed struct {
+type Feed struct {
 	FeedActorDID string
 	Store        *store.Store
 }
@@ -20,14 +20,14 @@ type NotFoundError struct {
 	error
 }
 
-func NewFirehoseFeed(ctx context.Context, feedActorDID string, store *store.Store) (*FirehoseFeed, []string, error) {
-	return &FirehoseFeed{
+func NewFeed(ctx context.Context, feedActorDID string, store *store.Store) (*Feed, []string, error) {
+	return &Feed{
 		FeedActorDID: feedActorDID,
 		Store:        store,
 	}, []string{"firehose"}, nil
 }
 
-func (f *FirehoseFeed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
+func (f *Feed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
 	tracer := otel.Tracer("firehose-feed")
 	ctx, span := tracer.Start(ctx, "GetPage")
 	defer span.End()
@@ -66,7 +66,7 @@ func (f *FirehoseFeed) GetPage(ctx context.Context, feed string, userDID string,
 	return feedPosts, &newCursor, nil
 }
 
-func (f *FirehoseFeed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {
+func (f *Feed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {
 	tracer := otel.Tracer("firehose-feed")
 	ctx, span := tracer.Start(ctx, "Describe")
 	defer span.End()

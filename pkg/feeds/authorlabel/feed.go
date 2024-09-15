@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-type AuthorLabelFeed struct {
+type Feed struct {
 	FeedActorDID string
 	Store        *store.Store
 	Labels       map[string]LabelFeed
@@ -30,8 +30,8 @@ type NotFoundError struct {
 	error
 }
 
-func NewAuthorLabelFeed(ctx context.Context, feedActorDID string, store *store.Store) (*AuthorLabelFeed, []string, error) {
-	alf := AuthorLabelFeed{
+func NewFeed(ctx context.Context, feedActorDID string, store *store.Store) (*Feed, []string, error) {
+	alf := Feed{
 		FeedActorDID: feedActorDID,
 		Store:        store,
 	}
@@ -60,7 +60,7 @@ func NewAuthorLabelFeed(ctx context.Context, feedActorDID string, store *store.S
 
 var tracer = otel.Tracer("author-label-feed")
 
-func (f *AuthorLabelFeed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
+func (f *Feed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
 	ctx, span := tracer.Start(ctx, "GetPage")
 	defer span.End()
 
@@ -108,7 +108,7 @@ func (f *AuthorLabelFeed) GetPage(ctx context.Context, feed string, userDID stri
 	return posts, newCursor, nil
 }
 
-func (f *AuthorLabelFeed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {
+func (f *Feed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {
 	feeds := []appbsky.FeedDescribeFeedGenerator_Feed{}
 	for name := range f.Labels {
 		feeds = append(feeds, appbsky.FeedDescribeFeedGenerator_Feed{
@@ -119,7 +119,7 @@ func (f *AuthorLabelFeed) Describe(ctx context.Context) ([]appbsky.FeedDescribeF
 	return feeds, nil
 }
 
-func (f *AuthorLabelFeed) GetMPLSPage(ctx context.Context, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
+func (f *Feed) GetMPLSPage(ctx context.Context, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
 	ctx, span := tracer.Start(ctx, "GetMPLSPage")
 	defer span.End()
 
@@ -156,7 +156,7 @@ func (f *AuthorLabelFeed) GetMPLSPage(ctx context.Context, userDID string, limit
 	return feedPosts, &newCursor, nil
 }
 
-func (f *AuthorLabelFeed) GetTQSPPage(ctx context.Context, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
+func (f *Feed) GetTQSPPage(ctx context.Context, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
 	ctx, span := tracer.Start(ctx, "GetTQSPPage")
 	defer span.End()
 

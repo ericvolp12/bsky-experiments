@@ -35,7 +35,7 @@ var topCacheTTLs = map[int]time.Duration{
 	24: 10 * time.Minute,
 }
 
-type HotFeed struct {
+type Feed struct {
 	FeedActorDID string
 	Store        *store.Store
 	Redis        *redis.Client
@@ -58,8 +58,8 @@ type postRef struct {
 	HasMedia bool     `json:"has_media"`
 }
 
-func NewHotFeed(ctx context.Context, feedActorDID string, store *store.Store, redis *redis.Client) (*HotFeed, []string, error) {
-	f := HotFeed{
+func NewFeed(ctx context.Context, feedActorDID string, store *store.Store, redis *redis.Client) (*Feed, []string, error) {
+	f := Feed{
 		FeedActorDID: feedActorDID,
 		Store:        store,
 		Redis:        redis,
@@ -124,19 +124,19 @@ func NewHotFeed(ctx context.Context, feedActorDID string, store *store.Store, re
 	return &f, supportedFeeds, nil
 }
 
-func (f *HotFeed) isReady() bool {
+func (f *Feed) isReady() bool {
 	f.initLk.Lock()
 	defer f.initLk.Unlock()
 	return f.init
 }
 
-func (f *HotFeed) setReady() {
+func (f *Feed) setReady() {
 	f.initLk.Lock()
 	defer f.initLk.Unlock()
 	f.init = true
 }
 
-func (f *HotFeed) fetchAndCacheHotPosts(ctx context.Context) ([]postRef, error) {
+func (f *Feed) fetchAndCacheHotPosts(ctx context.Context) ([]postRef, error) {
 	rawPosts, err := f.Store.Queries.GetHotPage(ctx, store_queries.GetHotPageParams{
 		Limit: int32(maxPosts),
 		Score: sql.NullFloat64{
@@ -176,7 +176,7 @@ func (f *HotFeed) fetchAndCacheHotPosts(ctx context.Context) ([]postRef, error) 
 	return postRefs, nil
 }
 
-func (f *HotFeed) fetchAndCacheTopPosts(ctx context.Context, hours int) ([]postRef, error) {
+func (f *Feed) fetchAndCacheTopPosts(ctx context.Context, hours int) ([]postRef, error) {
 	rawPosts, err := f.Store.Queries.GetTopPostsInWindow(ctx, store_queries.GetTopPostsInWindowParams{
 		Hours: int32(hours),
 		Limit: int32(maxPosts),
@@ -218,7 +218,7 @@ func (f *HotFeed) fetchAndCacheTopPosts(ctx context.Context, hours int) ([]postR
 	return postRefs, nil
 }
 
-func (f *HotFeed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
+func (f *Feed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
 	ctx, span := tracer.Start(ctx, "GetPage")
 	defer span.End()
 
@@ -307,7 +307,7 @@ func (f *HotFeed) GetPage(ctx context.Context, feed string, userDID string, limi
 	return feedPosts, &newCursor, nil
 }
 
-func (f *HotFeed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {
+func (f *Feed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {
 	ctx, span := tracer.Start(ctx, "Describe")
 	defer span.End()
 

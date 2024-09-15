@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/bluesky-social/indigo/atproto/syntax"
 )
 
 type ErrInvalidCursor struct {
@@ -17,7 +19,7 @@ func ParseCursor(cursor string) (time.Time, string, string, error) {
 	var err error
 	createdAt := time.Now()
 	actorDID := ""
-	rkey := ""
+	rkey := syntax.NewTID(time.Now().UnixMicro(), 0).String()
 
 	if cursor != "" {
 		cursorParts := strings.Split(cursor, "|")
