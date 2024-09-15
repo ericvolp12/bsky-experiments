@@ -290,6 +290,10 @@ func (c *Consumer) TrimRecentPosts(ctx context.Context, maxAge time.Duration) er
 	if err != nil {
 		c.Logger.Error("failed to trim TQSP feed", "error", err)
 	}
+	err = c.Store.Queries.TrimRecentPostLabels(ctx, oldestRkey)
+	if err != nil {
+		c.Logger.Error("failed to trim recent post labels", "error", err)
+	}
 
 	postsTrimmed.WithLabelValues(c.SocketURL).Add(float64(numDeleted))
 

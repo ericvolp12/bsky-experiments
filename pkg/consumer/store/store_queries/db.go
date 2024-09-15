@@ -93,6 +93,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createRecentPostStmt, err = db.PrepareContext(ctx, createRecentPost); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateRecentPost: %w", err)
 	}
+	if q.createRecentPostLabelStmt, err = db.PrepareContext(ctx, createRecentPostLabel); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateRecentPostLabel: %w", err)
+	}
 	if q.createRepoBackfillRecordStmt, err = db.PrepareContext(ctx, createRepoBackfillRecord); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateRepoBackfillRecord: %w", err)
 	}
@@ -176,6 +179,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteRecentPostStmt, err = db.PrepareContext(ctx, deleteRecentPost); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteRecentPost: %w", err)
+	}
+	if q.deleteRecentPostLabelStmt, err = db.PrepareContext(ctx, deleteRecentPostLabel); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteRecentPostLabel: %w", err)
 	}
 	if q.deleteRepoCleanupJobStmt, err = db.PrepareContext(ctx, deleteRepoCleanupJob); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteRepoCleanupJob: %w", err)
@@ -486,8 +492,14 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listPinsByActorStmt, err = db.PrepareContext(ctx, listPinsByActor); err != nil {
 		return nil, fmt.Errorf("error preparing query ListPinsByActor: %w", err)
 	}
+	if q.listRecentPostLabelsStmt, err = db.PrepareContext(ctx, listRecentPostLabels); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRecentPostLabels: %w", err)
+	}
 	if q.listRecentPostsStmt, err = db.PrepareContext(ctx, listRecentPosts); err != nil {
 		return nil, fmt.Errorf("error preparing query ListRecentPosts: %w", err)
+	}
+	if q.listRecentPostsByLabelHotStmt, err = db.PrepareContext(ctx, listRecentPostsByLabelHot); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRecentPostsByLabelHot: %w", err)
 	}
 	if q.listTQSPStmt, err = db.PrepareContext(ctx, listTQSP); err != nil {
 		return nil, fmt.Errorf("error preparing query ListTQSP: %w", err)
@@ -503,6 +515,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.trimOldRecentPostsStmt, err = db.PrepareContext(ctx, trimOldRecentPosts); err != nil {
 		return nil, fmt.Errorf("error preparing query TrimOldRecentPosts: %w", err)
+	}
+	if q.trimRecentPostLabelsStmt, err = db.PrepareContext(ctx, trimRecentPostLabels); err != nil {
+		return nil, fmt.Errorf("error preparing query TrimRecentPostLabels: %w", err)
 	}
 	if q.trimTQSPStmt, err = db.PrepareContext(ctx, trimTQSP); err != nil {
 		return nil, fmt.Errorf("error preparing query TrimTQSP: %w", err)
@@ -651,6 +666,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createRecentPostStmt: %w", cerr)
 		}
 	}
+	if q.createRecentPostLabelStmt != nil {
+		if cerr := q.createRecentPostLabelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createRecentPostLabelStmt: %w", cerr)
+		}
+	}
 	if q.createRepoBackfillRecordStmt != nil {
 		if cerr := q.createRepoBackfillRecordStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createRepoBackfillRecordStmt: %w", cerr)
@@ -789,6 +809,11 @@ func (q *Queries) Close() error {
 	if q.deleteRecentPostStmt != nil {
 		if cerr := q.deleteRecentPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteRecentPostStmt: %w", cerr)
+		}
+	}
+	if q.deleteRecentPostLabelStmt != nil {
+		if cerr := q.deleteRecentPostLabelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteRecentPostLabelStmt: %w", cerr)
 		}
 	}
 	if q.deleteRepoCleanupJobStmt != nil {
@@ -1306,9 +1331,19 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listPinsByActorStmt: %w", cerr)
 		}
 	}
+	if q.listRecentPostLabelsStmt != nil {
+		if cerr := q.listRecentPostLabelsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRecentPostLabelsStmt: %w", cerr)
+		}
+	}
 	if q.listRecentPostsStmt != nil {
 		if cerr := q.listRecentPostsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listRecentPostsStmt: %w", cerr)
+		}
+	}
+	if q.listRecentPostsByLabelHotStmt != nil {
+		if cerr := q.listRecentPostsByLabelHotStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRecentPostsByLabelHotStmt: %w", cerr)
 		}
 	}
 	if q.listTQSPStmt != nil {
@@ -1334,6 +1369,11 @@ func (q *Queries) Close() error {
 	if q.trimOldRecentPostsStmt != nil {
 		if cerr := q.trimOldRecentPostsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing trimOldRecentPostsStmt: %w", cerr)
+		}
+	}
+	if q.trimRecentPostLabelsStmt != nil {
+		if cerr := q.trimRecentPostLabelsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing trimRecentPostLabelsStmt: %w", cerr)
 		}
 	}
 	if q.trimTQSPStmt != nil {
@@ -1443,6 +1483,7 @@ type Queries struct {
 	createPointAssignmentStmt                 *sql.Stmt
 	createPostStmt                            *sql.Stmt
 	createRecentPostStmt                      *sql.Stmt
+	createRecentPostLabelStmt                 *sql.Stmt
 	createRepoBackfillRecordStmt              *sql.Stmt
 	createRepostStmt                          *sql.Stmt
 	createSentimentJobStmt                    *sql.Stmt
@@ -1471,6 +1512,7 @@ type Queries struct {
 	deletePointAssignmentStmt                 *sql.Stmt
 	deletePostStmt                            *sql.Stmt
 	deleteRecentPostStmt                      *sql.Stmt
+	deleteRecentPostLabelStmt                 *sql.Stmt
 	deleteRepoCleanupJobStmt                  *sql.Stmt
 	deleteRepostStmt                          *sql.Stmt
 	deleteRepostCountStmt                     *sql.Stmt
@@ -1574,12 +1616,15 @@ type Queries struct {
 	listActorsByLabelStmt                     *sql.Stmt
 	listMPLSStmt                              *sql.Stmt
 	listPinsByActorStmt                       *sql.Stmt
+	listRecentPostLabelsStmt                  *sql.Stmt
 	listRecentPostsStmt                       *sql.Stmt
+	listRecentPostsByLabelHotStmt             *sql.Stmt
 	listTQSPStmt                              *sql.Stmt
 	refreshStatsForDayStmt                    *sql.Stmt
 	setSentimentForPostStmt                   *sql.Stmt
 	trimMPLSStmt                              *sql.Stmt
 	trimOldRecentPostsStmt                    *sql.Stmt
+	trimRecentPostLabelsStmt                  *sql.Stmt
 	trimTQSPStmt                              *sql.Stmt
 	upatePointAssignmentStmt                  *sql.Stmt
 	updateActorPropicStmt                     *sql.Stmt
@@ -1618,6 +1663,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createPointAssignmentStmt:                 q.createPointAssignmentStmt,
 		createPostStmt:                            q.createPostStmt,
 		createRecentPostStmt:                      q.createRecentPostStmt,
+		createRecentPostLabelStmt:                 q.createRecentPostLabelStmt,
 		createRepoBackfillRecordStmt:              q.createRepoBackfillRecordStmt,
 		createRepostStmt:                          q.createRepostStmt,
 		createSentimentJobStmt:                    q.createSentimentJobStmt,
@@ -1646,6 +1692,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deletePointAssignmentStmt:                 q.deletePointAssignmentStmt,
 		deletePostStmt:                            q.deletePostStmt,
 		deleteRecentPostStmt:                      q.deleteRecentPostStmt,
+		deleteRecentPostLabelStmt:                 q.deleteRecentPostLabelStmt,
 		deleteRepoCleanupJobStmt:                  q.deleteRepoCleanupJobStmt,
 		deleteRepostStmt:                          q.deleteRepostStmt,
 		deleteRepostCountStmt:                     q.deleteRepostCountStmt,
@@ -1749,12 +1796,15 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listActorsByLabelStmt:                     q.listActorsByLabelStmt,
 		listMPLSStmt:                              q.listMPLSStmt,
 		listPinsByActorStmt:                       q.listPinsByActorStmt,
+		listRecentPostLabelsStmt:                  q.listRecentPostLabelsStmt,
 		listRecentPostsStmt:                       q.listRecentPostsStmt,
+		listRecentPostsByLabelHotStmt:             q.listRecentPostsByLabelHotStmt,
 		listTQSPStmt:                              q.listTQSPStmt,
 		refreshStatsForDayStmt:                    q.refreshStatsForDayStmt,
 		setSentimentForPostStmt:                   q.setSentimentForPostStmt,
 		trimMPLSStmt:                              q.trimMPLSStmt,
 		trimOldRecentPostsStmt:                    q.trimOldRecentPostsStmt,
+		trimRecentPostLabelsStmt:                  q.trimRecentPostLabelsStmt,
 		trimTQSPStmt:                              q.trimTQSPStmt,
 		upatePointAssignmentStmt:                  q.upatePointAssignmentStmt,
 		updateActorPropicStmt:                     q.updateActorPropicStmt,

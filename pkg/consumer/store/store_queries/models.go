@@ -227,6 +227,12 @@ type RecentPost struct {
 	InsertedAt         time.Time             `json:"inserted_at"`
 }
 
+type RecentPostLabel struct {
+	ActorDid string `json:"actor_did"`
+	Rkey     string `json:"rkey"`
+	Label    string `json:"label"`
+}
+
 type RecentPostsWithScore struct {
 	SubjectID        int64        `json:"subject_id"`
 	ActorDid         string       `json:"actor_did"`

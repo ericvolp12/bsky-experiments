@@ -731,7 +731,14 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 				err = index.PostRegistry.AddPostLabel(ctx, result.Meta.PostID, result.Meta.ActorDID, postLabel)
 				if err != nil {
 					logger.Error("Failed to add label to post", "error", err)
-					continue
+				}
+				err = index.Store.Queries.CreateRecentPostLabel(ctx, store_queries.CreateRecentPostLabelParams{
+					ActorDid: result.Meta.ActorDID,
+					Rkey:     result.Meta.PostID,
+					Label:    postLabel,
+				})
+				if err != nil {
+					logger.Error("Failed to create recent post label", "error", err)
 				}
 			}
 		}(result)

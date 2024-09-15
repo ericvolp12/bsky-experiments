@@ -231,16 +231,6 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 		}
 	}
 
-	// Create a Sentiment Job for the post
-	err = c.Store.Queries.CreateSentimentJob(ctx, store_queries.CreateSentimentJobParams{
-		ActorDid:  repo,
-		Rkey:      rkey,
-		CreatedAt: recCreatedAt,
-	})
-	if err != nil {
-		log.Errorf("failed to create sentiment job: %+v", err)
-	}
-
 	// Create images for the post
 	if rec.Embed != nil && rec.Embed.EmbedImages != nil {
 		for _, img := range rec.Embed.EmbedImages.Images {
