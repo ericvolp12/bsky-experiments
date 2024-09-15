@@ -225,6 +225,7 @@ func FeedGenerator(cctx *cli.Context) error {
 	}
 
 	// Create a cluster feed
+	log.Print("initializing cluster feed")
 	clustersFeed, clusterFeedAliases, err := cluster.NewClusterFeed(ctx, feedActorDID, postRegistry, store)
 	if err != nil {
 		log.Fatalf("Failed to create ClusterFeed: %v", err)
@@ -232,6 +233,7 @@ func FeedGenerator(cctx *cli.Context) error {
 	feedGenerator.AddFeed(clusterFeedAliases, clustersFeed)
 
 	// Create a postlabel feed
+	log.Print("initializing postlabel feed")
 	postLabelFeed, postLabelFeedAliases, err := postlabel.NewPostLabelFeed(ctx, feedActorDID, postRegistry)
 	if err != nil {
 		log.Fatalf("Failed to create PostLabelFeed: %v", err)
@@ -239,6 +241,7 @@ func FeedGenerator(cctx *cli.Context) error {
 	feedGenerator.AddFeed(postLabelFeedAliases, postLabelFeed)
 
 	// Create an authorlabel feed
+	log.Print("initializing authorlabel feed")
 	authorLabelFeed, authorLabelFeedAliases, err := authorlabel.NewAuthorLabelFeed(ctx, feedActorDID, postRegistry)
 	if err != nil {
 		log.Fatalf("Failed to create AuthorLabelFeed: %v", err)
@@ -246,6 +249,7 @@ func FeedGenerator(cctx *cli.Context) error {
 	feedGenerator.AddFeed(authorLabelFeedAliases, authorLabelFeed)
 
 	// Create a firehose feed
+	log.Print("initializing firehose feed")
 	firehoseFeed, firehoseFeedAliases, err := firehose.NewFirehoseFeed(ctx, feedActorDID, postRegistry)
 	if err != nil {
 		log.Fatalf("Failed to create FirehoseFeed: %v", err)
@@ -253,6 +257,7 @@ func FeedGenerator(cctx *cli.Context) error {
 	feedGenerator.AddFeed(firehoseFeedAliases, firehoseFeed)
 
 	// Create a Bangers feed
+	log.Print("initializing bangers feed")
 	bangersFeed, bangersFeedAliases, err := bangers.NewBangersFeed(ctx, feedActorDID, store, redisClient)
 	if err != nil {
 		log.Fatalf("Failed to create BangersFeed: %v", err)
@@ -260,21 +265,16 @@ func FeedGenerator(cctx *cli.Context) error {
 	feedGenerator.AddFeed(bangersFeedAliases, bangersFeed)
 
 	// Create a What's Hot feed
+	log.Print("initializing hot feed")
 	hotFeed, hotFeedAliases, err := hot.NewHotFeed(ctx, feedActorDID, store, redisClient)
 	if err != nil {
 		log.Fatalf("Failed to create HotFeed: %v", err)
 	}
 	feedGenerator.AddFeed(hotFeedAliases, hotFeed)
 
-	// // Create a My Followers feed
-	// followersFeed, followersFeedAliases, err := followers.NewFollowersFeed(ctx, feedActorDID, store, graphdClient, redisClient)
-	// if err != nil {
-	// 	log.Fatalf("Failed to create FollowersFeed: %v", err)
-	// }
-	// feedGenerator.AddFeed(followersFeedAliases, followersFeed)
-
 	if shardDBClient != nil {
 		// Create Experimental Followers feed
+		log.Print("initializing followers feed")
 		followersExpFeed, followersExpFeedAliases, err := followersexp.NewFollowersFeed(ctx, feedActorDID, graphdClient, redisClient, shardDBClient, store)
 		if err != nil {
 			log.Fatalf("Failed to create FollowersExpFeed: %v", err)
@@ -283,6 +283,7 @@ func FeedGenerator(cctx *cli.Context) error {
 	}
 
 	// Create a My Pins feed
+	log.Print("initializing pins feed")
 	pinsFeed, pinsFeedAliases, err := pins.NewPinsFeed(ctx, feedActorDID, store)
 	if err != nil {
 		log.Fatalf("Failed to create PinsFeed: %v", err)

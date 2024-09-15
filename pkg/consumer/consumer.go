@@ -21,12 +21,10 @@ import (
 	graphdclient "github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
 	"github.com/ericvolp12/bsky-experiments/pkg/sharddb"
 	"github.com/goccy/go-json"
-	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	"github.com/labstack/gommon/log"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/redis/go-redis/v9"
-	"github.com/sqlc-dev/pqtype"
 	typegen "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/time/rate"
 
@@ -284,16 +282,7 @@ func (c *Consumer) TrimRecentPosts(ctx context.Context, maxAge time.Duration) er
 
 	postsTrimmed.WithLabelValues(c.SocketURL).Add(float64(numDeleted))
 
-	// Trim the Active Posters sorted set in redis
-	upperBound := fmt.Sprintf("(%d", time.Now().Add(-maxAge).UnixNano())
-	numActiveTrimmed, err := c.RedisClient.ZRemRangeByScore(ctx, activePostersKey, "-inf", upperBound).Result()
-	if err != nil {
-		return fmt.Errorf("failed to trim active posters: %+v", err)
-	}
-
-	span.SetAttributes(attribute.Int64("num_active_posters_trimmed", numActiveTrimmed))
-
-	c.Logger.Infow("trimmed recent posts", "num_deleted", numDeleted, "duration", time.Since(start).Seconds(), "num_active_posters_trimmed", numActiveTrimmed)
+	c.Logger.Infow("trimmed recent posts", "num_deleted", numDeleted, "duration", time.Since(start).Seconds())
 
 	return nil
 }
@@ -588,38 +577,9 @@ func (c *Consumer) HandleDeleteRecord(
 	rkey := strings.Split(path, "/")[1]
 	switch collection {
 	case "app.bsky.feed.post":
-		span.SetAttributes(attribute.String("record_type", "feed_post"))
-		err := c.Store.Queries.DeletePost(ctx, store_queries.DeletePostParams{
-			ActorDid: repo,
-			Rkey:     rkey,
-		})
+		err := c.HandleDeletePost(ctx, repo, rkey)
 		if err != nil {
-			log.Errorf("failed to delete post: %+v", err)
-			// Don't return an error here, because we still want to try to delete the images
-		}
-
-		err = c.Store.Queries.DeleteRecentPost(ctx, store_queries.DeleteRecentPostParams{
-			ActorDid: repo,
-			Rkey:     rkey,
-		})
-
-		// Delete sentiment for the post
-		err = c.Store.Queries.DeleteSentimentJob(ctx, store_queries.DeleteSentimentJobParams{
-			ActorDid: repo,
-			Rkey:     rkey,
-		})
-		if err != nil {
-			log.Errorf("failed to delete sentiment job: %+v", err)
-			// Don't return an error here, because we still want to try to delete the images
-		}
-
-		// Delete images for the post
-		err = c.Store.Queries.DeleteImagesForPost(ctx, store_queries.DeleteImagesForPostParams{
-			PostActorDid: repo,
-			PostRkey:     rkey,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to delete images for post: %+v", err)
+			return fmt.Errorf("failed to handle delete post: %w", err)
 		}
 	case "app.bsky.feed.like":
 		span.SetAttributes(attribute.String("record_type", "feed_like"))
@@ -757,122 +717,6 @@ func (c *Consumer) HandleDeleteRecord(
 	return nil
 }
 
-func (c *Consumer) FanoutWrite(
-	ctx context.Context,
-	repo string,
-	path string,
-) error {
-	ctx, span := tracer.Start(ctx, "FanoutWrite")
-	defer span.End()
-
-	// Get followers of the repo
-	// follows, err := c.Store.Queries.GetFollowsByTarget(ctx, store_queries.GetFollowsByTargetParams{
-	// 	TargetDid: repo,
-	// 	Limit:     100_000,
-	// })
-	// if err != nil {
-	// 	return fmt.Errorf("failed to get followers: %+v", err)
-	// }
-
-	// Write to the timelines of all followers
-	// pipeline := c.RedisClient.Pipeline()
-	// for _, follow := range follows {
-	// 	pipeline.ZAdd(ctx, fmt.Sprintf("wfo:%s:timeline", follow.ActorDid), redis.Z{
-	// 		Score:  float64(time.Now().UnixNano()),
-	// 		Member: fmt.Sprintf("at://%s/%s", repo, path),
-	// 	})
-	// 	// Randomly trim the timeline to 1000 records every 1/5th of the time
-	// 	if rand.Intn(5) == 0 {
-	// 		pipeline.ZRemRangeByRank(ctx, fmt.Sprintf("wfo:%s:timeline", follow.ActorDid), 0, -1000)
-	// 	}
-	// }
-
-	// _, err = pipeline.Exec(ctx)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to write to timelines: %+v", err)
-	// }
-
-	followCount, err := c.Store.Queries.GetFollowerCount(ctx, repo)
-	if err != nil {
-		if err != sql.ErrNoRows {
-			return fmt.Errorf("failed to get follower count: %+v", err)
-		}
-	}
-
-	// Observe the number of timelines we would have written to
-	postsFannedOut.WithLabelValues(c.SocketURL).Inc()
-	postFanoutHist.WithLabelValues(c.SocketURL).Observe(float64(followCount.NumFollowers))
-
-	return nil
-}
-
-var activePostersKey = "consumer:active_posters"
-
-// MarkPosterActive marks a poster as active in a redis sorted set
-func (c *Consumer) MarkPosterActive(
-	ctx context.Context,
-	repo string,
-	scoredAt time.Time,
-) error {
-	ctx, span := tracer.Start(ctx, "MarkPosterActive")
-	defer span.End()
-
-	// Add the poster to the active posters sorted set
-	// only update scores of existing members if the new score is greater
-	_, err := c.RedisClient.ZAddGT(ctx, activePostersKey, redis.Z{
-		Score:  float64(scoredAt.UnixNano()),
-		Member: repo,
-	}).Result()
-	if err != nil {
-		return fmt.Errorf("failed to add poster to active posters: %+v", err)
-	}
-
-	return nil
-}
-
-// IntersectActivePosters returns the intersection of the active posters sorted set and the given set of posters
-func (c *Consumer) IntersectActivePosters(
-	ctx context.Context,
-	dids []string,
-) ([]string, error) {
-	ctx, span := tracer.Start(ctx, "IntersectActivePosters")
-	defer span.End()
-
-	// Intersect the active posters sorted set and the given set of posters
-	// to find the posters that are both active and in the given set
-
-	zs := make([]redis.Z, len(dids))
-	for i, did := range dids {
-		zs[i] = redis.Z{
-			Score:  1,
-			Member: did,
-		}
-	}
-
-	// Add the posters to a temporary set
-	tempSetKey := fmt.Sprintf("consumer:active_posters:temp:%s", uuid.New().String())
-	_, err := c.RedisClient.ZAdd(ctx, tempSetKey, zs...).Result()
-	if err != nil {
-		return nil, fmt.Errorf("failed to add posters to temp set: %+v", err)
-	}
-
-	// Intersect the temp set with the active posters set
-	intersection, err := c.RedisClient.ZInter(ctx, &redis.ZStore{
-		Keys: []string{tempSetKey, activePostersKey},
-	}).Result()
-	if err != nil {
-		return nil, fmt.Errorf("failed to intersect temp set with active posters set: %+v", err)
-	}
-
-	// Delete the temp set
-	_, err = c.RedisClient.Del(ctx, tempSetKey).Result()
-	if err != nil {
-		return nil, fmt.Errorf("failed to delete temp set: %+v", err)
-	}
-
-	return intersection, nil
-}
-
 // HandleCreateRecord handles a create record event from the firehose
 func (c *Consumer) HandleCreateRecord(
 	ctx context.Context,
@@ -894,257 +738,9 @@ func (c *Consumer) HandleCreateRecord(
 	// Unpack the record and process it
 	switch rec := rec.(type) {
 	case *bsky.FeedPost:
-		span.SetAttributes(attribute.String("record_type", "feed_post"))
-		recordsProcessedCounter.WithLabelValues("feed_post", c.SocketURL).Inc()
-
-		// Check if we've already processed this record
-		_, err = c.Store.Queries.GetPost(ctx, store_queries.GetPostParams{
-			ActorDid: repo,
-			Rkey:     rkey,
-		})
+		err := c.HandleCreatePost(ctx, repo, rkey, indexedAt, rec)
 		if err != nil {
-			if err != sql.ErrNoRows {
-				return nil, fmt.Errorf("failed to get post: %w", err)
-			}
-		} else {
-			// We've already processed this record, so skip it
-			return nil, nil
-		}
-
-		quoteActorDid := ""
-		quoteActorRkey := ""
-		if rec.Embed != nil && rec.Embed.EmbedRecord != nil && rec.Embed.EmbedRecord.Record != nil {
-			quoteRepostsProcessedCounter.WithLabelValues(c.SocketURL).Inc()
-			u, err := GetURI(rec.Embed.EmbedRecord.Record.Uri)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get Quoted Record uri: %w", err)
-			}
-			quoteActorDid = u.Did
-			quoteActorRkey = u.RKey
-
-		}
-
-		parentActorDid := ""
-		parentActorRkey := ""
-		if rec.Reply != nil && rec.Reply.Parent != nil {
-			u, err := GetURI(rec.Reply.Parent.Uri)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get Reply uri: %w", err)
-			}
-			parentActorDid = u.Did
-			parentActorRkey = u.RKey
-		}
-
-		rootActorDid := ""
-		rootActorRkey := ""
-		if rec.Reply != nil && rec.Reply.Root != nil {
-			u, err := GetURI(rec.Reply.Root.Uri)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get Root uri: %w", err)
-			}
-			rootActorDid = u.Did
-			rootActorRkey = u.RKey
-		}
-
-		hasMedia := false
-		if rec.Embed != nil {
-			if rec.Embed.EmbedImages != nil && len(rec.Embed.EmbedImages.Images) > 0 {
-				hasMedia = true
-			} else if rec.Embed.EmbedRecordWithMedia != nil &&
-				rec.Embed.EmbedRecordWithMedia.Media != nil &&
-				rec.Embed.EmbedRecordWithMedia.Media.EmbedImages != nil &&
-				len(rec.Embed.EmbedRecordWithMedia.Media.EmbedImages.Images) > 0 {
-				hasMedia = true
-			}
-		}
-
-		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
-
-		createParams := store_queries.CreatePostParams{
-			ActorDid:           repo,
-			Rkey:               rkey,
-			Content:            sql.NullString{String: rec.Text, Valid: true},
-			ParentPostActorDid: sql.NullString{String: parentActorDid, Valid: parentActorDid != ""},
-			ParentPostRkey:     sql.NullString{String: parentActorRkey, Valid: parentActorRkey != ""},
-			QuotePostActorDid:  sql.NullString{String: quoteActorDid, Valid: quoteActorDid != ""},
-			QuotePostRkey:      sql.NullString{String: quoteActorRkey, Valid: quoteActorRkey != ""},
-			RootPostActorDid:   sql.NullString{String: rootActorDid, Valid: rootActorDid != ""},
-			RootPostRkey:       sql.NullString{String: rootActorRkey, Valid: rootActorRkey != ""},
-			HasEmbeddedMedia:   hasMedia,
-			CreatedAt:          sql.NullTime{Time: recCreatedAt, Valid: true},
-			Langs:              rec.Langs,
-			InsertedAt:         indexedAt,
-		}
-
-		if rec.Facets != nil {
-			facetsJSON := []byte{}
-			facetsJSON, err = json.Marshal(rec.Facets)
-			if err != nil {
-				log.Errorf("failed to marshal facets: %+v", err)
-			} else if len(facetsJSON) > 0 {
-				createParams.Facets = pqtype.NullRawMessage{RawMessage: facetsJSON, Valid: true}
-			}
-
-			for _, facet := range rec.Facets {
-				if facet.Features != nil {
-					for _, feature := range facet.Features {
-						if feature.RichtextFacet_Tag != nil {
-							createParams.Tags = append(createParams.Tags, feature.RichtextFacet_Tag.Tag)
-						}
-					}
-				}
-			}
-		}
-
-		if rec.Embed != nil && rec.Embed.EmbedExternal != nil {
-			embedJSON := []byte{}
-			embedJSON, err = json.Marshal(rec.Embed.EmbedExternal)
-			if err != nil {
-				log.Errorf("failed to marshal embed external: %+v", err)
-			} else if len(embedJSON) > 0 {
-				createParams.Embed = pqtype.NullRawMessage{RawMessage: embedJSON, Valid: true}
-			}
-		}
-
-		if len(rec.Tags) > 0 {
-			createParams.Tags = append(createParams.Tags, rec.Tags...)
-		}
-
-		// Create the post subject
-		subj, err := c.Store.Queries.CreateSubject(ctx, store_queries.CreateSubjectParams{
-			ActorDid: repo,
-			Rkey:     rkey,
-			Col:      1, // Maps to app.bsky.feed.post
-		})
-		if err != nil {
-			log.Errorf("failed to create subject: %+v", err)
-		}
-
-		createParams.SubjectID = sql.NullInt64{Int64: subj.ID, Valid: true}
-
-		err = c.Store.Queries.CreatePost(ctx, createParams)
-		if err != nil {
-			log.Errorf("failed to create post: %+v", err)
-		}
-
-		err = c.Store.Queries.CreateRecentPost(ctx, store_queries.CreateRecentPostParams{
-			ActorDid:           createParams.ActorDid,
-			Rkey:               createParams.Rkey,
-			Content:            createParams.Content,
-			ParentPostActorDid: createParams.ParentPostActorDid,
-			ParentPostRkey:     createParams.ParentPostRkey,
-			QuotePostActorDid:  createParams.QuotePostActorDid,
-			QuotePostRkey:      createParams.QuotePostRkey,
-			RootPostActorDid:   createParams.RootPostActorDid,
-			RootPostRkey:       createParams.RootPostRkey,
-			HasEmbeddedMedia:   createParams.HasEmbeddedMedia,
-			Facets:             createParams.Facets,
-			Embed:              createParams.Embed,
-			Langs:              createParams.Langs,
-			Tags:               createParams.Tags,
-			CreatedAt:          createParams.CreatedAt,
-			SubjectID:          sql.NullInt64{Int64: subj.ID, Valid: true},
-		})
-		if err != nil {
-			log.Errorf("failed to create recent post: %+v", err)
-		}
-
-		earliestTS := time.Now()
-		if recCreatedAt.Before(earliestTS) {
-			earliestTS = recCreatedAt
-		}
-
-		err = c.MarkPosterActive(ctx, repo, earliestTS)
-		if err != nil {
-			log.Errorf("failed to mark poster active: %+v", err)
-		}
-
-		// Create a Sentiment Job for the post
-		err = c.Store.Queries.CreateSentimentJob(ctx, store_queries.CreateSentimentJobParams{
-			ActorDid:  repo,
-			Rkey:      rkey,
-			CreatedAt: recCreatedAt,
-		})
-		if err != nil {
-			log.Errorf("failed to create sentiment job: %+v", err)
-		}
-
-		// Create images for the post
-		if rec.Embed != nil && rec.Embed.EmbedImages != nil {
-			for _, img := range rec.Embed.EmbedImages.Images {
-				if img.Image == nil {
-					continue
-				}
-				err = c.Store.Queries.CreateImage(ctx, store_queries.CreateImageParams{
-					Cid:          img.Image.Ref.String(),
-					PostActorDid: repo,
-					PostRkey:     rkey,
-					AltText:      sql.NullString{String: img.Alt, Valid: img.Alt != ""},
-					CreatedAt:    sql.NullTime{Time: recCreatedAt, Valid: true},
-				})
-				if err != nil {
-					log.Errorf("failed to create image: %+v", err)
-				}
-			}
-		}
-
-		// Initialize the like count
-		err = c.Store.Queries.CreateLikeCount(ctx, store_queries.CreateLikeCountParams{
-			SubjectID:        subj.ID,
-			NumLikes:         0,
-			UpdatedAt:        time.Now(),
-			SubjectCreatedAt: sql.NullTime{Time: recCreatedAt, Valid: true},
-		})
-		if err != nil {
-			log.Errorf("failed to create like count: %+v", err)
-		}
-
-		if c.shardDB != nil {
-			bucket, err := sharddb.GetBucketFromRKey(rkey)
-			if err != nil {
-				log.Errorf("failed to get bucket from rkey %q: %+v", rkey, err)
-				break
-			}
-
-			recBytes, err := json.Marshal(rec)
-			if err != nil {
-				log.Errorf("failed to marshal record for insertion to sharddb: %+v", err)
-				break
-			}
-
-			// Create Post in ShardDB
-			shardDBPost := sharddb.Post{
-				ActorDID:  repo,
-				Rkey:      rkey,
-				IndexedAt: indexedAt,
-				Bucket:    bucket,
-				Raw:       recBytes,
-				Langs:     rec.Langs,
-				Tags:      rec.Tags,
-				HasMedia:  hasMedia,
-				IsReply:   rec.Reply != nil,
-			}
-
-			err = c.shardDB.InsertPost(ctx, shardDBPost)
-			if err != nil {
-				log.Errorf("failed to insert post into sharddb: %+v", err)
-			}
-		}
-
-		// Increment the tag use counts
-		if createParams.Tags != nil {
-			err = c.tags.IncrementTagUseCounts(ctx, repo, createParams.Tags)
-			if err != nil {
-				log.Errorf("failed to increment tag use counts: %+v", err)
-			}
-		}
-
-		// Track the user in the posters bitmap
-		hourlyPostBMKey := fmt.Sprintf("posts_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
-
-		err = c.bitmapper.AddMember(ctx, hourlyPostBMKey, repo)
-		if err != nil {
-			log.Errorf("failed to add member to posters bitmap: %+v", err)
+			return nil, fmt.Errorf("failed to handle post: %w", err)
 		}
 	case *bsky.FeedLike:
 		span.SetAttributes(attribute.String("record_type", "feed_like"))
@@ -1414,8 +1010,9 @@ func (c *Consumer) HandleCreateRecord(
 	default:
 		span.SetAttributes(attribute.String("record_type", "other"))
 	}
+
 	if parseError != nil {
-		return nil, fmt.Errorf("error parsing time: %w", parseError)
+		return nil, fmt.Errorf("failed to parse created at time: %w", parseError)
 	}
 
 	return &recCreatedAt, nil
