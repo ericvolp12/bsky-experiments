@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
@@ -38,6 +39,8 @@ type HotFeed struct {
 	FeedActorDID string
 	Store        *store.Store
 	Redis        *redis.Client
+	init         bool
+	initLk       sync.Mutex
 }
 
 type NotFoundError struct {
@@ -62,57 +65,75 @@ func NewHotFeed(ctx context.Context, feedActorDID string, store *store.Store, re
 		Redis:        redis,
 	}
 
-	_, err := f.fetchAndCacheHotPosts(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error fetching and caching posts for feed (whats-hot): %w", err)
-	}
-
-	for hours := range topCacheKeys {
-		_, err := f.fetchAndCacheTopPosts(ctx, hours)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error fetching and caching posts for feed (top-%dh): %w", hours, err)
-		}
-	}
-
 	go func() {
-		t := time.NewTicker(hotCacheTTL)
-		logger := slog.With("source", "whats-hot-refresh")
-		defer t.Stop()
-		for {
-			select {
-			case <-t.C:
-				ctx := context.Background()
-				logger.Info("refreshing cache")
-				_, err := f.fetchAndCacheHotPosts(ctx)
-				if err != nil {
-					logger.Error("error refreshing cache", "error", err)
-				}
-				logger.Info("cache refreshed")
+		_, err := f.fetchAndCacheHotPosts(ctx)
+		if err != nil {
+			slog.Error("error fetching and caching posts for feed (whats-hot)", "error", err)
+			return
+		}
+
+		for hours := range topCacheKeys {
+			_, err := f.fetchAndCacheTopPosts(ctx, hours)
+			if err != nil {
+				slog.Error("error fetching and caching posts for feed", "top_feed", hours, "error", err)
+				return
 			}
 		}
-	}()
 
-	for hours, key := range topCacheKeys {
-		go func(hours int, key string) {
-			t := time.NewTicker(topCacheTTLs[hours])
-			logger := slog.With("source", fmt.Sprintf("top-%dh-refresh", hours))
+		go func() {
+			t := time.NewTicker(hotCacheTTL)
+			logger := slog.With("source", "whats-hot-refresh")
 			defer t.Stop()
 			for {
 				select {
 				case <-t.C:
 					ctx := context.Background()
 					logger.Info("refreshing cache")
-					_, err := f.fetchAndCacheTopPosts(ctx, hours)
+					_, err := f.fetchAndCacheHotPosts(ctx)
 					if err != nil {
 						logger.Error("error refreshing cache", "error", err)
 					}
 					logger.Info("cache refreshed")
 				}
 			}
-		}(hours, key)
-	}
+		}()
+
+		for hours, key := range topCacheKeys {
+			go func(hours int, key string) {
+				t := time.NewTicker(topCacheTTLs[hours])
+				logger := slog.With("source", fmt.Sprintf("top-%dh-refresh", hours))
+				defer t.Stop()
+				for {
+					select {
+					case <-t.C:
+						ctx := context.Background()
+						logger.Info("refreshing cache")
+						_, err := f.fetchAndCacheTopPosts(ctx, hours)
+						if err != nil {
+							logger.Error("error refreshing cache", "error", err)
+						}
+						logger.Info("cache refreshed")
+					}
+				}
+			}(hours, key)
+		}
+
+		f.setReady()
+	}()
 
 	return &f, supportedFeeds, nil
+}
+
+func (f *HotFeed) isReady() bool {
+	f.initLk.Lock()
+	defer f.initLk.Unlock()
+	return f.init
+}
+
+func (f *HotFeed) setReady() {
+	f.initLk.Lock()
+	defer f.initLk.Unlock()
+	f.init = true
 }
 
 func (f *HotFeed) fetchAndCacheHotPosts(ctx context.Context) ([]postRef, error) {
@@ -200,6 +221,10 @@ func (f *HotFeed) fetchAndCacheTopPosts(ctx context.Context, hours int) ([]postR
 func (f *HotFeed) GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) ([]*appbsky.FeedDefs_SkeletonFeedPost, *string, error) {
 	ctx, span := tracer.Start(ctx, "GetPage")
 	defer span.End()
+
+	if !f.isReady() {
+		return nil, nil, fmt.Errorf("feed starting up...")
+	}
 
 	offset := int64(0)
 	var err error

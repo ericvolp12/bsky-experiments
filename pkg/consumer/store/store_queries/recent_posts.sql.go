@@ -686,6 +686,60 @@ func (q *Queries) GetTopPostsInWindow(ctx context.Context, arg GetTopPostsInWind
 	return items, nil
 }
 
+const listRecentPosts = `-- name: ListRecentPosts :many
+SELECT actor_did, rkey, content, parent_post_actor_did, quote_post_actor_did, quote_post_rkey, parent_post_rkey, root_post_actor_did, root_post_rkey, facets, embed, langs, tags, subject_id, has_embedded_media, created_at, inserted_at
+FROM recent_posts
+WHERE inserted_at < $1
+ORDER BY inserted_at DESC
+LIMIT $2
+`
+
+type ListRecentPostsParams struct {
+	InsertedAt time.Time `json:"inserted_at"`
+	Limit      int32     `json:"limit"`
+}
+
+func (q *Queries) ListRecentPosts(ctx context.Context, arg ListRecentPostsParams) ([]RecentPost, error) {
+	rows, err := q.query(ctx, q.listRecentPostsStmt, listRecentPosts, arg.InsertedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RecentPost
+	for rows.Next() {
+		var i RecentPost
+		if err := rows.Scan(
+			&i.ActorDid,
+			&i.Rkey,
+			&i.Content,
+			&i.ParentPostActorDid,
+			&i.QuotePostActorDid,
+			&i.QuotePostRkey,
+			&i.ParentPostRkey,
+			&i.RootPostActorDid,
+			&i.RootPostRkey,
+			&i.Facets,
+			&i.Embed,
+			pq.Array(&i.Langs),
+			pq.Array(&i.Tags),
+			&i.SubjectID,
+			&i.HasEmbeddedMedia,
+			&i.CreatedAt,
+			&i.InsertedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const trimOldRecentPosts = `-- name: TrimOldRecentPosts :execrows
 DELETE FROM recent_posts
 WHERE created_at < NOW() - make_interval(hours := $1)

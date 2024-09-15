@@ -16,3 +16,9 @@ CREATE TABLE mpls (
     PRIMARY KEY (actor_did, rkey)
 );
 CREATE INDEX mpls_paging_idx ON mpls (rkey DESC);
+CREATE TABLE tqsp (
+    actor_did TEXT NOT NULL,
+    rkey TEXT NOT NULL,
+    PRIMARY KEY (actor_did, rkey)
+);
+CREATE INDEX tqsp_paging_idx ON tqsp (rkey DESC);

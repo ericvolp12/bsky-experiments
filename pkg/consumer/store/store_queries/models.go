@@ -287,3 +287,8 @@ type Subject struct {
 	Rkey     string `json:"rkey"`
 	Col      int32  `json:"col"`
 }
+
+type Tqsp struct {
+	ActorDid string `json:"actor_did"`
+	Rkey     string `json:"rkey"`
+}

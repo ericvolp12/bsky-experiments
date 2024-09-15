@@ -280,11 +280,15 @@ func (c *Consumer) TrimRecentPosts(ctx context.Context, maxAge time.Duration) er
 	}
 	span.SetAttributes(attribute.Int64("num_deleted", numDeleted))
 
-	// Trime the MPLS feed
+	// Trim the label feeds
 	oldestRkey := syntax.NewTIDFromTime(time.Now().Add(-maxAge*2), 0).String()
 	err = c.Store.Queries.TrimMPLS(ctx, oldestRkey)
 	if err != nil {
 		c.Logger.Error("failed to trim MPLS feed", "error", err)
+	}
+	err = c.Store.Queries.TrimTQSP(ctx, oldestRkey)
+	if err != nil {
+		c.Logger.Error("failed to trim TQSP feed", "error", err)
 	}
 
 	postsTrimmed.WithLabelValues(c.SocketURL).Add(float64(numDeleted))

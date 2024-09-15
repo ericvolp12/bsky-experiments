@@ -14,10 +14,10 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/feed-generator/endpoints"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/authorlabel"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/bangers"
-	"github.com/ericvolp12/bsky-experiments/pkg/feeds/cluster"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/firehose"
 	followersexp "github.com/ericvolp12/bsky-experiments/pkg/feeds/followers-exp"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/hot"
+	"github.com/ericvolp12/bsky-experiments/pkg/feeds/language"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/pins"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/postlabel"
 	"github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
@@ -214,13 +214,13 @@ func FeedGenerator(cctx *cli.Context) error {
 		log.Fatalf("Failed to create Endpoints: %v", err)
 	}
 
-	// Create a cluster feed
-	log.Print("initializing cluster feed")
-	clustersFeed, clusterFeedAliases, err := cluster.NewClusterFeed(ctx, feedActorDID, postRegistry, store)
+	// Create a language feed
+	log.Print("initializing language feed")
+	languageFeed, languageFeedAliases, err := language.NewLanguageFeed(ctx, feedActorDID, store)
 	if err != nil {
-		log.Fatalf("Failed to create ClusterFeed: %v", err)
+		log.Fatalf("Failed to create LanguageFeed: %v", err)
 	}
-	feedGenerator.AddFeed(clusterFeedAliases, clustersFeed)
+	feedGenerator.AddFeed(languageFeedAliases, languageFeed)
 
 	// Create a postlabel feed
 	log.Print("initializing postlabel feed")
@@ -240,7 +240,7 @@ func FeedGenerator(cctx *cli.Context) error {
 
 	// Create a firehose feed
 	log.Print("initializing firehose feed")
-	firehoseFeed, firehoseFeedAliases, err := firehose.NewFirehoseFeed(ctx, feedActorDID, postRegistry)
+	firehoseFeed, firehoseFeedAliases, err := firehose.NewFirehoseFeed(ctx, feedActorDID, store)
 	if err != nil {
 		log.Fatalf("Failed to create FirehoseFeed: %v", err)
 	}

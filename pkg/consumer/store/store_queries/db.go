@@ -105,6 +105,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createSubjectStmt, err = db.PrepareContext(ctx, createSubject); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateSubject: %w", err)
 	}
+	if q.createTQSPStmt, err = db.PrepareContext(ctx, createTQSP); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateTQSP: %w", err)
+	}
 	if q.decrementFollowerCountByNStmt, err = db.PrepareContext(ctx, decrementFollowerCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query DecrementFollowerCountByN: %w", err)
 	}
@@ -188,6 +191,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteSubjectStmt, err = db.PrepareContext(ctx, deleteSubject); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSubject: %w", err)
+	}
+	if q.deleteTQSPStmt, err = db.PrepareContext(ctx, deleteTQSP); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteTQSP: %w", err)
 	}
 	if q.findActorsByHandleStmt, err = db.PrepareContext(ctx, findActorsByHandle); err != nil {
 		return nil, fmt.Errorf("error preparing query FindActorsByHandle: %w", err)
@@ -417,6 +423,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getSubjectByIdStmt, err = db.PrepareContext(ctx, getSubjectById); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSubjectById: %w", err)
 	}
+	if q.getTQSPStmt, err = db.PrepareContext(ctx, getTQSP); err != nil {
+		return nil, fmt.Errorf("error preparing query GetTQSP: %w", err)
+	}
 	if q.getTopPostsStmt, err = db.PrepareContext(ctx, getTopPosts); err != nil {
 		return nil, fmt.Errorf("error preparing query GetTopPosts: %w", err)
 	}
@@ -477,6 +486,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listPinsByActorStmt, err = db.PrepareContext(ctx, listPinsByActor); err != nil {
 		return nil, fmt.Errorf("error preparing query ListPinsByActor: %w", err)
 	}
+	if q.listRecentPostsStmt, err = db.PrepareContext(ctx, listRecentPosts); err != nil {
+		return nil, fmt.Errorf("error preparing query ListRecentPosts: %w", err)
+	}
+	if q.listTQSPStmt, err = db.PrepareContext(ctx, listTQSP); err != nil {
+		return nil, fmt.Errorf("error preparing query ListTQSP: %w", err)
+	}
 	if q.refreshStatsForDayStmt, err = db.PrepareContext(ctx, refreshStatsForDay); err != nil {
 		return nil, fmt.Errorf("error preparing query RefreshStatsForDay: %w", err)
 	}
@@ -488,6 +503,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.trimOldRecentPostsStmt, err = db.PrepareContext(ctx, trimOldRecentPosts); err != nil {
 		return nil, fmt.Errorf("error preparing query TrimOldRecentPosts: %w", err)
+	}
+	if q.trimTQSPStmt, err = db.PrepareContext(ctx, trimTQSP); err != nil {
+		return nil, fmt.Errorf("error preparing query TrimTQSP: %w", err)
 	}
 	if q.upatePointAssignmentStmt, err = db.PrepareContext(ctx, upatePointAssignment); err != nil {
 		return nil, fmt.Errorf("error preparing query UpatePointAssignment: %w", err)
@@ -653,6 +671,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createSubjectStmt: %w", cerr)
 		}
 	}
+	if q.createTQSPStmt != nil {
+		if cerr := q.createTQSPStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createTQSPStmt: %w", cerr)
+		}
+	}
 	if q.decrementFollowerCountByNStmt != nil {
 		if cerr := q.decrementFollowerCountByNStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing decrementFollowerCountByNStmt: %w", cerr)
@@ -791,6 +814,11 @@ func (q *Queries) Close() error {
 	if q.deleteSubjectStmt != nil {
 		if cerr := q.deleteSubjectStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteSubjectStmt: %w", cerr)
+		}
+	}
+	if q.deleteTQSPStmt != nil {
+		if cerr := q.deleteTQSPStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteTQSPStmt: %w", cerr)
 		}
 	}
 	if q.findActorsByHandleStmt != nil {
@@ -1173,6 +1201,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getSubjectByIdStmt: %w", cerr)
 		}
 	}
+	if q.getTQSPStmt != nil {
+		if cerr := q.getTQSPStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getTQSPStmt: %w", cerr)
+		}
+	}
 	if q.getTopPostsStmt != nil {
 		if cerr := q.getTopPostsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getTopPostsStmt: %w", cerr)
@@ -1273,6 +1306,16 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listPinsByActorStmt: %w", cerr)
 		}
 	}
+	if q.listRecentPostsStmt != nil {
+		if cerr := q.listRecentPostsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listRecentPostsStmt: %w", cerr)
+		}
+	}
+	if q.listTQSPStmt != nil {
+		if cerr := q.listTQSPStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listTQSPStmt: %w", cerr)
+		}
+	}
 	if q.refreshStatsForDayStmt != nil {
 		if cerr := q.refreshStatsForDayStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing refreshStatsForDayStmt: %w", cerr)
@@ -1291,6 +1334,11 @@ func (q *Queries) Close() error {
 	if q.trimOldRecentPostsStmt != nil {
 		if cerr := q.trimOldRecentPostsStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing trimOldRecentPostsStmt: %w", cerr)
+		}
+	}
+	if q.trimTQSPStmt != nil {
+		if cerr := q.trimTQSPStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing trimTQSPStmt: %w", cerr)
 		}
 	}
 	if q.upatePointAssignmentStmt != nil {
@@ -1399,6 +1447,7 @@ type Queries struct {
 	createRepostStmt                          *sql.Stmt
 	createSentimentJobStmt                    *sql.Stmt
 	createSubjectStmt                         *sql.Stmt
+	createTQSPStmt                            *sql.Stmt
 	decrementFollowerCountByNStmt             *sql.Stmt
 	decrementFollowingCountByNStmt            *sql.Stmt
 	decrementLikeCountByNStmt                 *sql.Stmt
@@ -1427,6 +1476,7 @@ type Queries struct {
 	deleteRepostCountStmt                     *sql.Stmt
 	deleteSentimentJobStmt                    *sql.Stmt
 	deleteSubjectStmt                         *sql.Stmt
+	deleteTQSPStmt                            *sql.Stmt
 	findActorsByHandleStmt                    *sql.Stmt
 	findPotentialFriendsStmt                  *sql.Stmt
 	getActiveEventsForInitiatorStmt           *sql.Stmt
@@ -1503,6 +1553,7 @@ type Queries struct {
 	getSpamFollowersStmt                      *sql.Stmt
 	getSubjectStmt                            *sql.Stmt
 	getSubjectByIdStmt                        *sql.Stmt
+	getTQSPStmt                               *sql.Stmt
 	getTopPostsStmt                           *sql.Stmt
 	getTopPostsForActorStmt                   *sql.Stmt
 	getTopPostsInWindowStmt                   *sql.Stmt
@@ -1523,10 +1574,13 @@ type Queries struct {
 	listActorsByLabelStmt                     *sql.Stmt
 	listMPLSStmt                              *sql.Stmt
 	listPinsByActorStmt                       *sql.Stmt
+	listRecentPostsStmt                       *sql.Stmt
+	listTQSPStmt                              *sql.Stmt
 	refreshStatsForDayStmt                    *sql.Stmt
 	setSentimentForPostStmt                   *sql.Stmt
 	trimMPLSStmt                              *sql.Stmt
 	trimOldRecentPostsStmt                    *sql.Stmt
+	trimTQSPStmt                              *sql.Stmt
 	upatePointAssignmentStmt                  *sql.Stmt
 	updateActorPropicStmt                     *sql.Stmt
 	updateActorsValidationStmt                *sql.Stmt
@@ -1568,6 +1622,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createRepostStmt:                          q.createRepostStmt,
 		createSentimentJobStmt:                    q.createSentimentJobStmt,
 		createSubjectStmt:                         q.createSubjectStmt,
+		createTQSPStmt:                            q.createTQSPStmt,
 		decrementFollowerCountByNStmt:             q.decrementFollowerCountByNStmt,
 		decrementFollowingCountByNStmt:            q.decrementFollowingCountByNStmt,
 		decrementLikeCountByNStmt:                 q.decrementLikeCountByNStmt,
@@ -1596,6 +1651,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteRepostCountStmt:                     q.deleteRepostCountStmt,
 		deleteSentimentJobStmt:                    q.deleteSentimentJobStmt,
 		deleteSubjectStmt:                         q.deleteSubjectStmt,
+		deleteTQSPStmt:                            q.deleteTQSPStmt,
 		findActorsByHandleStmt:                    q.findActorsByHandleStmt,
 		findPotentialFriendsStmt:                  q.findPotentialFriendsStmt,
 		getActiveEventsForInitiatorStmt:           q.getActiveEventsForInitiatorStmt,
@@ -1672,6 +1728,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getSpamFollowersStmt:                      q.getSpamFollowersStmt,
 		getSubjectStmt:                            q.getSubjectStmt,
 		getSubjectByIdStmt:                        q.getSubjectByIdStmt,
+		getTQSPStmt:                               q.getTQSPStmt,
 		getTopPostsStmt:                           q.getTopPostsStmt,
 		getTopPostsForActorStmt:                   q.getTopPostsForActorStmt,
 		getTopPostsInWindowStmt:                   q.getTopPostsInWindowStmt,
@@ -1692,10 +1749,13 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listActorsByLabelStmt:                     q.listActorsByLabelStmt,
 		listMPLSStmt:                              q.listMPLSStmt,
 		listPinsByActorStmt:                       q.listPinsByActorStmt,
+		listRecentPostsStmt:                       q.listRecentPostsStmt,
+		listTQSPStmt:                              q.listTQSPStmt,
 		refreshStatsForDayStmt:                    q.refreshStatsForDayStmt,
 		setSentimentForPostStmt:                   q.setSentimentForPostStmt,
 		trimMPLSStmt:                              q.trimMPLSStmt,
 		trimOldRecentPostsStmt:                    q.trimOldRecentPostsStmt,
+		trimTQSPStmt:                              q.trimTQSPStmt,
 		upatePointAssignmentStmt:                  q.upatePointAssignmentStmt,
 		updateActorPropicStmt:                     q.updateActorPropicStmt,
 		updateActorsValidationStmt:                q.updateActorsValidationStmt,

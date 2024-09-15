@@ -24,6 +24,21 @@ func (q *Queries) CreateMPLS(ctx context.Context, arg CreateMPLSParams) error {
 	return err
 }
 
+const createTQSP = `-- name: CreateTQSP :exec
+INSERT INTO tqsp(actor_did, rkey)
+VALUES ($1, $2)
+`
+
+type CreateTQSPParams struct {
+	ActorDid string `json:"actor_did"`
+	Rkey     string `json:"rkey"`
+}
+
+func (q *Queries) CreateTQSP(ctx context.Context, arg CreateTQSPParams) error {
+	_, err := q.exec(ctx, q.createTQSPStmt, createTQSP, arg.ActorDid, arg.Rkey)
+	return err
+}
+
 const deleteMPLS = `-- name: DeleteMPLS :exec
 DELETE FROM mpls
 WHERE actor_did = $1
@@ -37,6 +52,22 @@ type DeleteMPLSParams struct {
 
 func (q *Queries) DeleteMPLS(ctx context.Context, arg DeleteMPLSParams) error {
 	_, err := q.exec(ctx, q.deleteMPLSStmt, deleteMPLS, arg.ActorDid, arg.Rkey)
+	return err
+}
+
+const deleteTQSP = `-- name: DeleteTQSP :exec
+DELETE FROM tqsp
+WHERE actor_did = $1
+    AND rkey = $2
+`
+
+type DeleteTQSPParams struct {
+	ActorDid string `json:"actor_did"`
+	Rkey     string `json:"rkey"`
+}
+
+func (q *Queries) DeleteTQSP(ctx context.Context, arg DeleteTQSPParams) error {
+	_, err := q.exec(ctx, q.deleteTQSPStmt, deleteTQSP, arg.ActorDid, arg.Rkey)
 	return err
 }
 
@@ -55,6 +86,25 @@ type GetMPLSParams struct {
 func (q *Queries) GetMPLS(ctx context.Context, arg GetMPLSParams) (Mpl, error) {
 	row := q.queryRow(ctx, q.getMPLSStmt, getMPLS, arg.ActorDid, arg.Rkey)
 	var i Mpl
+	err := row.Scan(&i.ActorDid, &i.Rkey)
+	return i, err
+}
+
+const getTQSP = `-- name: GetTQSP :one
+SELECT actor_did, rkey
+FROM tqsp
+WHERE actor_did = $1
+    AND rkey = $2
+`
+
+type GetTQSPParams struct {
+	ActorDid string `json:"actor_did"`
+	Rkey     string `json:"rkey"`
+}
+
+func (q *Queries) GetTQSP(ctx context.Context, arg GetTQSPParams) (Tqsp, error) {
+	row := q.queryRow(ctx, q.getTQSPStmt, getTQSP, arg.ActorDid, arg.Rkey)
+	var i Tqsp
 	err := row.Scan(&i.ActorDid, &i.Rkey)
 	return i, err
 }
@@ -95,6 +145,42 @@ func (q *Queries) ListMPLS(ctx context.Context, arg ListMPLSParams) ([]Mpl, erro
 	return items, nil
 }
 
+const listTQSP = `-- name: ListTQSP :many
+SELECT actor_did, rkey
+FROM tqsp
+WHERE rkey < $1
+ORDER BY rkey DESC
+LIMIT $2
+`
+
+type ListTQSPParams struct {
+	Rkey  string `json:"rkey"`
+	Limit int32  `json:"limit"`
+}
+
+func (q *Queries) ListTQSP(ctx context.Context, arg ListTQSPParams) ([]Tqsp, error) {
+	rows, err := q.query(ctx, q.listTQSPStmt, listTQSP, arg.Rkey, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Tqsp
+	for rows.Next() {
+		var i Tqsp
+		if err := rows.Scan(&i.ActorDid, &i.Rkey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const trimMPLS = `-- name: TrimMPLS :exec
 DELETE FROM mpls
 WHERE rkey < $1
@@ -102,5 +188,15 @@ WHERE rkey < $1
 
 func (q *Queries) TrimMPLS(ctx context.Context, rkey string) error {
 	_, err := q.exec(ctx, q.trimMPLSStmt, trimMPLS, rkey)
+	return err
+}
+
+const trimTQSP = `-- name: TrimTQSP :exec
+DELETE FROM tqsp
+WHERE rkey < $1
+`
+
+func (q *Queries) TrimTQSP(ctx context.Context, rkey string) error {
+	_, err := q.exec(ctx, q.trimTQSPStmt, trimTQSP, rkey)
 	return err
 }

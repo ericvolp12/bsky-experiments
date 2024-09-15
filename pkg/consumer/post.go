@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -189,7 +188,7 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 	}
 
 	// Track pins if it's a pinned post
-	if (strings.Contains(rec.Text, "📌") || strings.Contains(rec.Text, "🔖")) && parentActorDid != "" && parentActorRkey != "" {
+	if rec.Reply != nil && (strings.Contains(rec.Text, "📌") || strings.Contains(rec.Text, "🔖")) {
 		err = c.Store.Queries.CreatePin(ctx, store_queries.CreatePinParams{
 			ActorDid: repo,
 			Rkey:     rkey,
@@ -206,14 +205,27 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 		if err != nil {
 			log.Errorf("failed to get labels for actor: %+v", err)
 		} else if len(labels) > 0 {
-			// For now just build the mpls feed
-			if slices.Contains(labels, "mpls") {
+			labelMap := map[string]struct{}{}
+			for _, label := range labels {
+				labelMap[label] = struct{}{}
+			}
+
+			if _, ok := labelMap["mpls"]; ok {
 				err = c.Store.Queries.CreateMPLS(ctx, store_queries.CreateMPLSParams{
 					ActorDid: repo,
 					Rkey:     rkey,
 				})
 				if err != nil {
 					log.Errorf("failed to create mpls feed post: %+v", err)
+				}
+			}
+			if _, ok := labelMap["tqsp"]; ok {
+				err = c.Store.Queries.CreateTQSP(ctx, store_queries.CreateTQSPParams{
+					ActorDid: repo,
+					Rkey:     rkey,
+				})
+				if err != nil {
+					log.Errorf("failed to create tqsp feed post: %+v", err)
 				}
 			}
 		}

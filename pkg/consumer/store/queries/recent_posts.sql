@@ -44,6 +44,12 @@ SELECT *
 FROM recent_posts
 WHERE actor_did = $1
     AND rkey = $2;
+-- name: ListRecentPosts :many
+SELECT *
+FROM recent_posts
+WHERE inserted_at < $1
+ORDER BY inserted_at DESC
+LIMIT $2;
 -- name: GetRecentPostsByActor :many
 SELECT *
 FROM recent_posts
