@@ -219,7 +219,7 @@ func FeedGenerator(cctx *cli.Context) error {
 		log.Fatalf("Failed to create FeedGenerator: %v", err)
 	}
 
-	endpoints, err := endpoints.NewEndpoints(feedGenerator, cctx.String("graph-json-url"), postRegistry)
+	endpoints, err := endpoints.NewEndpoints(feedGenerator, cctx.String("graph-json-url"), postRegistry, store)
 	if err != nil {
 		log.Fatalf("Failed to create Endpoints: %v", err)
 	}

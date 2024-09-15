@@ -27,6 +27,11 @@ type Actor struct {
 	ID            sql.NullInt64  `json:"id"`
 }
 
+type ActorLabel struct {
+	ActorDid string `json:"actor_did"`
+	Label    string `json:"label"`
+}
+
 type ApiKey struct {
 	ApiKey       string          `json:"api_key"`
 	AuthEntity   json.RawMessage `json:"auth_entity"`
@@ -150,6 +155,11 @@ type MonthlySummary struct {
 	MonthlyActiveFollowers    int64     `json:"Monthly Active Followers"`
 	BlocksPerMonth            int64     `json:"Blocks per Month"`
 	MonthlyActiveBlockers     int64     `json:"Monthly Active Blockers"`
+}
+
+type Mpl struct {
+	ActorDid string `json:"actor_did"`
+	Rkey     string `json:"rkey"`
 }
 
 type Pin struct {

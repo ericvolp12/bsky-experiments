@@ -2,6 +2,7 @@ package endpoints
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -14,6 +15,8 @@ import (
 	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/ericvolp12/bsky-experiments/pkg/auth"
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
+	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	feedgenerator "github.com/ericvolp12/bsky-experiments/pkg/feed-generator"
 	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"golang.org/x/time/rate"
@@ -39,6 +42,7 @@ type Endpoints struct {
 	dir *identity.CacheDirectory
 
 	PostRegistry *search.PostRegistry
+	Store        *store.Store
 
 	DescriptionCache    *DescriptionCacheItem
 	DescriptionCacheTTL time.Duration
@@ -50,7 +54,7 @@ type DidResponse struct {
 	Service []did.Service `json:"service"`
 }
 
-func NewEndpoints(feedGenerator *feedgenerator.FeedGenerator, graphJSONUrl string, postRegistry *search.PostRegistry) (*Endpoints, error) {
+func NewEndpoints(feedGenerator *feedgenerator.FeedGenerator, graphJSONUrl string, postRegistry *search.PostRegistry, store *store.Store) (*Endpoints, error) {
 	uniqueSeenUsers := bloom.NewWithEstimates(1000000, 0.01)
 
 	base := identity.BaseDirectory{
@@ -71,6 +75,7 @@ func NewEndpoints(feedGenerator *feedgenerator.FeedGenerator, graphJSONUrl strin
 		FeedUsers:           map[string][]string{},
 		dir:                 &dir,
 		PostRegistry:        postRegistry,
+		Store:               store,
 		DescriptionCacheTTL: 30 * time.Minute,
 	}, nil
 }
@@ -324,6 +329,14 @@ func (ep *Endpoints) AssignUserToFeed(c *gin.Context) {
 		return
 	}
 
+	err = ep.Store.Queries.CreateActorLabel(ctx, store_queries.CreateActorLabelParams{
+		ActorDid: id.DID.String(),
+		Label:    feedName,
+	})
+	if err != nil {
+		slog.Error("failed to assign label to user", "error", err)
+	}
+
 	err = ep.PostRegistry.AssignLabelToAuthorByAlias(ctx, id.DID.String(), feedName)
 	if err != nil {
 		span.SetAttributes(attribute.Bool("feed.assign_label.error", true))
@@ -383,6 +396,14 @@ func (ep *Endpoints) UnassignUserFromFeed(c *gin.Context) {
 		span.SetAttributes(attribute.Bool("feed.assign_label.handle_not_found", true))
 		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("failed to resolve handle to did: %s", err.Error())})
 		return
+	}
+
+	err = ep.Store.Queries.DeleteActorLabel(ctx, store_queries.DeleteActorLabelParams{
+		ActorDid: id.DID.String(),
+		Label:    feedName,
+	})
+	if err != nil {
+		slog.Error("failed to unassign label from user", "error", err)
 	}
 
 	err = ep.PostRegistry.UnassignLabelFromAuthorByAlias(ctx, id.DID.String(), feedName)

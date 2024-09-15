@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -195,6 +196,26 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 		})
 		if err != nil {
 			log.Errorf("failed to create pin: %+v", err)
+		}
+	}
+
+	// If the actor has a label, update the label feed (for root posts only)
+	if rootActorDid != "" && rootActorRkey != "" {
+		// Fetch the labels for the actor
+		labels, err := c.Store.Queries.ListActorLabels(ctx, repo)
+		if err != nil {
+			log.Errorf("failed to get labels for actor: %+v", err)
+		} else if len(labels) > 0 {
+			// For now just build the mpls feed
+			if slices.Contains(labels, "mpls") {
+				err = c.Store.Queries.CreateMPLS(ctx, store_queries.CreateMPLSParams{
+					ActorDid: repo,
+					Rkey:     rkey,
+				})
+				if err != nil {
+					log.Errorf("failed to create mpls feed post: %+v", err)
+				}
+			}
 		}
 	}
 

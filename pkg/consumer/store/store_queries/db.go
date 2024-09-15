@@ -24,6 +24,9 @@ func New(db DBTX) *Queries {
 func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	q := Queries{db: db}
 	var err error
+	if q.actorHasLabelStmt, err = db.PrepareContext(ctx, actorHasLabel); err != nil {
+		return nil, fmt.Errorf("error preparing query ActorHasLabel: %w", err)
+	}
 	if q.addEventPostStmt, err = db.PrepareContext(ctx, addEventPost); err != nil {
 		return nil, fmt.Errorf("error preparing query AddEventPost: %w", err)
 	}
@@ -48,6 +51,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.countFollowsByActorAndTargetStmt, err = db.PrepareContext(ctx, countFollowsByActorAndTarget); err != nil {
 		return nil, fmt.Errorf("error preparing query CountFollowsByActorAndTarget: %w", err)
 	}
+	if q.createActorLabelStmt, err = db.PrepareContext(ctx, createActorLabel); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateActorLabel: %w", err)
+	}
 	if q.createBlockStmt, err = db.PrepareContext(ctx, createBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateBlock: %w", err)
 	}
@@ -71,6 +77,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.createLikeCountStmt, err = db.PrepareContext(ctx, createLikeCount); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateLikeCount: %w", err)
+	}
+	if q.createMPLSStmt, err = db.PrepareContext(ctx, createMPLS); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateMPLS: %w", err)
 	}
 	if q.createPinStmt, err = db.PrepareContext(ctx, createPin); err != nil {
 		return nil, fmt.Errorf("error preparing query CreatePin: %w", err)
@@ -107,6 +116,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.decrementRepostCountByNStmt, err = db.PrepareContext(ctx, decrementRepostCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query DecrementRepostCountByN: %w", err)
+	}
+	if q.deleteActorLabelStmt, err = db.PrepareContext(ctx, deleteActorLabel); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteActorLabel: %w", err)
 	}
 	if q.deleteBlockStmt, err = db.PrepareContext(ctx, deleteBlock); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteBlock: %w", err)
@@ -146,6 +158,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteLikeCountStmt, err = db.PrepareContext(ctx, deleteLikeCount); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteLikeCount: %w", err)
+	}
+	if q.deleteMPLSStmt, err = db.PrepareContext(ctx, deleteMPLS); err != nil {
+		return nil, fmt.Errorf("error preparing query DeleteMPLS: %w", err)
 	}
 	if q.deletePinStmt, err = db.PrepareContext(ctx, deletePin); err != nil {
 		return nil, fmt.Errorf("error preparing query DeletePin: %w", err)
@@ -300,6 +315,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getLikesReceivedByActorFromActorStmt, err = db.PrepareContext(ctx, getLikesReceivedByActorFromActor); err != nil {
 		return nil, fmt.Errorf("error preparing query GetLikesReceivedByActorFromActor: %w", err)
 	}
+	if q.getMPLSStmt, err = db.PrepareContext(ctx, getMPLS); err != nil {
+		return nil, fmt.Errorf("error preparing query GetMPLS: %w", err)
+	}
 	if q.getMyPostsByFuzzyContentStmt, err = db.PrepareContext(ctx, getMyPostsByFuzzyContent); err != nil {
 		return nil, fmt.Errorf("error preparing query GetMyPostsByFuzzyContent: %w", err)
 	}
@@ -447,6 +465,15 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.insertLikeStmt, err = db.PrepareContext(ctx, insertLike); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertLike: %w", err)
 	}
+	if q.listActorLabelsStmt, err = db.PrepareContext(ctx, listActorLabels); err != nil {
+		return nil, fmt.Errorf("error preparing query ListActorLabels: %w", err)
+	}
+	if q.listActorsByLabelStmt, err = db.PrepareContext(ctx, listActorsByLabel); err != nil {
+		return nil, fmt.Errorf("error preparing query ListActorsByLabel: %w", err)
+	}
+	if q.listMPLSStmt, err = db.PrepareContext(ctx, listMPLS); err != nil {
+		return nil, fmt.Errorf("error preparing query ListMPLS: %w", err)
+	}
 	if q.listPinsByActorStmt, err = db.PrepareContext(ctx, listPinsByActor); err != nil {
 		return nil, fmt.Errorf("error preparing query ListPinsByActor: %w", err)
 	}
@@ -455,6 +482,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.setSentimentForPostStmt, err = db.PrepareContext(ctx, setSentimentForPost); err != nil {
 		return nil, fmt.Errorf("error preparing query SetSentimentForPost: %w", err)
+	}
+	if q.trimMPLSStmt, err = db.PrepareContext(ctx, trimMPLS); err != nil {
+		return nil, fmt.Errorf("error preparing query TrimMPLS: %w", err)
 	}
 	if q.trimOldRecentPostsStmt, err = db.PrepareContext(ctx, trimOldRecentPosts); err != nil {
 		return nil, fmt.Errorf("error preparing query TrimOldRecentPosts: %w", err)
@@ -488,6 +518,11 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 
 func (q *Queries) Close() error {
 	var err error
+	if q.actorHasLabelStmt != nil {
+		if cerr := q.actorHasLabelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing actorHasLabelStmt: %w", cerr)
+		}
+	}
 	if q.addEventPostStmt != nil {
 		if cerr := q.addEventPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing addEventPostStmt: %w", cerr)
@@ -528,6 +563,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing countFollowsByActorAndTargetStmt: %w", cerr)
 		}
 	}
+	if q.createActorLabelStmt != nil {
+		if cerr := q.createActorLabelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createActorLabelStmt: %w", cerr)
+		}
+	}
 	if q.createBlockStmt != nil {
 		if cerr := q.createBlockStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createBlockStmt: %w", cerr)
@@ -566,6 +606,11 @@ func (q *Queries) Close() error {
 	if q.createLikeCountStmt != nil {
 		if cerr := q.createLikeCountStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createLikeCountStmt: %w", cerr)
+		}
+	}
+	if q.createMPLSStmt != nil {
+		if cerr := q.createMPLSStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createMPLSStmt: %w", cerr)
 		}
 	}
 	if q.createPinStmt != nil {
@@ -626,6 +671,11 @@ func (q *Queries) Close() error {
 	if q.decrementRepostCountByNStmt != nil {
 		if cerr := q.decrementRepostCountByNStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing decrementRepostCountByNStmt: %w", cerr)
+		}
+	}
+	if q.deleteActorLabelStmt != nil {
+		if cerr := q.deleteActorLabelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteActorLabelStmt: %w", cerr)
 		}
 	}
 	if q.deleteBlockStmt != nil {
@@ -691,6 +741,11 @@ func (q *Queries) Close() error {
 	if q.deleteLikeCountStmt != nil {
 		if cerr := q.deleteLikeCountStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteLikeCountStmt: %w", cerr)
+		}
+	}
+	if q.deleteMPLSStmt != nil {
+		if cerr := q.deleteMPLSStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing deleteMPLSStmt: %w", cerr)
 		}
 	}
 	if q.deletePinStmt != nil {
@@ -948,6 +1003,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getLikesReceivedByActorFromActorStmt: %w", cerr)
 		}
 	}
+	if q.getMPLSStmt != nil {
+		if cerr := q.getMPLSStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getMPLSStmt: %w", cerr)
+		}
+	}
 	if q.getMyPostsByFuzzyContentStmt != nil {
 		if cerr := q.getMyPostsByFuzzyContentStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getMyPostsByFuzzyContentStmt: %w", cerr)
@@ -1193,6 +1253,21 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing insertLikeStmt: %w", cerr)
 		}
 	}
+	if q.listActorLabelsStmt != nil {
+		if cerr := q.listActorLabelsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listActorLabelsStmt: %w", cerr)
+		}
+	}
+	if q.listActorsByLabelStmt != nil {
+		if cerr := q.listActorsByLabelStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listActorsByLabelStmt: %w", cerr)
+		}
+	}
+	if q.listMPLSStmt != nil {
+		if cerr := q.listMPLSStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listMPLSStmt: %w", cerr)
+		}
+	}
 	if q.listPinsByActorStmt != nil {
 		if cerr := q.listPinsByActorStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listPinsByActorStmt: %w", cerr)
@@ -1206,6 +1281,11 @@ func (q *Queries) Close() error {
 	if q.setSentimentForPostStmt != nil {
 		if cerr := q.setSentimentForPostStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing setSentimentForPostStmt: %w", cerr)
+		}
+	}
+	if q.trimMPLSStmt != nil {
+		if cerr := q.trimMPLSStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing trimMPLSStmt: %w", cerr)
 		}
 	}
 	if q.trimOldRecentPostsStmt != nil {
@@ -1292,6 +1372,7 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 type Queries struct {
 	db                                        DBTX
 	tx                                        *sql.Tx
+	actorHasLabelStmt                         *sql.Stmt
 	addEventPostStmt                          *sql.Stmt
 	concludeEventStmt                         *sql.Stmt
 	confirmEventStmt                          *sql.Stmt
@@ -1300,6 +1381,7 @@ type Queries struct {
 	countFollowersByTargetStmt                *sql.Stmt
 	countFollowsByActorStmt                   *sql.Stmt
 	countFollowsByActorAndTargetStmt          *sql.Stmt
+	createActorLabelStmt                      *sql.Stmt
 	createBlockStmt                           *sql.Stmt
 	createCollectionStmt                      *sql.Stmt
 	createEventStmt                           *sql.Stmt
@@ -1308,6 +1390,7 @@ type Queries struct {
 	createKeyStmt                             *sql.Stmt
 	createLikeStmt                            *sql.Stmt
 	createLikeCountStmt                       *sql.Stmt
+	createMPLSStmt                            *sql.Stmt
 	createPinStmt                             *sql.Stmt
 	createPointAssignmentStmt                 *sql.Stmt
 	createPostStmt                            *sql.Stmt
@@ -1320,6 +1403,7 @@ type Queries struct {
 	decrementFollowingCountByNStmt            *sql.Stmt
 	decrementLikeCountByNStmt                 *sql.Stmt
 	decrementRepostCountByNStmt               *sql.Stmt
+	deleteActorLabelStmt                      *sql.Stmt
 	deleteBlockStmt                           *sql.Stmt
 	deleteCollectionStmt                      *sql.Stmt
 	deleteEventStmt                           *sql.Stmt
@@ -1333,6 +1417,7 @@ type Queries struct {
 	deleteKeyStmt                             *sql.Stmt
 	deleteLikeStmt                            *sql.Stmt
 	deleteLikeCountStmt                       *sql.Stmt
+	deleteMPLSStmt                            *sql.Stmt
 	deletePinStmt                             *sql.Stmt
 	deletePointAssignmentStmt                 *sql.Stmt
 	deletePostStmt                            *sql.Stmt
@@ -1384,6 +1469,7 @@ type Queries struct {
 	getLikesBySubjectStmt                     *sql.Stmt
 	getLikesGivenByActorFromToStmt            *sql.Stmt
 	getLikesReceivedByActorFromActorStmt      *sql.Stmt
+	getMPLSStmt                               *sql.Stmt
 	getMyPostsByFuzzyContentStmt              *sql.Stmt
 	getPinStmt                                *sql.Stmt
 	getPinnedPostsByActorStmt                 *sql.Stmt
@@ -1433,9 +1519,13 @@ type Queries struct {
 	incrementLikeCountByNWithSubjectStmt      *sql.Stmt
 	incrementRepostCountByNStmt               *sql.Stmt
 	insertLikeStmt                            *sql.Stmt
+	listActorLabelsStmt                       *sql.Stmt
+	listActorsByLabelStmt                     *sql.Stmt
+	listMPLSStmt                              *sql.Stmt
 	listPinsByActorStmt                       *sql.Stmt
 	refreshStatsForDayStmt                    *sql.Stmt
 	setSentimentForPostStmt                   *sql.Stmt
+	trimMPLSStmt                              *sql.Stmt
 	trimOldRecentPostsStmt                    *sql.Stmt
 	upatePointAssignmentStmt                  *sql.Stmt
 	updateActorPropicStmt                     *sql.Stmt
@@ -1451,6 +1541,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
 		db:                                        tx,
 		tx:                                        tx,
+		actorHasLabelStmt:                         q.actorHasLabelStmt,
 		addEventPostStmt:                          q.addEventPostStmt,
 		concludeEventStmt:                         q.concludeEventStmt,
 		confirmEventStmt:                          q.confirmEventStmt,
@@ -1459,6 +1550,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		countFollowersByTargetStmt:                q.countFollowersByTargetStmt,
 		countFollowsByActorStmt:                   q.countFollowsByActorStmt,
 		countFollowsByActorAndTargetStmt:          q.countFollowsByActorAndTargetStmt,
+		createActorLabelStmt:                      q.createActorLabelStmt,
 		createBlockStmt:                           q.createBlockStmt,
 		createCollectionStmt:                      q.createCollectionStmt,
 		createEventStmt:                           q.createEventStmt,
@@ -1467,6 +1559,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createKeyStmt:                             q.createKeyStmt,
 		createLikeStmt:                            q.createLikeStmt,
 		createLikeCountStmt:                       q.createLikeCountStmt,
+		createMPLSStmt:                            q.createMPLSStmt,
 		createPinStmt:                             q.createPinStmt,
 		createPointAssignmentStmt:                 q.createPointAssignmentStmt,
 		createPostStmt:                            q.createPostStmt,
@@ -1479,6 +1572,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		decrementFollowingCountByNStmt:            q.decrementFollowingCountByNStmt,
 		decrementLikeCountByNStmt:                 q.decrementLikeCountByNStmt,
 		decrementRepostCountByNStmt:               q.decrementRepostCountByNStmt,
+		deleteActorLabelStmt:                      q.deleteActorLabelStmt,
 		deleteBlockStmt:                           q.deleteBlockStmt,
 		deleteCollectionStmt:                      q.deleteCollectionStmt,
 		deleteEventStmt:                           q.deleteEventStmt,
@@ -1492,6 +1586,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteKeyStmt:                             q.deleteKeyStmt,
 		deleteLikeStmt:                            q.deleteLikeStmt,
 		deleteLikeCountStmt:                       q.deleteLikeCountStmt,
+		deleteMPLSStmt:                            q.deleteMPLSStmt,
 		deletePinStmt:                             q.deletePinStmt,
 		deletePointAssignmentStmt:                 q.deletePointAssignmentStmt,
 		deletePostStmt:                            q.deletePostStmt,
@@ -1543,6 +1638,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getLikesBySubjectStmt:                     q.getLikesBySubjectStmt,
 		getLikesGivenByActorFromToStmt:            q.getLikesGivenByActorFromToStmt,
 		getLikesReceivedByActorFromActorStmt:      q.getLikesReceivedByActorFromActorStmt,
+		getMPLSStmt:                               q.getMPLSStmt,
 		getMyPostsByFuzzyContentStmt:              q.getMyPostsByFuzzyContentStmt,
 		getPinStmt:                                q.getPinStmt,
 		getPinnedPostsByActorStmt:                 q.getPinnedPostsByActorStmt,
@@ -1592,9 +1688,13 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		incrementLikeCountByNWithSubjectStmt:      q.incrementLikeCountByNWithSubjectStmt,
 		incrementRepostCountByNStmt:               q.incrementRepostCountByNStmt,
 		insertLikeStmt:                            q.insertLikeStmt,
+		listActorLabelsStmt:                       q.listActorLabelsStmt,
+		listActorsByLabelStmt:                     q.listActorsByLabelStmt,
+		listMPLSStmt:                              q.listMPLSStmt,
 		listPinsByActorStmt:                       q.listPinsByActorStmt,
 		refreshStatsForDayStmt:                    q.refreshStatsForDayStmt,
 		setSentimentForPostStmt:                   q.setSentimentForPostStmt,
+		trimMPLSStmt:                              q.trimMPLSStmt,
 		trimOldRecentPostsStmt:                    q.trimOldRecentPostsStmt,
 		upatePointAssignmentStmt:                  q.upatePointAssignmentStmt,
 		updateActorPropicStmt:                     q.updateActorPropicStmt,

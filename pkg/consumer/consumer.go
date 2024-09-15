@@ -15,6 +15,7 @@ import (
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/api/bsky"
 	_ "github.com/bluesky-social/indigo/api/chat" // Register chat types
+	"github.com/bluesky-social/indigo/atproto/syntax"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
@@ -277,8 +278,14 @@ func (c *Consumer) TrimRecentPosts(ctx context.Context, maxAge time.Duration) er
 	if err != nil {
 		return fmt.Errorf("failed to trim recent posts: %+v", err)
 	}
-
 	span.SetAttributes(attribute.Int64("num_deleted", numDeleted))
+
+	// Trime the MPLS feed
+	oldestRkey := syntax.NewTIDFromTime(time.Now().Add(-maxAge*2), 0).String()
+	err = c.Store.Queries.TrimMPLS(ctx, oldestRkey)
+	if err != nil {
+		c.Logger.Error("failed to trim MPLS feed", "error", err)
+	}
 
 	postsTrimmed.WithLabelValues(c.SocketURL).Add(float64(numDeleted))
 
