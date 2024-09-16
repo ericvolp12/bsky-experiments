@@ -21,7 +21,6 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/pins"
 	"github.com/ericvolp12/bsky-experiments/pkg/feeds/postlabel"
 	"github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
-	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	ginprometheus "github.com/ericvolp12/go-gin-prometheus"
 	"github.com/gin-contrib/cors"
@@ -66,13 +65,6 @@ func main() {
 			Usage:   "redis prefix for storing progress",
 			Value:   "fg",
 			EnvVars: []string{"REDIS_PREFIX"},
-		},
-		&cli.StringFlag{
-			Name:     "registry-postgres-url",
-			Usage:    "postgres url for the registry database",
-			Value:    "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable",
-			Required: true,
-			EnvVars:  []string{"REGISTRY_POSTGRES_URL"},
 		},
 		&cli.StringFlag{
 			Name:     "firehose-postgres-url",
@@ -158,12 +150,6 @@ func FeedGenerator(cctx *cli.Context) error {
 		}()
 	}
 
-	postRegistry, err := search.NewPostRegistry(cctx.String("registry-postgres-url"))
-	if err != nil {
-		log.Fatalf("Failed to create PostRegistry: %v", err)
-	}
-	defer postRegistry.Close()
-
 	store, err := store.NewStore(cctx.String("firehose-postgres-url"))
 	if err != nil {
 		log.Fatalf("Failed to create Store: %v", err)
@@ -209,7 +195,7 @@ func FeedGenerator(cctx *cli.Context) error {
 		log.Fatalf("Failed to create FeedGenerator: %v", err)
 	}
 
-	endpoints, err := endpoints.NewEndpoints(feedGenerator, cctx.String("graph-json-url"), postRegistry, store)
+	endpoints, err := endpoints.NewEndpoints(feedGenerator, cctx.String("graph-json-url"), store)
 	if err != nil {
 		log.Fatalf("Failed to create Endpoints: %v", err)
 	}

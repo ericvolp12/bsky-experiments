@@ -18,7 +18,6 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	feedgenerator "github.com/ericvolp12/bsky-experiments/pkg/feed-generator"
-	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"golang.org/x/time/rate"
 
 	"github.com/gin-gonic/gin"
@@ -41,8 +40,7 @@ type Endpoints struct {
 
 	dir *identity.CacheDirectory
 
-	PostRegistry *search.PostRegistry
-	Store        *store.Store
+	Store *store.Store
 
 	DescriptionCache    *DescriptionCacheItem
 	DescriptionCacheTTL time.Duration
@@ -54,7 +52,7 @@ type DidResponse struct {
 	Service []did.Service `json:"service"`
 }
 
-func NewEndpoints(feedGenerator *feedgenerator.FeedGenerator, graphJSONUrl string, postRegistry *search.PostRegistry, store *store.Store) (*Endpoints, error) {
+func NewEndpoints(feedGenerator *feedgenerator.FeedGenerator, graphJSONUrl string, store *store.Store) (*Endpoints, error) {
 	uniqueSeenUsers := bloom.NewWithEstimates(1000000, 0.01)
 
 	base := identity.BaseDirectory{
@@ -74,7 +72,6 @@ func NewEndpoints(feedGenerator *feedgenerator.FeedGenerator, graphJSONUrl strin
 		UniqueSeenUsers:     uniqueSeenUsers,
 		FeedUsers:           map[string][]string{},
 		dir:                 &dir,
-		PostRegistry:        postRegistry,
 		Store:               store,
 		DescriptionCacheTTL: 30 * time.Minute,
 	}, nil
@@ -337,13 +334,6 @@ func (ep *Endpoints) AssignUserToFeed(c *gin.Context) {
 		slog.Error("failed to assign label to user", "error", err)
 	}
 
-	err = ep.PostRegistry.AssignLabelToAuthorByAlias(ctx, id.DID.String(), feedName)
-	if err != nil {
-		span.SetAttributes(attribute.Bool("feed.assign_label.error", true))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to assign label to user: %s", err.Error())})
-		return
-	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "success"})
 }
 
@@ -406,13 +396,6 @@ func (ep *Endpoints) UnassignUserFromFeed(c *gin.Context) {
 		slog.Error("failed to unassign label from user", "error", err)
 	}
 
-	err = ep.PostRegistry.UnassignLabelFromAuthorByAlias(ctx, id.DID.String(), feedName)
-	if err != nil {
-		span.SetAttributes(attribute.Bool("feed.assign_label.error", true))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to unassign label from user: %s", err.Error())})
-		return
-	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "success"})
 }
 
@@ -447,7 +430,7 @@ func (ep *Endpoints) GetFeedMembers(c *gin.Context) {
 		return
 	}
 
-	authors, err := ep.PostRegistry.GetMembersOfAuthorLabel(ctx, feedName)
+	authors, err := ep.Store.Queries.ListActorsByLabel(ctx, feedName)
 	if err != nil {
 		span.SetAttributes(attribute.Bool("feed.get_members.error", true))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("error getting authors: %s", err.Error())})

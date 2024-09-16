@@ -209,10 +209,6 @@ func main() {
 	router.GET("/stats", api.GetAuthorStats)
 	router.GET("/redir", api.RedirectAtURI)
 
-	router.GET("/opted_out_authors", api.GetOptedOutAuthors)
-	router.POST("/opt_out", api.GraphOptOut)
-	router.POST("/opt_in", api.GraphOptIn)
-
 	router.GET("/actors/type_ahead", api.SearchActorTypeAhead)
 	router.GET("/repo/:did", api.GetRepoAsJSON)
 	router.GET("/list", api.GetListMembers)
@@ -232,9 +228,9 @@ func main() {
 		port = "8080"
 	}
 
-	statsRefreshTicker := time.NewTicker(3 * time.Minute)
+	statsRefreshTicker := time.NewTicker(15 * time.Minute)
 
-	// Create a routine to refresh site stats every 3 minutes
+	// Create a routine to refresh site stats every 15 minutes
 	go func() {
 		for {
 			ctx, span := tracer.Start(context.Background(), "refreshSiteStats")

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"net/url"
 	"os"
 	"os/signal"
@@ -13,7 +14,7 @@ import (
 	"time"
 
 	"github.com/bluesky-social/indigo/events"
-	"github.com/bluesky-social/indigo/events/schedulers/autoscaling"
+	"github.com/bluesky-social/indigo/events/schedulers/parallel"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
@@ -77,18 +78,6 @@ func main() {
 			Usage:   "postgres url for storing events",
 			Value:   "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable",
 			EnvVars: []string{"POSTGRES_URL"},
-		},
-		&cli.StringFlag{
-			Name:    "magic-header-key",
-			Usage:   "magic header key (don't use this if you don't know what it is)",
-			Value:   "",
-			EnvVars: []string{"MAGIC_HEADER_KEY"},
-		},
-		&cli.StringFlag{
-			Name:    "magic-header-val",
-			Usage:   "magic header value (don't use this if you don't know what it is)",
-			Value:   "",
-			EnvVars: []string{"MAGIC_HEADER_VAL"},
 		},
 		&cli.StringFlag{
 			Name:    "graphd-root",
@@ -197,8 +186,6 @@ func Consumer(cctx *cli.Context) error {
 		cctx.String("redis-prefix"),
 		store,
 		u.String(),
-		cctx.String("magic-header-key"),
-		cctx.String("magic-header-val"),
 		cctx.String("graphd-root"),
 		cctx.StringSlice("shard-db-nodes"),
 	)
@@ -206,8 +193,7 @@ func Consumer(cctx *cli.Context) error {
 		log.Fatalf("failed to create consumer: %+v", err)
 	}
 
-	schedSettings := autoscaling.DefaultAutoscaleSettings()
-	scheduler := autoscaling.NewScheduler(schedSettings, "prod-firehose", c.HandleStreamEvent)
+	scheduler := parallel.NewScheduler(400, 10, "prod-firehose", c.HandleStreamEvent)
 
 	// Start a goroutine to manage the cursor, saving the current cursor every 5 seconds.
 	shutdownCursorManager := make(chan struct{})
@@ -335,6 +321,7 @@ func Consumer(cctx *cli.Context) error {
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/debug/pprof/", http.DefaultServeMux)
 
 	metricServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cctx.Int("port")),

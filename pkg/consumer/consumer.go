@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -24,10 +25,8 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/ipfs/go-cid"
 	"github.com/labstack/gommon/log"
-	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/redis/go-redis/v9"
 	typegen "github.com/whyrusleeping/cbor-gen"
-	"golang.org/x/time/rate"
 
 	"github.com/bluesky-social/indigo/events"
 	"github.com/bluesky-social/indigo/repo"
@@ -48,12 +47,6 @@ type Consumer struct {
 	ProgressKey string
 
 	Store *store.Store
-
-	BackfillStatus *xsync.MapOf[string, *BackfillRepoStatus]
-	SyncLimiter    *rate.Limiter
-
-	magicHeaderKey string
-	magicHeaderVal string
 
 	graphdClient *graphdclient.Client
 	shardDB      *sharddb.ShardDB
@@ -146,8 +139,6 @@ func NewConsumer(
 	redisPrefix string,
 	store *store.Store,
 	socketURL string,
-	magicHeaderKey string,
-	magicHeaderVal string,
 	graphdRoot string,
 	shardDBNodes []string,
 ) (*Consumer, error) {
@@ -179,21 +170,11 @@ func NewConsumer(
 		ProgressKey: fmt.Sprintf("%s:progress", redisPrefix),
 		Store:       store,
 
-		BackfillStatus: xsync.NewMapOf[string, *BackfillRepoStatus](),
-		SyncLimiter:    rate.NewLimiter(2, 1),
-
-		magicHeaderKey: magicHeaderKey,
-		magicHeaderVal: magicHeaderVal,
-
 		shardDB: shardDB,
 	}
 
 	if graphdRoot != "" {
 		c.graphdClient = graphdclient.NewClient(graphdRoot, &h)
-	}
-
-	if magicHeaderKey != "" && magicHeaderVal != "" {
-		c.SyncLimiter = rate.NewLimiter(40, 1)
 	}
 
 	// Create the tag tracker
@@ -220,46 +201,6 @@ func NewConsumer(
 		}
 		logger.Warn("cursor not found in redis, starting from live")
 	}
-
-	pageSize := 500_000
-	totalRecords := 0
-
-	// Populate the backfill status from the database
-	for {
-		records, err := c.Store.Queries.GetRepoBackfillRecords(ctx, store_queries.GetRepoBackfillRecordsParams{
-			Limit:  int32(pageSize),
-			Offset: int32(totalRecords),
-		})
-		if err != nil {
-			if err == sql.ErrNoRows {
-				break
-			}
-			return nil, fmt.Errorf("failed to list repo backfill status: %+v", err)
-		}
-
-		for _, backfillRecord := range records {
-			c.BackfillStatus.Store(backfillRecord.Repo, &BackfillRepoStatus{
-				RepoDid:      backfillRecord.Repo,
-				Seq:          backfillRecord.SeqStarted,
-				State:        backfillRecord.State,
-				DeleteBuffer: []*Delete{},
-			})
-			if backfillRecord.State == "enqueued" {
-				backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
-			}
-		}
-
-		totalRecords += len(records)
-
-		if len(records) < pageSize {
-			break
-		}
-	}
-
-	logger.Infow("backfill records found", "count", totalRecords)
-
-	// Start the backfill processor
-	// go c.BackfillProcessor(ctx)
 
 	return &c, nil
 }
@@ -387,40 +328,6 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 	lastSeqGauge.WithLabelValues(c.SocketURL).Set(float64(evt.Seq))
 
 	log := c.Logger.With("repo", evt.Repo, "seq", evt.Seq, "commit", evt.Commit)
-
-	backfill, ok := c.BackfillStatus.Load(evt.Repo)
-	if !ok {
-		span.SetAttributes(attribute.Bool("new_backfill_enqueued", true))
-		log.Infof("backfill not in progress, adding repo %s to queue", evt.Repo)
-
-		state := "enqueued"
-		if evt.Since == nil {
-			state = "complete"
-		}
-
-		backfill = &BackfillRepoStatus{
-			RepoDid:      evt.Repo,
-			Seq:          evt.Seq,
-			State:        state,
-			DeleteBuffer: []*Delete{},
-		}
-
-		c.BackfillStatus.Store(evt.Repo, backfill)
-	}
-
-	// Skip backfilling for now
-	// 	err := c.Store.Queries.CreateRepoBackfillRecord(ctx, store_queries.CreateRepoBackfillRecordParams{
-	// 		Repo:         evt.Repo,
-	// 		LastBackfill: time.Now(),
-	// 		SeqStarted:   evt.Seq,
-	// 		State:        state,
-	// 	})
-	// 	if err != nil {
-	// 		log.Errorf("failed to create repo backfill record: %+v", err)
-	// 	}
-
-	// 	backfillJobsEnqueued.WithLabelValues(c.SocketURL).Inc()
-	// }
 
 	if evt.TooBig {
 		span.SetAttributes(attribute.Bool("too_big", true))
@@ -555,23 +462,13 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 				}
 			}
 		case repomgr.EvtKindDeleteRecord:
-			// Buffer the delete if a backfill is in progress
-			// backfill.lk.Lock()
-			// if backfill.State == "in_progress" || backfill.State == "enqueued" {
-			// 	log.Debugf("backfill scheduled for %s, buffering delete (%+v)", evt.Repo, op.Path)
-			// 	backfill.DeleteBuffer = append(backfill.DeleteBuffer, &Delete{
-			// 		repo: evt.Repo,
-			// 		path: op.Path,
-			// 	})
-			// 	backfill.lk.Unlock()
-			// 	backfillDeletesBuffered.WithLabelValues(c.SocketURL).Inc()
-			// 	return nil
-			// }
-			// backfill.lk.Unlock()
-
 			err := c.HandleDeleteRecord(ctx, evt.Repo, op.Path)
 			if err != nil {
-				log.Errorf("failed to handle delete record: %+v", err)
+				if errors.Is(err, sql.ErrNoRows) {
+					log.Warn("record not found, so we can't delete it")
+				} else {
+					log.Errorf("failed to handle delete record: %+v", err)
+				}
 			}
 		default:
 		}
@@ -605,9 +502,9 @@ func (c *Consumer) HandleDeleteRecord(
 		})
 		if err != nil {
 			if err == sql.ErrNoRows {
-				return fmt.Errorf("like not found, so we can't delete it: %+v", err)
+				return fmt.Errorf("like not found, so we can't delete it: %w", err)
 			}
-			return fmt.Errorf("can't delete like: %+v", err)
+			return fmt.Errorf("can't delete like: %w", err)
 		}
 
 		// Delete the like from the database
@@ -616,7 +513,7 @@ func (c *Consumer) HandleDeleteRecord(
 			Rkey:     rkey,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to delete like: %+v", err)
+			return fmt.Errorf("failed to delete like: %w", err)
 		}
 
 		// Decrement the like count
@@ -627,7 +524,7 @@ func (c *Consumer) HandleDeleteRecord(
 			NumLikes:   1,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to decrement like count: %+v", err)
+			return fmt.Errorf("failed to decrement like count: %w", err)
 		}
 	case "app.bsky.feed.repost":
 		span.SetAttributes(attribute.String("record_type", "feed_repost"))
@@ -638,9 +535,9 @@ func (c *Consumer) HandleDeleteRecord(
 		})
 		if err != nil {
 			if err == sql.ErrNoRows {
-				return fmt.Errorf("repost not found, so we can't delete it: %+v", err)
+				return fmt.Errorf("repost not found, so we can't delete it: %w", err)
 			}
-			return fmt.Errorf("can't delete repost: %+v", err)
+			return fmt.Errorf("can't delete repost: %w", err)
 		}
 
 		// Delete the repost from the database
@@ -649,7 +546,7 @@ func (c *Consumer) HandleDeleteRecord(
 			Rkey:     rkey,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to delete repost: %+v", err)
+			return fmt.Errorf("failed to delete repost: %w", err)
 		}
 
 		// Decrement the repost count
@@ -660,7 +557,7 @@ func (c *Consumer) HandleDeleteRecord(
 			NumReposts: 1,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to decrement repost count: %+v", err)
+			return fmt.Errorf("failed to decrement repost count: %w", err)
 		}
 	case "app.bsky.graph.follow":
 		span.SetAttributes(attribute.String("record_type", "graph_follow"))
@@ -670,15 +567,15 @@ func (c *Consumer) HandleDeleteRecord(
 		})
 		if err != nil {
 			if err == sql.ErrNoRows {
-				return fmt.Errorf("follow not found, so we can't delete it: %+v", err)
+				return fmt.Errorf("follow not found, so we can't delete it: %w", err)
 			}
-			return fmt.Errorf("can't delete follow: %+v", err)
+			return fmt.Errorf("can't delete follow: %w", err)
 		}
 
 		if c.graphdClient != nil {
 			err = c.graphdClient.Unfollow(ctx, repo, follow.TargetDid)
 			if err != nil {
-				log.Errorf("failed to propagate unfollow to GraphD: %+v", err)
+				log.Errorf("failed to propagate unfollow to GraphD: %w", err)
 			}
 		}
 
@@ -687,7 +584,7 @@ func (c *Consumer) HandleDeleteRecord(
 			Rkey:     rkey,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to delete follow: %+v", err)
+			return fmt.Errorf("failed to delete follow: %w", err)
 		}
 		err = c.Store.Queries.DecrementFollowerCountByN(ctx, store_queries.DecrementFollowerCountByNParams{
 			ActorDid:     follow.TargetDid,
@@ -695,7 +592,7 @@ func (c *Consumer) HandleDeleteRecord(
 			UpdatedAt:    time.Now(),
 		})
 		if err != nil {
-			log.Errorf("failed to decrement follower count: %+v", err)
+			log.Errorf("failed to decrement follower count: %w", err)
 			// Don't return an error here, because we still want to try to decrement the following count
 		}
 		err = c.Store.Queries.DecrementFollowingCountByN(ctx, store_queries.DecrementFollowingCountByNParams{
@@ -704,7 +601,7 @@ func (c *Consumer) HandleDeleteRecord(
 			UpdatedAt:    time.Now(),
 		})
 		if err != nil {
-			log.Errorf("failed to decrement following count: %+v", err)
+			log.Errorf("failed to decrement following count: %w", err)
 		}
 
 	case "app.bsky.graph.block":
@@ -715,16 +612,16 @@ func (c *Consumer) HandleDeleteRecord(
 		})
 		if err != nil {
 			if err == sql.ErrNoRows {
-				return fmt.Errorf("block not found, so we can't delete it: %+v", err)
+				return fmt.Errorf("block not found, so we can't delete it: %w", err)
 			}
-			return fmt.Errorf("can't delete block: %+v", err)
+			return fmt.Errorf("can't delete block: %w", err)
 		}
 		err = c.Store.Queries.DeleteBlock(ctx, store_queries.DeleteBlockParams{
 			ActorDid: block.ActorDid,
 			Rkey:     rkey,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to delete block: %+v", err)
+			return fmt.Errorf("failed to delete block: %w", err)
 		}
 
 	}
