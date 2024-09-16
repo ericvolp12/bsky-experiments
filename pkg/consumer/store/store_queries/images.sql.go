@@ -8,6 +8,8 @@ package store_queries
 import (
 	"context"
 	"database/sql"
+
+	"github.com/lib/pq"
 )
 
 const createImage = `-- name: CreateImage :exec
@@ -74,6 +76,46 @@ func (q *Queries) DeleteImagesForPost(ctx context.Context, arg DeleteImagesForPo
 	return err
 }
 
+const dequeueImages = `-- name: DequeueImages :exec
+DELETE FROM images_to_process
+WHERE id = ANY($1::BIGINT [])
+`
+
+func (q *Queries) DequeueImages(ctx context.Context, dollar_1 []int64) error {
+	_, err := q.exec(ctx, q.dequeueImagesStmt, dequeueImages, pq.Array(dollar_1))
+	return err
+}
+
+const enqueueImage = `-- name: EnqueueImage :exec
+INSERT INTO images_to_process (
+        cid,
+        post_actor_did,
+        post_rkey,
+        subject_id,
+        alt_text
+    )
+VALUES ($1, $2, $3, $4, $5)
+`
+
+type EnqueueImageParams struct {
+	Cid          string         `json:"cid"`
+	PostActorDid string         `json:"post_actor_did"`
+	PostRkey     string         `json:"post_rkey"`
+	SubjectID    int64          `json:"subject_id"`
+	AltText      sql.NullString `json:"alt_text"`
+}
+
+func (q *Queries) EnqueueImage(ctx context.Context, arg EnqueueImageParams) error {
+	_, err := q.exec(ctx, q.enqueueImageStmt, enqueueImage,
+		arg.Cid,
+		arg.PostActorDid,
+		arg.PostRkey,
+		arg.SubjectID,
+		arg.AltText,
+	)
+	return err
+}
+
 const getImage = `-- name: GetImage :one
 SELECT cid, post_actor_did, post_rkey, alt_text, created_at, inserted_at
 FROM images
@@ -133,6 +175,43 @@ func (q *Queries) GetImagesForPost(ctx context.Context, arg GetImagesForPostPara
 			&i.AltText,
 			&i.CreatedAt,
 			&i.InsertedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listImagesToProcess = `-- name: ListImagesToProcess :many
+SELECT id, cid, post_actor_did, post_rkey, subject_id, alt_text
+FROM images_to_process
+ORDER BY id ASC
+LIMIT $1
+`
+
+func (q *Queries) ListImagesToProcess(ctx context.Context, limit int32) ([]ImagesToProcess, error) {
+	rows, err := q.query(ctx, q.listImagesToProcessStmt, listImagesToProcess, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ImagesToProcess
+	for rows.Next() {
+		var i ImagesToProcess
+		if err := rows.Scan(
+			&i.ID,
+			&i.Cid,
+			&i.PostActorDid,
+			&i.PostRkey,
+			&i.SubjectID,
+			&i.AltText,
 		); err != nil {
 			return nil, err
 		}

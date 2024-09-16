@@ -126,6 +126,15 @@ type Image struct {
 	InsertedAt   time.Time      `json:"inserted_at"`
 }
 
+type ImagesToProcess struct {
+	ID           int64          `json:"id"`
+	Cid          string         `json:"cid"`
+	PostActorDid string         `json:"post_actor_did"`
+	PostRkey     string         `json:"post_rkey"`
+	SubjectID    int64          `json:"subject_id"`
+	AltText      sql.NullString `json:"alt_text"`
+}
+
 type Like struct {
 	ActorDid   string       `json:"actor_did"`
 	Rkey       string       `json:"rkey"`
@@ -228,9 +237,10 @@ type RecentPost struct {
 }
 
 type RecentPostLabel struct {
-	ActorDid string `json:"actor_did"`
-	Rkey     string `json:"rkey"`
-	Label    string `json:"label"`
+	ActorDid  string        `json:"actor_did"`
+	Rkey      string        `json:"rkey"`
+	Label     string        `json:"label"`
+	SubjectID sql.NullInt64 `json:"subject_id"`
 }
 
 type RecentPostsWithScore struct {

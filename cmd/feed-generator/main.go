@@ -224,7 +224,7 @@ func FeedGenerator(cctx *cli.Context) error {
 
 	// Create a postlabel feed
 	log.Print("initializing postlabel feed")
-	postLabelFeed, postLabelFeedAliases, err := postlabel.NewFeed(ctx, feedActorDID, postRegistry)
+	postLabelFeed, postLabelFeedAliases, err := postlabel.NewFeed(ctx, feedActorDID, store)
 	if err != nil {
 		log.Fatalf("Failed to create PostLabelFeed: %v", err)
 	}

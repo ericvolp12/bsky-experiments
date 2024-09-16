@@ -11,18 +11,24 @@ import (
 )
 
 const createRecentPostLabel = `-- name: CreateRecentPostLabel :exec
-INSERT INTO recent_post_labels(actor_did, rkey, label)
-VALUES ($1, $2, $3)
+INSERT INTO recent_post_labels(actor_did, rkey, label, subject_id)
+VALUES ($1, $2, $3, $4)
 `
 
 type CreateRecentPostLabelParams struct {
-	ActorDid string `json:"actor_did"`
-	Rkey     string `json:"rkey"`
-	Label    string `json:"label"`
+	ActorDid  string        `json:"actor_did"`
+	Rkey      string        `json:"rkey"`
+	Label     string        `json:"label"`
+	SubjectID sql.NullInt64 `json:"subject_id"`
 }
 
 func (q *Queries) CreateRecentPostLabel(ctx context.Context, arg CreateRecentPostLabelParams) error {
-	_, err := q.exec(ctx, q.createRecentPostLabelStmt, createRecentPostLabel, arg.ActorDid, arg.Rkey, arg.Label)
+	_, err := q.exec(ctx, q.createRecentPostLabelStmt, createRecentPostLabel,
+		arg.ActorDid,
+		arg.Rkey,
+		arg.Label,
+		arg.SubjectID,
+	)
 	return err
 }
 
@@ -82,10 +88,10 @@ func (q *Queries) ListRecentPostLabels(ctx context.Context, arg ListRecentPostLa
 
 const listRecentPostsByLabelHot = `-- name: ListRecentPostsByLabelHot :many
 SELECT l.actor_did,
-    l.rkey
+    l.rkey,
+    rp.score
 FROM recent_post_labels l
-    JOIN recent_posts_with_score rp ON l.actor_did = rp.actor_did
-    AND l.rkey = rp.rkey
+    JOIN recent_posts_with_score rp ON l.subject_id = rp.subject_id
 WHERE label = $1
     AND score < coalesce($3::float, 100000)
 ORDER BY score DESC
@@ -99,8 +105,9 @@ type ListRecentPostsByLabelHotParams struct {
 }
 
 type ListRecentPostsByLabelHotRow struct {
-	ActorDid string `json:"actor_did"`
-	Rkey     string `json:"rkey"`
+	ActorDid string  `json:"actor_did"`
+	Rkey     string  `json:"rkey"`
+	Score    float64 `json:"score"`
 }
 
 func (q *Queries) ListRecentPostsByLabelHot(ctx context.Context, arg ListRecentPostsByLabelHotParams) ([]ListRecentPostsByLabelHotRow, error) {
@@ -112,7 +119,7 @@ func (q *Queries) ListRecentPostsByLabelHot(ctx context.Context, arg ListRecentP
 	var items []ListRecentPostsByLabelHotRow
 	for rows.Next() {
 		var i ListRecentPostsByLabelHotRow
-		if err := rows.Scan(&i.ActorDid, &i.Rkey); err != nil {
+		if err := rows.Scan(&i.ActorDid, &i.Rkey, &i.Score); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

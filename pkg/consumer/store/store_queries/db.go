@@ -201,6 +201,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.deleteTQSPStmt, err = db.PrepareContext(ctx, deleteTQSP); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteTQSP: %w", err)
 	}
+	if q.dequeueImagesStmt, err = db.PrepareContext(ctx, dequeueImages); err != nil {
+		return nil, fmt.Errorf("error preparing query DequeueImages: %w", err)
+	}
+	if q.enqueueImageStmt, err = db.PrepareContext(ctx, enqueueImage); err != nil {
+		return nil, fmt.Errorf("error preparing query EnqueueImage: %w", err)
+	}
 	if q.findActorsByHandleStmt, err = db.PrepareContext(ctx, findActorsByHandle); err != nil {
 		return nil, fmt.Errorf("error preparing query FindActorsByHandle: %w", err)
 	}
@@ -485,6 +491,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listActorsByLabelStmt, err = db.PrepareContext(ctx, listActorsByLabel); err != nil {
 		return nil, fmt.Errorf("error preparing query ListActorsByLabel: %w", err)
+	}
+	if q.listImagesToProcessStmt, err = db.PrepareContext(ctx, listImagesToProcess); err != nil {
+		return nil, fmt.Errorf("error preparing query ListImagesToProcess: %w", err)
 	}
 	if q.listMPLSStmt, err = db.PrepareContext(ctx, listMPLS); err != nil {
 		return nil, fmt.Errorf("error preparing query ListMPLS: %w", err)
@@ -844,6 +853,16 @@ func (q *Queries) Close() error {
 	if q.deleteTQSPStmt != nil {
 		if cerr := q.deleteTQSPStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteTQSPStmt: %w", cerr)
+		}
+	}
+	if q.dequeueImagesStmt != nil {
+		if cerr := q.dequeueImagesStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing dequeueImagesStmt: %w", cerr)
+		}
+	}
+	if q.enqueueImageStmt != nil {
+		if cerr := q.enqueueImageStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing enqueueImageStmt: %w", cerr)
 		}
 	}
 	if q.findActorsByHandleStmt != nil {
@@ -1321,6 +1340,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing listActorsByLabelStmt: %w", cerr)
 		}
 	}
+	if q.listImagesToProcessStmt != nil {
+		if cerr := q.listImagesToProcessStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listImagesToProcessStmt: %w", cerr)
+		}
+	}
 	if q.listMPLSStmt != nil {
 		if cerr := q.listMPLSStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listMPLSStmt: %w", cerr)
@@ -1519,6 +1543,8 @@ type Queries struct {
 	deleteSentimentJobStmt                    *sql.Stmt
 	deleteSubjectStmt                         *sql.Stmt
 	deleteTQSPStmt                            *sql.Stmt
+	dequeueImagesStmt                         *sql.Stmt
+	enqueueImageStmt                          *sql.Stmt
 	findActorsByHandleStmt                    *sql.Stmt
 	findPotentialFriendsStmt                  *sql.Stmt
 	getActiveEventsForInitiatorStmt           *sql.Stmt
@@ -1614,6 +1640,7 @@ type Queries struct {
 	insertLikeStmt                            *sql.Stmt
 	listActorLabelsStmt                       *sql.Stmt
 	listActorsByLabelStmt                     *sql.Stmt
+	listImagesToProcessStmt                   *sql.Stmt
 	listMPLSStmt                              *sql.Stmt
 	listPinsByActorStmt                       *sql.Stmt
 	listRecentPostLabelsStmt                  *sql.Stmt
@@ -1699,6 +1726,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteSentimentJobStmt:                    q.deleteSentimentJobStmt,
 		deleteSubjectStmt:                         q.deleteSubjectStmt,
 		deleteTQSPStmt:                            q.deleteTQSPStmt,
+		dequeueImagesStmt:                         q.dequeueImagesStmt,
+		enqueueImageStmt:                          q.enqueueImageStmt,
 		findActorsByHandleStmt:                    q.findActorsByHandleStmt,
 		findPotentialFriendsStmt:                  q.findPotentialFriendsStmt,
 		getActiveEventsForInitiatorStmt:           q.getActiveEventsForInitiatorStmt,
@@ -1794,6 +1823,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		insertLikeStmt:                            q.insertLikeStmt,
 		listActorLabelsStmt:                       q.listActorLabelsStmt,
 		listActorsByLabelStmt:                     q.listActorsByLabelStmt,
+		listImagesToProcessStmt:                   q.listImagesToProcessStmt,
 		listMPLSStmt:                              q.listMPLSStmt,
 		listPinsByActorStmt:                       q.listPinsByActorStmt,
 		listRecentPostLabelsStmt:                  q.listRecentPostLabelsStmt,

@@ -247,6 +247,16 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 			if err != nil {
 				log.Errorf("failed to create image: %+v", err)
 			}
+			err = c.Store.Queries.EnqueueImage(ctx, store_queries.EnqueueImageParams{
+				Cid:          img.Image.Ref.String(),
+				PostActorDid: repo,
+				PostRkey:     rkey,
+				SubjectID:    subj.ID,
+				AltText:      sql.NullString{String: img.Alt, Valid: img.Alt != ""},
+			})
+			if err != nil {
+				log.Errorf("failed to enqueue image: %+v", err)
+			}
 		}
 	}
 

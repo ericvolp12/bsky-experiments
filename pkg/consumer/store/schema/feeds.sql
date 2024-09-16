@@ -27,6 +27,7 @@ CREATE TABLE recent_post_labels (
     actor_did TEXT NOT NULL,
     rkey TEXT NOT NULL,
     label TEXT NOT NULL,
+    subject_id BIGINT,
     PRIMARY KEY (actor_did, rkey, label)
 );
 CREATE INDEX recent_post_labels_label_idx ON recent_post_labels (label);

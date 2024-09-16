@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -648,14 +647,9 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 	logger.Info("Processing images...")
 	start := time.Now()
 
-	unprocessedImages, err := index.PostRegistry.GetUnprocessedImages(ctx, pageSize)
+	unprocessedImages, err := index.Store.Queries.ListImagesToProcess(ctx, pageSize)
 	if err != nil {
-		if errors.As(err, &search.NotFoundError{}) {
-			logger.Info("No unprocessed images found, skipping process cycle...")
-
-		} else {
-			logger.Error("Failed to get unprocessed images, skipping process cycle", "error", err)
-		}
+		logger.Error("Failed to get unprocessed images", "error", err)
 		return
 	}
 
@@ -664,17 +658,22 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 		return
 	}
 
+	imgMap := make(map[string]int64, len(unprocessedImages))
+	imageIDs := make([]int64, len(unprocessedImages))
+	for i, img := range unprocessedImages {
+		imgMap[fmt.Sprintf("%s_%s_%s", img.PostActorDid, img.PostRkey, img.Cid)] = img.SubjectID
+		imageIDs[i] = img.ID
+	}
+
 	imagesIndexedCounter.Add(float64(len(unprocessedImages)))
 
 	imageMetas := make([]*objectdetection.ImageMeta, len(unprocessedImages))
 	for i, image := range unprocessedImages {
 		imageMetas[i] = &objectdetection.ImageMeta{
-			PostID:    image.PostID,
-			ActorDID:  image.AuthorDID,
-			CID:       image.CID,
-			URL:       fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", image.AuthorDID, image.CID),
-			MimeType:  image.MimeType,
-			CreatedAt: image.CreatedAt,
+			PostID:   image.PostRkey,
+			ActorDID: image.PostActorDid,
+			CID:      image.Cid,
+			URL:      fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", image.PostActorDid, image.Cid),
 		}
 	}
 
@@ -683,8 +682,6 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 		logger.Error("Failed to process images", "error", err)
 		return
 	}
-
-	executionTime := time.Now()
 
 	successCount := atomic.NewInt32(0)
 
@@ -701,24 +698,6 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 				successCount.Inc()
 			}
 
-			cvClasses, err := json.Marshal(result.Results)
-			if err != nil {
-				logger.Error("Failed to marshal classes", "error", err)
-				return
-			}
-
-			err = index.PostRegistry.AddCVDataToImage(
-				ctx,
-				result.Meta.CID,
-				result.Meta.PostID,
-				executionTime,
-				cvClasses,
-			)
-			if err != nil {
-				logger.Error("Failed to update image", "error", err)
-				return
-			}
-
 			imageLabels := []string{}
 			for _, class := range result.Results {
 				if class.Confidence >= 0.75 {
@@ -728,17 +707,22 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 
 			for _, label := range imageLabels {
 				postLabel := fmt.Sprintf("%s:%s", "cv", label)
-				err = index.PostRegistry.AddPostLabel(ctx, result.Meta.PostID, result.Meta.ActorDID, postLabel)
-				if err != nil {
-					logger.Error("Failed to add label to post", "error", err)
+
+				// Get the SubjectID for the post
+				subjectID, ok := imgMap[fmt.Sprintf("%s_%s_%s", result.Meta.ActorDID, result.Meta.PostID, result.Meta.CID)]
+				if !ok {
+					logger.Error("Failed to get SubjectID for image", "actor_did", result.Meta.ActorDID, "post_id", result.Meta.PostID, "cid", result.Meta.CID)
+					continue
 				}
+
 				err = index.Store.Queries.CreateRecentPostLabel(ctx, store_queries.CreateRecentPostLabelParams{
-					ActorDid: result.Meta.ActorDID,
-					Rkey:     result.Meta.PostID,
-					Label:    postLabel,
+					ActorDid:  result.Meta.ActorDID,
+					Rkey:      result.Meta.PostID,
+					Label:     postLabel,
+					SubjectID: sql.NullInt64{Int64: subjectID, Valid: true},
 				})
 				if err != nil {
-					logger.Error("Failed to create recent post label", "error", err)
+					logger.Error("Failed to create recent post label", "error", err, "actor_did", result.Meta.ActorDID, "rkey", result.Meta.PostID, "label", postLabel)
 				}
 			}
 		}(result)
@@ -746,6 +730,12 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 
 	if err := sem.Acquire(ctx, 10); err != nil {
 		logger.Error("Failed to acquire semaphore", "error", err)
+	}
+
+	// Dequeue the images
+	err = index.Store.Queries.DequeueImages(ctx, imageIDs)
+	if err != nil {
+		logger.Error("Failed to dequeue images", "error", err)
 	}
 
 	successes := int(successCount.Load())

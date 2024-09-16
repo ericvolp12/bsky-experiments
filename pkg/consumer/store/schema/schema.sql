@@ -191,6 +191,14 @@ CREATE TABLE images (
     PRIMARY KEY (post_actor_did, post_rkey, cid)
 );
 create index images_created_at_index on images (created_at desc);
+CREATE TABLE images_to_process (
+    id BIGSERIAL PRIMARY KEY,
+    cid TEXT NOT NULL,
+    post_actor_did TEXT NOT NULL,
+    post_rkey TEXT NOT NULL,
+    subject_id BIGINT NOT NULL,
+    alt_text TEXT
+);
 -- Backfill Status
 CREATE TABLE repo_backfill_status (
     repo TEXT NOT NULL,
