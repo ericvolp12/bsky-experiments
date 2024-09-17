@@ -8,7 +8,6 @@ import (
 	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
-	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"golang.org/x/time/rate"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/usercount"
@@ -16,8 +15,7 @@ import (
 )
 
 type API struct {
-	PostRegistry *search.PostRegistry
-	UserCount    *usercount.UserCount
+	UserCount *usercount.UserCount
 
 	Store     *store.Store
 	Directory identity.Directory
@@ -35,7 +33,6 @@ type API struct {
 var tracer = otel.Tracer("search-api")
 
 func NewAPI(
-	postRegistry *search.PostRegistry,
 	store *store.Store,
 	userCount *usercount.UserCount,
 	MagicHeaderVal string,
@@ -49,7 +46,6 @@ func NewAPI(
 	}
 
 	return &API{
-		PostRegistry:    postRegistry,
 		UserCount:       userCount,
 		Store:           store,
 		Directory:       dir,

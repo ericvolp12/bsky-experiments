@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -17,7 +16,6 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	objectdetection "github.com/ericvolp12/bsky-experiments/pkg/object-detection"
-	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/sentiment"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,11 +29,10 @@ import (
 )
 
 type Index struct {
-	PostRegistry *search.PostRegistry
-	Detection    *objectdetection.ObjectDetectionImpl
-	Sentiment    *sentiment.Sentiment
-	Logger       *slog.Logger
-	Store        *store.Store
+	Detection *objectdetection.ObjectDetectionImpl
+	Sentiment *sentiment.Sentiment
+	Logger    *slog.Logger
+	Store     *store.Store
 
 	PositiveConfidenceThreshold float64
 	NegativeConfidenceThreshold float64
@@ -67,12 +64,7 @@ func main() {
 			Value:   8080,
 			EnvVars: []string{"PORT"},
 		},
-		&cli.StringFlag{
-			Name:     "registry-postgres-url",
-			Usage:    "postgres url for storing registry data",
-			Required: false,
-			EnvVars:  []string{"REGISTRY_POSTGRES_URL"},
-		},
+
 		&cli.StringFlag{
 			Name:     "store-postgres-url",
 			Usage:    "postgres url for storing events",
@@ -143,18 +135,8 @@ func Indexer(cctx *cli.Context) error {
 		}()
 	}
 
-	var postRegistry *search.PostRegistry
-	var err error
-
-	if cctx.String("registry-postgres-url") != "" {
-		postRegistry, err = search.NewPostRegistry(cctx.String("registry-postgres-url"))
-		if err != nil {
-			return fmt.Errorf("failed to initialize post registry: %w", err)
-		}
-		defer postRegistry.Close()
-	}
-
 	var s *store.Store
+	var err error
 	if cctx.String("store-postgres-url") != "" {
 		s, err = store.NewStore(cctx.String("store-postgres-url"))
 		if err != nil {
@@ -219,21 +201,12 @@ func Indexer(cctx *cli.Context) error {
 	if s != nil {
 		index.Store = s
 	}
-	if postRegistry != nil {
-		index.PostRegistry = postRegistry
-	}
 
 	// Start the Image Indexing loop
 	shutdownImages := make(chan struct{})
 	imagesShutdown := make(chan struct{})
 	go func() {
 		logger := logger.With("component", "image_indexer")
-		if index.PostRegistry == nil {
-			logger.Info("no post registry, skipping image indexing loop...")
-			close(imagesShutdown)
-			return
-		}
-
 		logger.Info("Starting image indexing loop...")
 		for {
 			ctx := context.Background()
@@ -242,32 +215,6 @@ func Indexer(cctx *cli.Context) error {
 			case <-shutdownImages:
 				logger.Info("Shutting down image indexing loop...")
 				close(imagesShutdown)
-				return
-			default:
-				time.Sleep(1 * time.Second)
-			}
-		}
-	}()
-
-	// Start the Sentiment Indexing loop
-	shutdownSentiments := make(chan struct{})
-	sentimentsShutdown := make(chan struct{})
-	go func() {
-		logger := logger.With("component", "sentiment_indexer")
-		if index.PostRegistry == nil {
-			logger.Info("no post registry, skipping sentiment indexing loop...")
-			close(sentimentsShutdown)
-			return
-		}
-
-		logger.Info("Starting sentiment indexing loop...")
-		for {
-			ctx := context.Background()
-			index.IndexPostSentiments(ctx, int32(cctx.Int("post-page-size")))
-			select {
-			case <-shutdownSentiments:
-				logger.Info("Shutting down sentiment indexing loop...")
-				close(sentimentsShutdown)
 				return
 			default:
 				time.Sleep(1 * time.Second)
@@ -313,12 +260,10 @@ func Indexer(cctx *cli.Context) error {
 	logger.Info("shutting down, waiting for workers to clean up...")
 
 	close(shutdownImages)
-	close(shutdownSentiments)
 	close(shutdownMetrics)
 	close(shutdownNewSentiments)
 
 	<-imagesShutdown
-	<-sentimentsShutdown
 	<-metricsShutdown
 	<-newSentimentsShutdown
 
@@ -500,128 +445,6 @@ func (index *Index) IndexNewPostSentiments(ctx context.Context, pageSize int32) 
 	}
 
 	return true
-}
-
-func (index *Index) IndexPostSentiments(ctx context.Context, pageSize int32) {
-	ctx, span := tracer.Start(ctx, "IndexPostSentiments")
-	defer span.End()
-
-	logger := index.Logger.With("component", "post_indexer")
-	logger.Info("index loop waking up...")
-	start := time.Now()
-	logger.Info("getting unindexed posts...")
-	posts, err := index.PostRegistry.GetUnindexedPostPage(ctx, pageSize, 0)
-	if err != nil {
-		// Check if error is a not found error
-		if errors.Is(err, search.PostsNotFound) {
-			logger.Info("no posts to index, sleeping...")
-			return
-		}
-		logger.Error("error getting posts", "error", err)
-		return
-	}
-
-	fetchDone := time.Now()
-
-	logger.Info("submtting posts for Sentiment Analysis...")
-	// If sentiment is enabled, get the sentiment for the post
-	span.AddEvent("GetPostsSentiment")
-	sentimentPosts := []*sentiment.SentimentPost{}
-	for i := range posts {
-		post := posts[i]
-		sentimentPosts = append(sentimentPosts, &sentiment.SentimentPost{
-			Rkey:     post.ID,
-			ActorDID: post.AuthorDID,
-			Text:     post.Text,
-		})
-	}
-	sentimentResults, err := index.Sentiment.GetPostsSentiment(ctx, sentimentPosts)
-	if err != nil {
-		span.SetAttributes(attribute.String("sentiment.error", err.Error()))
-		logger.Error("error getting sentiment for posts", "error", err)
-	}
-	sentimentDone := time.Now()
-
-	logger.Info("setting sentiment results...")
-	errs := index.PostRegistry.SetSentimentResults(ctx, sentimentResults)
-	if len(errs) > 0 {
-		logger.Error("error(s) setting sentiment results", "errors", errs)
-	}
-
-	postIDsToLabel := make([]string, 0)
-	authorDIDsToLabel := make([]string, 0)
-	labels := make([]string, 0)
-	postsAnalyzed := 0
-
-	for i := range sentimentResults {
-		res := sentimentResults[i]
-		if res != nil {
-			if res.Decision != nil {
-				postsAnalyzed++
-				postsAnalyzedCounter.WithLabelValues("registry").Inc()
-				if res.Decision.Sentiment == sentiment.POSITIVE && res.Decision.Confidence >= index.PositiveConfidenceThreshold {
-					postIDsToLabel = append(postIDsToLabel, res.Rkey)
-					authorDIDsToLabel = append(authorDIDsToLabel, res.ActorDID)
-					labels = append(labels, "sentiment:pos")
-					positiveSentimentCounter.WithLabelValues("registry").Inc()
-				} else if res.Decision.Sentiment == sentiment.NEGATIVE && res.Decision.Confidence >= index.NegativeConfidenceThreshold {
-					postIDsToLabel = append(postIDsToLabel, res.Rkey)
-					authorDIDsToLabel = append(authorDIDsToLabel, res.ActorDID)
-					labels = append(labels, "sentiment:neg")
-					negativeSentimentCounter.WithLabelValues("registry").Inc()
-				}
-			}
-		}
-	}
-
-	logger.Info("setting sentiment labels...", "num_labels", len(postIDsToLabel))
-	err = index.PostRegistry.AddOneLabelPerPost(ctx, labels, postIDsToLabel, authorDIDsToLabel)
-	if err != nil {
-		logger.Error("error setting sentiment labels", "error", err)
-	}
-
-	appliedSentimentDone := time.Now()
-
-	// Set indexed at timestamp on posts
-	postIds := make([]string, len(posts))
-	for i, post := range posts {
-		postIds[i] = post.ID
-	}
-
-	postsIndexedCounter.WithLabelValues("registry").Add(float64(len(postIds)))
-
-	logger.Info("setting indexed at timestamp...", "num_posts", len(postIds))
-	err = index.PostRegistry.SetIndexedAtTimestamp(ctx, postIds, time.Now())
-	if err != nil {
-		logger.Error("error setting indexed at timestamp", "error", err)
-		return
-	}
-
-	updateDone := time.Now()
-
-	span.SetAttributes(
-		attribute.Int("posts_indexed", len(posts)),
-		attribute.Int("posts_analyzed", postsAnalyzed),
-		attribute.Int("posts_labeled_with_sentiment", len(postIDsToLabel)),
-		attribute.String("indexing_time", time.Since(start).String()),
-		attribute.String("fetch_time", fetchDone.Sub(start).String()),
-		attribute.String("index_time", appliedSentimentDone.Sub(fetchDone).String()),
-		attribute.String("update_time", updateDone.Sub(appliedSentimentDone).String()),
-		attribute.String("sentiment_time", sentimentDone.Sub(fetchDone).String()),
-		attribute.String("sentiment_db_time", appliedSentimentDone.Sub(sentimentDone).String()),
-	)
-
-	logger.Info("finished indexing posts, sleeping...",
-		"posts_indexed", len(posts),
-		"posts_analyzed", postsAnalyzed,
-		"posts_labeled_with_sentiment", len(postIDsToLabel),
-		"indexing_time", time.Since(start),
-		"fetch_time", fetchDone.Sub(start),
-		"index_time", appliedSentimentDone.Sub(fetchDone),
-		"update_time", updateDone.Sub(appliedSentimentDone),
-		"sentiment_time", sentimentDone.Sub(fetchDone),
-		"sentiment_db_time", appliedSentimentDone.Sub(sentimentDone),
-	)
 }
 
 var imagesIndexedCounter = promauto.NewCounter(prometheus.CounterOpts{

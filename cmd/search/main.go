@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
-	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/ericvolp12/bsky-experiments/pkg/search/endpoints"
 	"github.com/ericvolp12/bsky-experiments/pkg/tracing"
 	"github.com/ericvolp12/bsky-experiments/pkg/usercount"
@@ -49,19 +48,9 @@ func main() {
 
 	sugar.Info("Reading config from environment...")
 
-	dbConnectionString := os.Getenv("REGISTRY_DB_CONNECTION_STRING")
-	if dbConnectionString == "" {
-		log.Fatal("REGISTRY_DB_CONNECTION_STRING environment variable is required")
-	}
-
 	firehoseConnectionString := os.Getenv("FIREHOSE_DB_CONNECTION_STRING")
 	if firehoseConnectionString == "" {
 		log.Fatal("FIREHOSE_DB_CONNECTION_STRING environment variable is required")
-	}
-
-	layoutServiceHost := os.Getenv("LAYOUT_SERVICE_HOST")
-	if layoutServiceHost == "" {
-		layoutServiceHost = "http://localhost:8086"
 	}
 
 	redisAddress := os.Getenv("REDIS_ADDRESS")
@@ -107,12 +96,6 @@ func main() {
 		}()
 	}
 
-	postRegistry, err := search.NewPostRegistry(dbConnectionString)
-	if err != nil {
-		log.Fatalf("Failed to create PostRegistry: %v", err)
-	}
-	defer postRegistry.Close()
-
 	store, err := store.NewStore(firehoseConnectionString)
 	if err != nil {
 		log.Fatalf("Failed to create Store: %v", err)
@@ -122,7 +105,6 @@ func main() {
 	userCount := usercount.NewUserCount(ctx, redisClient)
 
 	api, err := endpoints.NewAPI(
-		postRegistry,
 		store,
 		userCount,
 		magicHeaderVal,

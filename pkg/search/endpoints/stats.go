@@ -2,14 +2,12 @@ package endpoints
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"math"
 	"net/http"
 	"time"
 
-	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/gin-gonic/gin"
 )
 
@@ -40,15 +38,13 @@ type StatPercentile struct {
 }
 
 type AuthorStatsResponse struct {
-	TotalUsers          int                 `json:"total_users"`
-	TotalAuthors        int64               `json:"total_authors"`
-	TotalPosts          int64               `json:"total_posts"`
-	MeanPostCount       float64             `json:"mean_post_count"`
-	Percentiles         []search.Percentile `json:"percentiles"`
-	FollowerPercentiles []StatPercentile    `json:"follower_percentiles"`
-	Brackets            []search.Bracket    `json:"brackets"`
-	UpdatedAt           time.Time           `json:"updated_at"`
-	DailyData           []DailyDatapoint    `json:"daily_data"`
+	TotalUsers          int              `json:"total_users"`
+	TotalPosts          int64            `json:"total_posts"`
+	TotalFollows        int64            `json:"total_follows"`
+	TotalLikes          int64            `json:"total_likes"`
+	FollowerPercentiles []StatPercentile `json:"follower_percentiles"`
+	UpdatedAt           time.Time        `json:"updated_at"`
+	DailyData           []DailyDatapoint `json:"daily_data"`
 }
 
 func (api *API) GetAuthorStats(c *gin.Context) {
@@ -101,17 +97,6 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 	}
 	totalUsers.Set(float64(userCount))
 
-	authorStats, err := api.PostRegistry.GetAuthorStats(ctx)
-	if err != nil {
-		log.Printf("Error getting author stats: %v", err)
-		return fmt.Errorf("error getting author stats: %w", err)
-	}
-
-	if authorStats == nil {
-		log.Printf("Author stats returned nil")
-		return errors.New("author stats returned nil")
-	}
-
 	dailyDatapointsRaw, err := api.Store.Queries.GetDailySummaries(ctx)
 	if err != nil {
 		log.Printf("Error getting daily datapoints: %v", err)
@@ -162,10 +147,31 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 		{Percentile: 0.9999, Value: followerPercentilesRaw.P9999},
 	}
 
-	// Update the metrics
-	totalAuthors.Set(float64(authorStats.TotalAuthors))
-	meanPostCount.Set(authorStats.MeanPostCount)
-	totalPostCount.Set(float64(authorStats.TotalPosts))
+	res, err := api.Store.DB.QueryContext(ctx, "SELECT reltuples::bigint AS num_ents, relname as ent_type FROM pg_class WHERE relname in ('posts', 'follows', 'likes');")
+	if err != nil {
+		log.Printf("Error getting total posts: %v", err)
+		return fmt.Errorf("error getting total posts: %w", err)
+	}
+	defer res.Close()
+
+	var totalPosts, totalFollows, totalLikes int64
+	for res.Next() {
+		var numEnts int64
+		var entType string
+		err = res.Scan(&numEnts, &entType)
+		if err != nil {
+			log.Printf("Error scanning total posts: %v", err)
+			return fmt.Errorf("error scanning total posts: %w", err)
+		}
+		switch entType {
+		case "posts":
+			totalPosts = numEnts
+		case "follows":
+			totalFollows = numEnts
+		case "likes":
+			totalLikes = numEnts
+		}
+	}
 
 	// Lock the stats mux for writing
 	span.AddEvent("RefreshSiteStats:AcquireStatsCacheWLock")
@@ -175,14 +181,12 @@ func (api *API) RefreshSiteStats(ctx context.Context) error {
 	api.StatsCache = &StatsCacheEntry{
 		Stats: AuthorStatsResponse{
 			TotalUsers:          userCount,
-			TotalAuthors:        authorStats.TotalAuthors,
-			TotalPosts:          authorStats.TotalPosts,
-			MeanPostCount:       authorStats.MeanPostCount,
-			Percentiles:         authorStats.Percentiles,
+			TotalPosts:          totalPosts,
+			TotalFollows:        totalFollows,
+			TotalLikes:          totalLikes,
 			FollowerPercentiles: followerPercentiles,
-			Brackets:            authorStats.Brackets,
-			UpdatedAt:           authorStats.UpdatedAt,
 			DailyData:           dailyDatapoints,
+			UpdatedAt:           time.Now(),
 		},
 		Expiration: time.Now().Add(api.StatsCacheTTL),
 	}

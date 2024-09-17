@@ -11,7 +11,6 @@ require (
 	github.com/bits-and-blooms/bloom/v3 v3.5.0
 	github.com/bluesky-social/indigo v0.0.0-20240905024844-a4f38639767f
 	github.com/ericvolp12/go-gin-prometheus v0.0.0-20221219081010-fc0e0436c283
-	github.com/ericvolp12/jetstream v0.0.0-20240908055227-e32d04843c4c
 	github.com/ericvolp12/jwt-go-secp256k1 v0.0.2
 	github.com/gin-contrib/cors v1.4.0
 	github.com/gin-contrib/zap v0.1.0
@@ -142,6 +141,7 @@ require (
 	github.com/prometheus/common v0.54.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/redis/go-redis/extra/rediscmd/v9 v9.0.5 // indirect
+	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
@@ -162,6 +162,7 @@ require (
 	golang.org/x/net v0.24.0 // indirect
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
+	google.golang.org/genproto v0.0.0-20231212172506-995d672761c0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20231212172506-995d672761c0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231212172506-995d672761c0 // indirect
 	google.golang.org/grpc v1.60.0 // indirect

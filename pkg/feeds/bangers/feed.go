@@ -2,6 +2,7 @@ package bangers
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strconv"
@@ -12,7 +13,6 @@ import (
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
-	"github.com/ericvolp12/bsky-experiments/pkg/search"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 )
@@ -135,7 +135,7 @@ func (f *Feed) GetPage(ctx context.Context, feed string, userDID string, limit i
 	if err == redis.Nil || len(cached) == 0 {
 		posts, err = f.fetchAndCachePosts(ctx, userDID, feed)
 		if err != nil {
-			if errors.As(err, &search.NotFoundError{}) {
+			if errors.Is(err, sql.ErrNoRows) {
 				return nil, nil, NotFoundError{fmt.Errorf("posts not found for feed %s", feed)}
 			}
 			return nil, nil, fmt.Errorf("error getting posts from registry for feed (%s): %w", feed, err)
@@ -171,7 +171,7 @@ func (f *Feed) GetPage(ctx context.Context, feed string, userDID string, limit i
 			})
 		}
 		if err != nil {
-			if errors.As(err, &search.NotFoundError{}) {
+			if errors.Is(err, sql.ErrNoRows) {
 				return nil, nil, NotFoundError{fmt.Errorf("posts not found for feed %s", feed)}
 			}
 			return nil, nil, fmt.Errorf("error getting posts from registry for feed (%s): %w", feed, err)

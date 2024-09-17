@@ -60,8 +60,6 @@ github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f h1:lO4WD4F/r
 github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f/go.mod h1:cuUVRXasLTGF7a8hSLbxyZXjz+1KgoB3wDUb6vlszIc=
 github.com/ericvolp12/go-gin-prometheus v0.0.0-20221219081010-fc0e0436c283 h1:wafHcqvqdYoSHRGetNRQ20h7N8UJiY1ZtJrU6+Ru3/E=
 github.com/ericvolp12/go-gin-prometheus v0.0.0-20221219081010-fc0e0436c283/go.mod h1:+yIuLDugyQ+ho7DQ/nJnM/Jej5jb1rftWD5eMW0CVP4=
-github.com/ericvolp12/jetstream v0.0.0-20240908055227-e32d04843c4c h1:gVHnUu8FtJWugkuS6Mz5GbNI2lK/sf/kdmoO00sBf+E=
-github.com/ericvolp12/jetstream v0.0.0-20240908055227-e32d04843c4c/go.mod h1:TY17DARsPwmU/jqF9hREbw/q2Orki5u6yQu0/1+Yb0k=
 github.com/ericvolp12/jwt-go-secp256k1 v0.0.2 h1:puGwrNTY2vCt8eakkSEq2yeNxUD3zb2kPhv1OsF1hPs=
 github.com/ericvolp12/jwt-go-secp256k1 v0.0.2/go.mod h1:ntxzdN7EhBp8h+N78AtN2hjbVKHa7mijryYd9nPMyMo=
 github.com/felixge/httpsnoop v1.0.4 h1:NFTV2Zj1bL4mc9sqWACXbQFVBBg2W3GPvqp8/ESS2Wg=

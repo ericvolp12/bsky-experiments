@@ -4,18 +4,6 @@
 GO_CMD_W_CGO = CGO_ENABLED=1 GOOS=linux go
 GO_CMD = CGO_ENABLED=0 GOOS=linux go
 
-# Build the Graph Builder Go binary
-.PHONY: build-graph-builder
-build-graph-builder:
-	@echo "Building Graph Builder Go binary..."
-	$(GO_CMD_W_CGO) build -o graph-builder cmd/graph-builder/*.go
-
-# Start up the Graph Builder
-.PHONY: graph-builder-up
-graph-builder-up:
-	@echo "Starting Graph Builder..."
-	docker compose -f build/graph-builder/docker-compose.yml up --build -d
-
 # Build the Search API Go binary
 .PHONY: build-search
 build-search:
@@ -29,20 +17,8 @@ search-up:
 
 .PHONY: search-restart
 search-restart:
-	@echo "Restarting Graph Builder..."
+	@echo "Restarting Search API..."
 	docker compose -f build/search/docker-compose.yml restart -t 5
-
-# Build the Layout Rust Service
-.PHONY: layout-up
-layout-up:
-	@echo "Starting Rust Layout API..."
-	docker compose -f build/layout/docker-compose.yml up --build -d
-
-# Build the Layout TypeScript Service
-.PHONY: ts-layout-up
-ts-layout-up:
-	@echo "Starting TypeScript Layout API..."
-	docker compose -f build/ts-layout/docker-compose.yml up --build -d
 
 # Build the Sentiment Analysis Python Service
 .PHONY: sentiment-up
