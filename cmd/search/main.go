@@ -125,10 +125,7 @@ func main() {
 		postRegistry,
 		store,
 		userCount,
-		layoutServiceHost,
 		magicHeaderVal,
-		10*time.Minute, // Thread View Cache TTL
-		10*time.Minute, // Layout Cache TTL
 		30*time.Second, // Stats Cache TTL
 	)
 
@@ -205,7 +202,6 @@ func main() {
 	p := ginprometheus.NewPrometheus("gin", nil)
 	p.Use(router)
 
-	router.GET("/thread", api.ProcessThreadRequest)
 	router.GET("/stats", api.GetAuthorStats)
 	router.GET("/redir", api.RedirectAtURI)
 
