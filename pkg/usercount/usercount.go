@@ -43,7 +43,7 @@ func NewUserCount(ctx context.Context, redisClient *redis.Client) *UserCount {
 	// We need to convert it to a slice of PDS structs
 	pdsSlice := []*PDS{}
 	for host, pdsString := range pdsList {
-		pds := NewPDS(host, 2)
+		pds := NewPDS(host, 25)
 		_, err := fmt.Sscanf(pdsString, "%d|%d|%s", &pds.UserCount, &pds.LastPageSize, &pds.LastCursor)
 		if err != nil {
 			log.Printf("error parsing pds string: %s\n", err)
@@ -55,7 +55,7 @@ func NewUserCount(ctx context.Context, redisClient *redis.Client) *UserCount {
 	// If there are no PDSs in redis, add the default list
 	if len(pdsSlice) == 0 {
 		for _, host := range PDSHostList {
-			pdsSlice = append(pdsSlice, NewPDS(host, 2))
+			pdsSlice = append(pdsSlice, NewPDS(host, 25))
 		}
 	}
 
