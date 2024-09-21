@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	_ "net/http/pprof"
 	"net/url"
@@ -13,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bluesky-social/indigo/events"
-	"github.com/bluesky-social/indigo/events/schedulers/parallel"
+	jetstreamclient "github.com/bluesky-social/jetstream/pkg/client"
+	"github.com/bluesky-social/jetstream/pkg/client/schedulers/parallel"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
@@ -39,21 +40,9 @@ func main() {
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:    "ws-url",
-			Usage:   "full websocket path to the ATProto SubscribeRepos XRPC endpoint",
-			Value:   "wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos",
+			Usage:   "full websocket path to the Jetstream subscription endpoint",
+			Value:   "wss://jetstream.atproto.tools/subscribe",
 			EnvVars: []string{"WS_URL"},
-		},
-		&cli.IntFlag{
-			Name:    "worker-count",
-			Usage:   "number of workers to process events",
-			Value:   10,
-			EnvVars: []string{"WORKER_COUNT"},
-		},
-		&cli.IntFlag{
-			Name:    "max-queue-size",
-			Usage:   "max number of events to queue",
-			Value:   10,
-			EnvVars: []string{"MAX_QUEUE_SIZE"},
 		},
 		&cli.IntFlag{
 			Name:    "port",
@@ -192,8 +181,6 @@ func Consumer(cctx *cli.Context) error {
 	if err != nil {
 		log.Fatalf("failed to create consumer: %+v", err)
 	}
-
-	scheduler := parallel.NewScheduler(400, 10, "prod-firehose", c.HandleStreamEvent)
 
 	// Start a goroutine to manage the cursor, saving the current cursor every 5 seconds.
 	shutdownCursorManager := make(chan struct{})
@@ -349,10 +336,6 @@ func Consumer(cctx *cli.Context) error {
 		close(metricsShutdown)
 	}()
 
-	if c.Progress.LastSeq >= 0 {
-		u.RawQuery = fmt.Sprintf("cursor=%d", c.Progress.LastSeq)
-	}
-
 	log.Infof("connecting to WebSocket at: %s", u.String())
 	con, _, err := websocket.DefaultDialer.Dial(u.String(), http.Header{
 		"User-Agent": []string{"jaz-consumer/0.0.1"},
@@ -363,13 +346,28 @@ func Consumer(cctx *cli.Context) error {
 	}
 	defer con.Close()
 
+	scheduler := parallel.NewScheduler(400, "jetstream-prod", slog.Default(), c.OnEvent)
+
+	conf := jetstreamclient.DefaultClientConfig()
+	conf.WantedCollections = []string{"app.bsky.*"}
+	conf.WebsocketURL = u.String()
+	jetstreamClient, err := jetstreamclient.NewClient(conf, slog.Default(), scheduler)
+	if err != nil {
+		log.Fatalf("failed to create Jetstream client: %v", err)
+	}
+
 	shutdownRepoStream := make(chan struct{})
 	repoStreamShutdown := make(chan struct{})
 	go func() {
+		var cursor *int64
+		if c.Progress.LastSeq > 0 {
+			cursor = &c.Progress.LastSeq
+		}
+
 		ctx := context.Background()
 		ctx, cancel := context.WithCancel(ctx)
 		go func() {
-			err = events.HandleRepoStream(ctx, con, scheduler)
+			err = jetstreamClient.ConnectAndRead(ctx, cursor)
 			if !errors.Is(err, context.Canceled) {
 				log.Infof("HandleRepoStream returned unexpectedly, killing the consumer: %+v...", err)
 				close(kill)

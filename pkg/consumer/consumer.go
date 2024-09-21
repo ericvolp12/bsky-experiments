@@ -1,7 +1,6 @@
 package consumer
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -13,24 +12,18 @@ import (
 	"time"
 
 	"github.com/araddon/dateparse"
-	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/api/bsky"
 	_ "github.com/bluesky-social/indigo/api/chat" // Register chat types
 	"github.com/bluesky-social/indigo/atproto/syntax"
-	lexutil "github.com/bluesky-social/indigo/lex/util"
+	"github.com/bluesky-social/jetstream/pkg/models"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	graphdclient "github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
 	"github.com/ericvolp12/bsky-experiments/pkg/sharddb"
 	"github.com/goccy/go-json"
-	"github.com/ipfs/go-cid"
 	"github.com/labstack/gommon/log"
 	"github.com/redis/go-redis/v9"
-	typegen "github.com/whyrusleeping/cbor-gen"
 
-	"github.com/bluesky-social/indigo/events"
-	"github.com/bluesky-social/indigo/repo"
-	"github.com/bluesky-social/indigo/repomgr"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -243,28 +236,19 @@ func (c *Consumer) TrimRecentPosts(ctx context.Context, maxAge time.Duration) er
 	return nil
 }
 
-// HandleStreamEvent handles a stream event from the firehose
-func (c *Consumer) HandleStreamEvent(ctx context.Context, xe *events.XRPCStreamEvent) error {
+// OnEvent handles a stream event from the Jetstream firehose
+func (c *Consumer) OnEvent(ctx context.Context, evt *models.Event) error {
 	ctx, span := tracer.Start(ctx, "HandleStreamEvent")
 	defer span.End()
 
-	switch {
-	case xe.RepoCommit != nil:
-		eventsProcessedCounter.WithLabelValues("repo_commit", c.SocketURL).Inc()
-		return c.HandleRepoCommit(ctx, xe.RepoCommit)
-	case xe.RepoHandle != nil:
-		eventsProcessedCounter.WithLabelValues("repo_handle", c.SocketURL).Inc()
+	if evt.Identity != nil {
 		now := time.Now()
-		c.Progress.Update(xe.RepoHandle.Seq, now)
-		// Parse time from the event time string
-		t, err := time.Parse(time.RFC3339, xe.RepoHandle.Time)
-		if err != nil {
-			log.Errorf("error parsing time: %+v", err)
-			return nil
-		}
-		err = c.Store.Queries.UpsertActor(ctx, store_queries.UpsertActorParams{
-			Did:       xe.RepoHandle.Did,
-			Handle:    xe.RepoHandle.Handle,
+		c.Progress.Update(evt.TimeUS, now)
+		t := time.UnixMicro(evt.TimeUS)
+		eventsProcessedCounter.WithLabelValues("repo_identity", c.SocketURL).Inc()
+		err := c.Store.Queries.UpsertActor(ctx, store_queries.UpsertActorParams{
+			Did:       evt.Identity.Did,
+			Handle:    *evt.Identity.Handle,
 			CreatedAt: sql.NullTime{Time: t, Valid: true},
 		})
 		if err != nil {
@@ -273,32 +257,18 @@ func (c *Consumer) HandleStreamEvent(ctx context.Context, xe *events.XRPCStreamE
 		lastEvtCreatedAtGauge.WithLabelValues(c.SocketURL).Set(float64(t.UnixNano()))
 		lastEvtProcessedAtGauge.WithLabelValues(c.SocketURL).Set(float64(now.UnixNano()))
 		lastEvtCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(now.Sub(t).Seconds()))
-		lastSeqGauge.WithLabelValues(c.SocketURL).Set(float64(xe.RepoHandle.Seq))
-	case xe.RepoInfo != nil:
-		eventsProcessedCounter.WithLabelValues("repo_info", c.SocketURL).Inc()
-	case xe.RepoMigrate != nil:
-		eventsProcessedCounter.WithLabelValues("repo_migrate", c.SocketURL).Inc()
-		now := time.Now()
-		c.Progress.Update(xe.RepoHandle.Seq, now)
-		// Parse time from the event time string
-		t, err := time.Parse(time.RFC3339, xe.RepoMigrate.Time)
-		if err != nil {
-			log.Errorf("error parsing time: %+v", err)
-			return nil
-		}
-		lastEvtCreatedAtGauge.WithLabelValues(c.SocketURL).Set(float64(t.UnixNano()))
-		lastEvtProcessedAtGauge.WithLabelValues(c.SocketURL).Set(float64(now.UnixNano()))
-		lastEvtCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(now.Sub(t).Seconds()))
-		lastSeqGauge.WithLabelValues(c.SocketURL).Set(float64(xe.RepoHandle.Seq))
-	case xe.RepoTombstone != nil:
-		eventsProcessedCounter.WithLabelValues("repo_tombstone", c.SocketURL).Inc()
-	case xe.LabelInfo != nil:
-		eventsProcessedCounter.WithLabelValues("label_info", c.SocketURL).Inc()
-	case xe.LabelLabels != nil:
-		eventsProcessedCounter.WithLabelValues("label_labels", c.SocketURL).Inc()
-	case xe.Error != nil:
-		eventsProcessedCounter.WithLabelValues("error", c.SocketURL).Inc()
+		lastSeqGauge.WithLabelValues(c.SocketURL).Set(float64(evt.TimeUS))
+		return nil
 	}
+
+	if evt.Commit != nil {
+		// Process the commit
+		err := c.OnCommit(ctx, evt)
+		if err != nil {
+			return fmt.Errorf("failed to process commit: %+v", err)
+		}
+	}
+
 	return nil
 }
 
@@ -317,161 +287,103 @@ var knownCollections = map[string]struct{}{
 }
 
 // HandleRepoCommit handles a repo commit event from the firehose and processes the records
-func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSubscribeRepos_Commit) error {
-	ctx, span := tracer.Start(ctx, "HandleRepoCommit")
+func (c *Consumer) OnCommit(ctx context.Context, evt *models.Event) error {
+	ctx, span := tracer.Start(ctx, "OnEvent")
 	defer span.End()
 
 	processedAt := time.Now()
 
-	c.Progress.Update(evt.Seq, processedAt)
+	c.Progress.Update(evt.TimeUS, processedAt)
 
-	lastSeqGauge.WithLabelValues(c.SocketURL).Set(float64(evt.Seq))
+	lastSeqGauge.WithLabelValues(c.SocketURL).Set(float64(evt.TimeUS))
 
-	log := c.Logger.With("repo", evt.Repo, "seq", evt.Seq, "commit", evt.Commit)
-
-	if evt.TooBig {
-		span.SetAttributes(attribute.Bool("too_big", true))
-		log.Info("repo commit too big, skipping")
-		tooBigEventsCounter.WithLabelValues(c.SocketURL).Inc()
-		return nil
-	}
-
-	span.AddEvent("Read Repo From Car")
-	rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
-	if err != nil {
-		log.Errorf("failed to read repo from car: %+v", err)
-		return nil
-	}
-
-	if evt.Rebase {
-		log.Debug("rebase")
-		rebasesProcessedCounter.WithLabelValues(c.SocketURL).Inc()
-	}
+	log := c.Logger.With("repo", evt.Did, "seq", evt.TimeUS, "commit", evt.Commit)
 
 	// Parse time from the event time string
-	evtCreatedAt, err := time.Parse(time.RFC3339, evt.Time)
-	if err != nil {
-		log.Errorf("error parsing time: %+v", err)
-		return nil
-	}
+	evtCreatedAt := time.UnixMicro(evt.TimeUS)
 
 	lastEvtCreatedAtGauge.WithLabelValues(c.SocketURL).Set(float64(evtCreatedAt.UnixNano()))
 	lastEvtProcessedAtGauge.WithLabelValues(c.SocketURL).Set(float64(processedAt.UnixNano()))
 	lastEvtCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(processedAt.Sub(evtCreatedAt).Seconds()))
 
-	for _, op := range evt.Ops {
-		collection := strings.Split(op.Path, "/")[0]
-		rkey := strings.Split(op.Path, "/")[1]
+	log = log.With("action", evt.Commit.OpType, "collection", evt.Commit.Collection)
 
-		ek := repomgr.EventKind(op.Action)
-		log = log.With("action", op.Action, "collection", collection)
+	metricCollection := evt.Commit.Collection
+	if _, ok := knownCollections[evt.Commit.Collection]; !ok {
+		metricCollection = "unknown"
+	}
+	opsProcessedCounter.WithLabelValues(evt.Commit.OpType, metricCollection, c.SocketURL).Inc()
 
-		metricCollection := collection
-		if _, ok := knownCollections[collection]; !ok {
-			metricCollection = "unknown"
+	// recordURI := "at://" + evt.Repo + "/" + op.Path
+	span.SetAttributes(attribute.String("repo", evt.Did))
+	span.SetAttributes(attribute.String("collection", evt.Commit.Collection))
+	span.SetAttributes(attribute.String("rkey", evt.Commit.RKey))
+	span.SetAttributes(attribute.Int64("seq", evt.TimeUS))
+	span.SetAttributes(attribute.String("event_kind", evt.Commit.OpType))
+	switch evt.Commit.OpType {
+	case models.CommitCreateRecord:
+		recCreatedAt, err := c.HandleCreateRecord(ctx, evt.Did, evt.Commit.Collection, evt.Commit.RKey, evt.Commit.Record)
+		if err != nil {
+			log.Errorf("failed to handle create record: %+v", err)
 		}
-		opsProcessedCounter.WithLabelValues(op.Action, metricCollection, c.SocketURL).Inc()
 
-		// recordURI := "at://" + evt.Repo + "/" + op.Path
-		span.SetAttributes(attribute.String("repo", evt.Repo))
-		span.SetAttributes(attribute.String("collection", collection))
-		span.SetAttributes(attribute.String("rkey", rkey))
-		span.SetAttributes(attribute.Int64("seq", evt.Seq))
-		span.SetAttributes(attribute.String("event_kind", op.Action))
-		switch ek {
-		case repomgr.EvtKindCreateRecord:
-			if op.Cid == nil {
-				log.Error("update record op missing cid")
-				break
-			}
-			// Grab the record from the merkel tree
-			blk, err := rr.Blockstore().Get(ctx, cid.Cid(*op.Cid))
-			if err != nil {
-				e := fmt.Errorf("getting block %s within seq %d for %s: %w", *op.Cid, evt.Seq, evt.Repo, err)
-				log.Errorf("failed to get a block from the event: %+v", e)
-				break
-			}
-
-			rec, err := lexutil.CborDecodeValue(blk.RawData())
-			if err != nil {
-				log.Errorf("failed to decode cbor: %+v", err)
-				break
-			}
-			recCreatedAt, err := c.HandleCreateRecord(ctx, evt.Repo, op.Path, rec)
-			if err != nil {
-				log.Errorf("failed to handle create record: %+v", err)
-			}
-
-			if recCreatedAt != nil && !recCreatedAt.IsZero() {
-				lastEvtCreatedAtGauge.WithLabelValues(c.SocketURL).Set(float64(recCreatedAt.UnixNano()))
-				lastEvtCreatedRecordCreatedGapGauge.WithLabelValues(c.SocketURL).Set(float64(evtCreatedAt.Sub(*recCreatedAt).Seconds()))
-				lastRecordCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(processedAt.Sub(*recCreatedAt).Seconds()))
-			}
-		case repomgr.EvtKindUpdateRecord:
-			if op.Cid == nil {
-				log.Error("update record op missing cid")
-				break
-			}
-			// Grab the record from the merkel tree
-			blk, err := rr.Blockstore().Get(ctx, cid.Cid(*op.Cid))
-			if err != nil {
-				e := fmt.Errorf("getting block %s within seq %d for %s: %w", *op.Cid, evt.Seq, evt.Repo, err)
-				log.Errorf("failed to get a block from the event: %+v", e)
-				break
-			}
-
-			rec, err := lexutil.CborDecodeValue(blk.RawData())
-			if err != nil {
-				log.Errorf("failed to decode cbor: %+v", err)
-				break
-			}
-
-			// Unpack the record and process it
-			switch rec := rec.(type) {
-			case *bsky.ActorProfile:
-				// Process profile updates
-				span.SetAttributes(attribute.String("record_type", "actor_profile"))
-				recordsProcessedCounter.WithLabelValues("actor_profile", c.SocketURL).Inc()
-
-				upsertParams := store_queries.UpsertActorFromFirehoseParams{
-					Did:       evt.Repo,
-					Handle:    "",
-					UpdatedAt: sql.NullTime{Time: time.Now(), Valid: true},
-					CreatedAt: sql.NullTime{Time: time.Now(), Valid: true},
-				}
-
-				if rec.DisplayName != nil && *rec.DisplayName != "" {
-					upsertParams.DisplayName = sql.NullString{String: *rec.DisplayName, Valid: true}
-				}
-
-				if rec.Description != nil && *rec.Description != "" {
-					upsertParams.Bio = sql.NullString{String: *rec.Description, Valid: true}
-				}
-
-				if rec.Avatar != nil {
-					upsertParams.ProPicCid = sql.NullString{String: rec.Avatar.Ref.String(), Valid: true}
-				}
-
-				if rec.Banner != nil {
-					upsertParams.BannerCid = sql.NullString{String: rec.Banner.Ref.String(), Valid: true}
-				}
-
-				err := c.Store.Queries.UpsertActorFromFirehose(ctx, upsertParams)
-				if err != nil {
-					log.Errorf("failed to upsert actor from firehose: %+v", err)
-				}
-			}
-		case repomgr.EvtKindDeleteRecord:
-			err := c.HandleDeleteRecord(ctx, evt.Repo, op.Path)
-			if err != nil {
-				if errors.Is(err, sql.ErrNoRows) {
-					log.Warn("record not found, so we can't delete it")
-				} else {
-					log.Errorf("failed to handle delete record: %+v", err)
-				}
-			}
-		default:
+		if recCreatedAt != nil && !recCreatedAt.IsZero() {
+			lastEvtCreatedAtGauge.WithLabelValues(c.SocketURL).Set(float64(recCreatedAt.UnixNano()))
+			lastEvtCreatedRecordCreatedGapGauge.WithLabelValues(c.SocketURL).Set(float64(evtCreatedAt.Sub(*recCreatedAt).Seconds()))
+			lastRecordCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(processedAt.Sub(*recCreatedAt).Seconds()))
 		}
+	case models.CommitUpdateRecord:
+		// Unpack the record and process it
+		switch evt.Commit.Collection {
+		case "app.bsky.actor.profile":
+			// Process profile updates
+			span.SetAttributes(attribute.String("record_type", "actor_profile"))
+			recordsProcessedCounter.WithLabelValues("actor_profile", c.SocketURL).Inc()
+
+			upsertParams := store_queries.UpsertActorFromFirehoseParams{
+				Did:       evt.Did,
+				Handle:    "",
+				UpdatedAt: sql.NullTime{Time: time.Now(), Valid: true},
+				CreatedAt: sql.NullTime{Time: time.Now(), Valid: true},
+			}
+
+			var rec bsky.ActorProfile
+			err := json.Unmarshal(evt.Commit.Record, &rec)
+			if err != nil {
+				log.Errorf("failed to unmarshal actor profile: %+v", err)
+			}
+
+			if rec.DisplayName != nil && *rec.DisplayName != "" {
+				upsertParams.DisplayName = sql.NullString{String: *rec.DisplayName, Valid: true}
+			}
+
+			if rec.Description != nil && *rec.Description != "" {
+				upsertParams.Bio = sql.NullString{String: *rec.Description, Valid: true}
+			}
+
+			if rec.Avatar != nil {
+				upsertParams.ProPicCid = sql.NullString{String: rec.Avatar.Ref.String(), Valid: true}
+			}
+
+			if rec.Banner != nil {
+				upsertParams.BannerCid = sql.NullString{String: rec.Banner.Ref.String(), Valid: true}
+			}
+
+			err = c.Store.Queries.UpsertActorFromFirehose(ctx, upsertParams)
+			if err != nil {
+				log.Errorf("failed to upsert actor from firehose: %+v", err)
+			}
+		}
+	case models.CommitDeleteRecord:
+		err := c.HandleDeleteRecord(ctx, evt.Did, evt.Commit.Collection, evt.Commit.RKey)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				log.Warn("record not found, so we can't delete it")
+			} else {
+				log.Errorf("failed to handle delete record: %+v", err)
+			}
+		}
+	default:
 	}
 
 	eventProcessingDurationHistogram.WithLabelValues(c.SocketURL).Observe(time.Since(processedAt).Seconds())
@@ -482,11 +394,12 @@ func (c *Consumer) HandleRepoCommit(ctx context.Context, evt *comatproto.SyncSub
 func (c *Consumer) HandleDeleteRecord(
 	ctx context.Context,
 	repo string,
-	path string,
+	collection string,
+	rkey string,
 ) error {
 	ctx, span := tracer.Start(ctx, "HandleDeleteRecord")
-	collection := strings.Split(path, "/")[0]
-	rkey := strings.Split(path, "/")[1]
+	defer span.End()
+
 	switch collection {
 	case "app.bsky.feed.post":
 		err := c.HandleDeletePost(ctx, repo, rkey)
@@ -633,42 +546,52 @@ func (c *Consumer) HandleDeleteRecord(
 func (c *Consumer) HandleCreateRecord(
 	ctx context.Context,
 	repo string,
-	path string,
-	rec typegen.CBORMarshaler,
+	collection string,
+	rkey string,
+	rec json.RawMessage,
 ) (*time.Time, error) {
 	ctx, span := tracer.Start(ctx, "HandleCreateRecord")
-
-	// collection := strings.Split(path, "/")[0]
-	rkey := strings.Split(path, "/")[1]
+	defer span.End()
 
 	var recCreatedAt time.Time
 	var parseError error
-	var err error
 
 	indexedAt := time.Now()
 
 	// Unpack the record and process it
-	switch rec := rec.(type) {
-	case *bsky.FeedPost:
-		err := c.HandleCreatePost(ctx, repo, rkey, indexedAt, rec)
+	switch collection {
+	case "app.bsky.feed.post":
+		var post bsky.FeedPost
+		err := json.Unmarshal(rec, &post)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal post: %w", err)
+		}
+		err = c.HandleCreatePost(ctx, repo, rkey, indexedAt, &post)
 		if err != nil {
 			return nil, fmt.Errorf("failed to handle post: %w", err)
 		}
-	case *bsky.FeedLike:
+	case "app.bsky.feed.like":
 		span.SetAttributes(attribute.String("record_type", "feed_like"))
 		recordsProcessedCounter.WithLabelValues("feed_like", c.SocketURL).Inc()
-		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+
+		var like bsky.FeedLike
+		err := json.Unmarshal(rec, &like)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal like: %w", err)
+		}
+
+		recCreatedAt, parseError = dateparse.ParseAny(like.CreatedAt)
 
 		var subjectURI *URI
-		if rec.Subject != nil {
-			subjectURI, err = GetURI(rec.Subject.Uri)
+		if like.Subject != nil {
+			subjectURI, err = GetURI(like.Subject.Uri)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get Subject uri: %w", err)
 			}
 		}
 
 		if subjectURI == nil {
-			return nil, fmt.Errorf("invalid like subject: %+v", rec.Subject)
+			return nil, fmt.Errorf("invalid like subject: %+v", like.Subject)
 		}
 
 		// Check if we've already processed this record
@@ -715,20 +638,27 @@ func (c *Consumer) HandleCreateRecord(
 		if err != nil {
 			log.Errorf("failed to add member to likers bitmap: %+v", err)
 		}
-	case *bsky.FeedRepost:
+	case "app.bsky.feed.repost":
 		span.SetAttributes(attribute.String("record_type", "feed_repost"))
 		recordsProcessedCounter.WithLabelValues("feed_repost", c.SocketURL).Inc()
-		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+
+		var repost bsky.FeedRepost
+		err := json.Unmarshal(rec, &repost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal repost: %w", err)
+		}
+
+		recCreatedAt, parseError = dateparse.ParseAny(repost.CreatedAt)
 		var subjectURI *URI
-		if rec.Subject != nil {
-			subjectURI, err = GetURI(rec.Subject.Uri)
+		if repost.Subject != nil {
+			subjectURI, err = GetURI(repost.Subject.Uri)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get Subject uri: %w", err)
 			}
 		}
 
 		if subjectURI == nil {
-			return nil, fmt.Errorf("invalid repost subject: %+v", rec.Subject)
+			return nil, fmt.Errorf("invalid repost subject: %+v", repost.Subject)
 		}
 
 		// Check if we've already processed this record
@@ -775,10 +705,17 @@ func (c *Consumer) HandleCreateRecord(
 		if err != nil {
 			log.Errorf("failed to add member to reposters bitmap: %+v", err)
 		}
-	case *bsky.GraphBlock:
+	case "app.bsky.graph.block":
 		span.SetAttributes(attribute.String("record_type", "graph_block"))
 		recordsProcessedCounter.WithLabelValues("graph_block", c.SocketURL).Inc()
-		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+
+		var block bsky.GraphBlock
+		err := json.Unmarshal(rec, &block)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal block: %w", err)
+		}
+
+		recCreatedAt, parseError = dateparse.ParseAny(block.CreatedAt)
 
 		// Check if we've already processed this record
 		_, err = c.Store.Queries.GetBlock(ctx, store_queries.GetBlockParams{
@@ -797,7 +734,7 @@ func (c *Consumer) HandleCreateRecord(
 		err = c.Store.Queries.CreateBlock(ctx, store_queries.CreateBlockParams{
 			ActorDid:  repo,
 			Rkey:      rkey,
-			TargetDid: rec.Subject,
+			TargetDid: block.Subject,
 			CreatedAt: sql.NullTime{Time: recCreatedAt, Valid: true},
 		})
 		if err != nil {
@@ -811,10 +748,17 @@ func (c *Consumer) HandleCreateRecord(
 		if err != nil {
 			log.Errorf("failed to add member to blockers bitmap: %+v", err)
 		}
-	case *bsky.GraphFollow:
+	case "app.bsky.graph.follow":
 		span.SetAttributes(attribute.String("record_type", "graph_follow"))
 		recordsProcessedCounter.WithLabelValues("graph_follow", c.SocketURL).Inc()
-		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
+
+		var follow bsky.GraphFollow
+		err := json.Unmarshal(rec, &follow)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal follow: %w", err)
+		}
+
+		recCreatedAt, parseError = dateparse.ParseAny(follow.CreatedAt)
 
 		// Check if we've already processed this record
 		_, err = c.Store.Queries.GetFollow(ctx, store_queries.GetFollowParams{
@@ -833,14 +777,14 @@ func (c *Consumer) HandleCreateRecord(
 		err = c.Store.Queries.CreateFollow(ctx, store_queries.CreateFollowParams{
 			ActorDid:  repo,
 			Rkey:      rkey,
-			TargetDid: rec.Subject,
+			TargetDid: follow.Subject,
 			CreatedAt: sql.NullTime{Time: recCreatedAt, Valid: true},
 		})
 		if err != nil {
 			log.Errorf("failed to create follow: %+v", err)
 		}
 		err = c.Store.Queries.IncrementFollowerCountByN(ctx, store_queries.IncrementFollowerCountByNParams{
-			ActorDid:     rec.Subject,
+			ActorDid:     follow.Subject,
 			NumFollowers: 1,
 			UpdatedAt:    time.Now(),
 		})
@@ -857,7 +801,7 @@ func (c *Consumer) HandleCreateRecord(
 		}
 
 		if c.graphdClient != nil {
-			err = c.graphdClient.Follow(ctx, repo, rec.Subject)
+			err = c.graphdClient.Follow(ctx, repo, follow.Subject)
 			if err != nil {
 				log.Errorf("failed to propagate follow to GraphD: %+v", err)
 			}
@@ -870,9 +814,15 @@ func (c *Consumer) HandleCreateRecord(
 		if err != nil {
 			log.Errorf("failed to add member to followers bitmap: %+v", err)
 		}
-	case *bsky.ActorProfile:
+	case "app.bsky.actor.profile":
 		span.SetAttributes(attribute.String("record_type", "actor_profile"))
 		recordsProcessedCounter.WithLabelValues("actor_profile", c.SocketURL).Inc()
+
+		var profile bsky.ActorProfile
+		err := json.Unmarshal(rec, &profile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal actor profile: %w", err)
+		}
 
 		upsertParams := store_queries.UpsertActorFromFirehoseParams{
 			Did:       repo,
@@ -881,44 +831,26 @@ func (c *Consumer) HandleCreateRecord(
 			CreatedAt: sql.NullTime{Time: time.Now(), Valid: true},
 		}
 
-		if rec.DisplayName != nil && *rec.DisplayName != "" {
-			upsertParams.DisplayName = sql.NullString{String: *rec.DisplayName, Valid: true}
+		if profile.DisplayName != nil && *profile.DisplayName != "" {
+			upsertParams.DisplayName = sql.NullString{String: *profile.DisplayName, Valid: true}
 		}
 
-		if rec.Description != nil && *rec.Description != "" {
-			upsertParams.Bio = sql.NullString{String: *rec.Description, Valid: true}
+		if profile.Description != nil && *profile.Description != "" {
+			upsertParams.Bio = sql.NullString{String: *profile.Description, Valid: true}
 		}
 
-		if rec.Avatar != nil {
-			upsertParams.ProPicCid = sql.NullString{String: rec.Avatar.Ref.String(), Valid: true}
+		if profile.Avatar != nil {
+			upsertParams.ProPicCid = sql.NullString{String: profile.Avatar.Ref.String(), Valid: true}
 		}
 
-		if rec.Banner != nil {
-			upsertParams.BannerCid = sql.NullString{String: rec.Banner.Ref.String(), Valid: true}
+		if profile.Banner != nil {
+			upsertParams.BannerCid = sql.NullString{String: profile.Banner.Ref.String(), Valid: true}
 		}
 
-		err := c.Store.Queries.UpsertActorFromFirehose(ctx, upsertParams)
+		err = c.Store.Queries.UpsertActorFromFirehose(ctx, upsertParams)
 		if err != nil {
 			log.Errorf("failed to upsert actor from firehose: %+v", err)
 		}
-	case *bsky.FeedGenerator:
-		span.SetAttributes(attribute.String("record_type", "feed_generator"))
-		recordsProcessedCounter.WithLabelValues("feed_generator", c.SocketURL).Inc()
-		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
-	case *bsky.GraphList:
-		span.SetAttributes(attribute.String("record_type", "graph_list"))
-		recordsProcessedCounter.WithLabelValues("graph_list", c.SocketURL).Inc()
-		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
-	case *bsky.GraphListitem:
-		span.SetAttributes(attribute.String("record_type", "graph_listitem"))
-		recordsProcessedCounter.WithLabelValues("graph_listitem", c.SocketURL).Inc()
-		recCreatedAt, parseError = dateparse.ParseAny(rec.CreatedAt)
-	case *bsky.FeedThreadgate:
-		span.SetAttributes(attribute.String("record_type", "feed_threadgate"))
-		recordsProcessedCounter.WithLabelValues("feed_threadgate", c.SocketURL).Inc()
-	case *bsky.GraphListblock:
-		span.SetAttributes(attribute.String("record_type", "graph_listblock"))
-		recordsProcessedCounter.WithLabelValues("graph_listblock", c.SocketURL).Inc()
 	default:
 		span.SetAttributes(attribute.String("record_type", "other"))
 	}

@@ -10,6 +10,7 @@ require (
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/bits-and-blooms/bloom/v3 v3.5.0
 	github.com/bluesky-social/indigo v0.0.0-20240905024844-a4f38639767f
+	github.com/bluesky-social/jetstream v0.0.0-20240920233100-d1181273817e
 	github.com/ericvolp12/go-gin-prometheus v0.0.0-20221219081010-fc0e0436c283
 	github.com/ericvolp12/jwt-go-secp256k1 v0.0.2
 	github.com/gin-contrib/cors v1.4.0
@@ -141,7 +142,6 @@ require (
 	github.com/prometheus/common v0.54.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/redis/go-redis/extra/rediscmd/v9 v9.0.5 // indirect
-	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect

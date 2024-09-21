@@ -23,6 +23,8 @@ github.com/bits-and-blooms/bloom/v3 v3.5.0 h1:AKDvi1V3xJCmSR6QhcBfHbCN4Vf8FfxeWk
 github.com/bits-and-blooms/bloom/v3 v3.5.0/go.mod h1:Y8vrn7nk1tPIlmLtW2ZPV+W7StdVMor6bC1xgpjMZFs=
 github.com/bluesky-social/indigo v0.0.0-20240905024844-a4f38639767f h1:Q9cfCAlYWIWPsSDhg5w6qcutQ7YaJtfTjiRLP/mw+pc=
 github.com/bluesky-social/indigo v0.0.0-20240905024844-a4f38639767f/go.mod h1:Zx9nSWgd/FxMenkJW07VKnzspxpHBdPrPmS+Fspl2I0=
+github.com/bluesky-social/jetstream v0.0.0-20240920233100-d1181273817e h1:2uxcQkBdW6w/w94dhSf8WLgW+cupJjxZplKYG5q0Wis=
+github.com/bluesky-social/jetstream v0.0.0-20240920233100-d1181273817e/go.mod h1:wvP0COez2mUDrcV9MkarD0SbuXajsEB0sDq25494P/c=
 github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 h1:DDGfHa7BWjL4YnC6+E63dPcxHo2sUxDIu8g3QgEJdRY=
 github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869/go.mod h1:Ekp36dRnpXw/yCqJaO+ZrUyxD+3VXMFFr56k5XYrpB4=
 github.com/bsm/ginkgo/v2 v2.7.0/go.mod h1:AiKlXPm7ItEHNc/2+OkrNG4E0ITzojb9/xWzvQ9XZ9w=
