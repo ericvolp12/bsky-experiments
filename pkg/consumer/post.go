@@ -355,16 +355,6 @@ func (c *Consumer) HandleDeletePost(ctx context.Context, repo, rkey string) erro
 		})
 	}
 
-	// Delete sentiment for the post
-	err = c.Store.Queries.DeleteSentimentJob(ctx, store_queries.DeleteSentimentJobParams{
-		ActorDid: repo,
-		Rkey:     rkey,
-	})
-	if err != nil {
-		log.Errorf("failed to delete sentiment job: %+v", err)
-		// Don't return an error here, because we still want to try to delete the images
-	}
-
 	// Delete images for the post
 	err = c.Store.Queries.DeleteImagesForPost(ctx, store_queries.DeleteImagesForPostParams{
 		PostActorDid: repo,

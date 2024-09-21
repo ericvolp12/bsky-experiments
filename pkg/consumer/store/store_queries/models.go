@@ -205,17 +205,6 @@ type Post struct {
 	InsertedAt         time.Time             `json:"inserted_at"`
 }
 
-type PostSentiment struct {
-	ActorDid      string          `json:"actor_did"`
-	Rkey          string          `json:"rkey"`
-	InsertedAt    time.Time       `json:"inserted_at"`
-	CreatedAt     time.Time       `json:"created_at"`
-	ProcessedAt   sql.NullTime    `json:"processed_at"`
-	Sentiment     sql.NullString  `json:"sentiment"`
-	Confidence    sql.NullFloat64 `json:"confidence"`
-	DetectedLangs []string        `json:"detected_langs"`
-}
-
 type RecentPost struct {
 	ActorDid           string                `json:"actor_did"`
 	Rkey               string                `json:"rkey"`

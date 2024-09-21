@@ -102,9 +102,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createRepostStmt, err = db.PrepareContext(ctx, createRepost); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateRepost: %w", err)
 	}
-	if q.createSentimentJobStmt, err = db.PrepareContext(ctx, createSentimentJob); err != nil {
-		return nil, fmt.Errorf("error preparing query CreateSentimentJob: %w", err)
-	}
 	if q.createSubjectStmt, err = db.PrepareContext(ctx, createSubject); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateSubject: %w", err)
 	}
@@ -191,9 +188,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.deleteRepostCountStmt, err = db.PrepareContext(ctx, deleteRepostCount); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteRepostCount: %w", err)
-	}
-	if q.deleteSentimentJobStmt, err = db.PrepareContext(ctx, deleteSentimentJob); err != nil {
-		return nil, fmt.Errorf("error preparing query DeleteSentimentJob: %w", err)
 	}
 	if q.deleteSubjectStmt, err = db.PrepareContext(ctx, deleteSubject); err != nil {
 		return nil, fmt.Errorf("error preparing query DeleteSubject: %w", err)
@@ -363,9 +357,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getPostWithRepliesStmt, err = db.PrepareContext(ctx, getPostWithReplies); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostWithReplies: %w", err)
 	}
-	if q.getPostWithSentimentStmt, err = db.PrepareContext(ctx, getPostWithSentiment); err != nil {
-		return nil, fmt.Errorf("error preparing query GetPostWithSentiment: %w", err)
-	}
 	if q.getPostsByActorStmt, err = db.PrepareContext(ctx, getPostsByActor); err != nil {
 		return nil, fmt.Errorf("error preparing query GetPostsByActor: %w", err)
 	}
@@ -423,9 +414,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getRunningCleanupJobsByRepoStmt, err = db.PrepareContext(ctx, getRunningCleanupJobsByRepo); err != nil {
 		return nil, fmt.Errorf("error preparing query GetRunningCleanupJobsByRepo: %w", err)
 	}
-	if q.getSentimentForPostStmt, err = db.PrepareContext(ctx, getSentimentForPost); err != nil {
-		return nil, fmt.Errorf("error preparing query GetSentimentForPost: %w", err)
-	}
 	if q.getSpamFollowersStmt, err = db.PrepareContext(ctx, getSpamFollowers); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSpamFollowers: %w", err)
 	}
@@ -464,9 +452,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.getUnconfirmedEventStmt, err = db.PrepareContext(ctx, getUnconfirmedEvent); err != nil {
 		return nil, fmt.Errorf("error preparing query GetUnconfirmedEvent: %w", err)
-	}
-	if q.getUnprocessedSentimentJobsStmt, err = db.PrepareContext(ctx, getUnprocessedSentimentJobs); err != nil {
-		return nil, fmt.Errorf("error preparing query GetUnprocessedSentimentJobs: %w", err)
 	}
 	if q.incrementFollowerCountByNStmt, err = db.PrepareContext(ctx, incrementFollowerCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query IncrementFollowerCountByN: %w", err)
@@ -515,9 +500,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.refreshStatsForDayStmt, err = db.PrepareContext(ctx, refreshStatsForDay); err != nil {
 		return nil, fmt.Errorf("error preparing query RefreshStatsForDay: %w", err)
-	}
-	if q.setSentimentForPostStmt, err = db.PrepareContext(ctx, setSentimentForPost); err != nil {
-		return nil, fmt.Errorf("error preparing query SetSentimentForPost: %w", err)
 	}
 	if q.trimMPLSStmt, err = db.PrepareContext(ctx, trimMPLS); err != nil {
 		return nil, fmt.Errorf("error preparing query TrimMPLS: %w", err)
@@ -690,11 +672,6 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createRepostStmt: %w", cerr)
 		}
 	}
-	if q.createSentimentJobStmt != nil {
-		if cerr := q.createSentimentJobStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing createSentimentJobStmt: %w", cerr)
-		}
-	}
 	if q.createSubjectStmt != nil {
 		if cerr := q.createSubjectStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing createSubjectStmt: %w", cerr)
@@ -838,11 +815,6 @@ func (q *Queries) Close() error {
 	if q.deleteRepostCountStmt != nil {
 		if cerr := q.deleteRepostCountStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing deleteRepostCountStmt: %w", cerr)
-		}
-	}
-	if q.deleteSentimentJobStmt != nil {
-		if cerr := q.deleteSentimentJobStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing deleteSentimentJobStmt: %w", cerr)
 		}
 	}
 	if q.deleteSubjectStmt != nil {
@@ -1125,11 +1097,6 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getPostWithRepliesStmt: %w", cerr)
 		}
 	}
-	if q.getPostWithSentimentStmt != nil {
-		if cerr := q.getPostWithSentimentStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getPostWithSentimentStmt: %w", cerr)
-		}
-	}
 	if q.getPostsByActorStmt != nil {
 		if cerr := q.getPostsByActorStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getPostsByActorStmt: %w", cerr)
@@ -1225,11 +1192,6 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getRunningCleanupJobsByRepoStmt: %w", cerr)
 		}
 	}
-	if q.getSentimentForPostStmt != nil {
-		if cerr := q.getSentimentForPostStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getSentimentForPostStmt: %w", cerr)
-		}
-	}
 	if q.getSpamFollowersStmt != nil {
 		if cerr := q.getSpamFollowersStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getSpamFollowersStmt: %w", cerr)
@@ -1293,11 +1255,6 @@ func (q *Queries) Close() error {
 	if q.getUnconfirmedEventStmt != nil {
 		if cerr := q.getUnconfirmedEventStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getUnconfirmedEventStmt: %w", cerr)
-		}
-	}
-	if q.getUnprocessedSentimentJobsStmt != nil {
-		if cerr := q.getUnprocessedSentimentJobsStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getUnprocessedSentimentJobsStmt: %w", cerr)
 		}
 	}
 	if q.incrementFollowerCountByNStmt != nil {
@@ -1378,11 +1335,6 @@ func (q *Queries) Close() error {
 	if q.refreshStatsForDayStmt != nil {
 		if cerr := q.refreshStatsForDayStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing refreshStatsForDayStmt: %w", cerr)
-		}
-	}
-	if q.setSentimentForPostStmt != nil {
-		if cerr := q.setSentimentForPostStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing setSentimentForPostStmt: %w", cerr)
 		}
 	}
 	if q.trimMPLSStmt != nil {
@@ -1510,7 +1462,6 @@ type Queries struct {
 	createRecentPostLabelStmt                 *sql.Stmt
 	createRepoBackfillRecordStmt              *sql.Stmt
 	createRepostStmt                          *sql.Stmt
-	createSentimentJobStmt                    *sql.Stmt
 	createSubjectStmt                         *sql.Stmt
 	createTQSPStmt                            *sql.Stmt
 	decrementFollowerCountByNStmt             *sql.Stmt
@@ -1540,7 +1491,6 @@ type Queries struct {
 	deleteRepoCleanupJobStmt                  *sql.Stmt
 	deleteRepostStmt                          *sql.Stmt
 	deleteRepostCountStmt                     *sql.Stmt
-	deleteSentimentJobStmt                    *sql.Stmt
 	deleteSubjectStmt                         *sql.Stmt
 	deleteTQSPStmt                            *sql.Stmt
 	dequeueImagesStmt                         *sql.Stmt
@@ -1597,7 +1547,6 @@ type Queries struct {
 	getPopularRecentPostsByLanguageStmt       *sql.Stmt
 	getPostStmt                               *sql.Stmt
 	getPostWithRepliesStmt                    *sql.Stmt
-	getPostWithSentimentStmt                  *sql.Stmt
 	getPostsByActorStmt                       *sql.Stmt
 	getPostsByActorsFollowingTargetStmt       *sql.Stmt
 	getPostsFromNonMootsStmt                  *sql.Stmt
@@ -1617,7 +1566,6 @@ type Queries struct {
 	getRepostsBySubjectStmt                   *sql.Stmt
 	getRunningCleanupJobsStmt                 *sql.Stmt
 	getRunningCleanupJobsByRepoStmt           *sql.Stmt
-	getSentimentForPostStmt                   *sql.Stmt
 	getSpamFollowersStmt                      *sql.Stmt
 	getSubjectStmt                            *sql.Stmt
 	getSubjectByIdStmt                        *sql.Stmt
@@ -1631,7 +1579,6 @@ type Queries struct {
 	getTotalPointsForActorStmt                *sql.Stmt
 	getTotalPointsForEventStmt                *sql.Stmt
 	getUnconfirmedEventStmt                   *sql.Stmt
-	getUnprocessedSentimentJobsStmt           *sql.Stmt
 	incrementFollowerCountByNStmt             *sql.Stmt
 	incrementFollowingCountByNStmt            *sql.Stmt
 	incrementLikeCountByNStmt                 *sql.Stmt
@@ -1648,7 +1595,6 @@ type Queries struct {
 	listRecentPostsByLabelHotStmt             *sql.Stmt
 	listTQSPStmt                              *sql.Stmt
 	refreshStatsForDayStmt                    *sql.Stmt
-	setSentimentForPostStmt                   *sql.Stmt
 	trimMPLSStmt                              *sql.Stmt
 	trimOldRecentPostsStmt                    *sql.Stmt
 	trimRecentPostLabelsStmt                  *sql.Stmt
@@ -1693,7 +1639,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		createRecentPostLabelStmt:                 q.createRecentPostLabelStmt,
 		createRepoBackfillRecordStmt:              q.createRepoBackfillRecordStmt,
 		createRepostStmt:                          q.createRepostStmt,
-		createSentimentJobStmt:                    q.createSentimentJobStmt,
 		createSubjectStmt:                         q.createSubjectStmt,
 		createTQSPStmt:                            q.createTQSPStmt,
 		decrementFollowerCountByNStmt:             q.decrementFollowerCountByNStmt,
@@ -1723,7 +1668,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		deleteRepoCleanupJobStmt:                  q.deleteRepoCleanupJobStmt,
 		deleteRepostStmt:                          q.deleteRepostStmt,
 		deleteRepostCountStmt:                     q.deleteRepostCountStmt,
-		deleteSentimentJobStmt:                    q.deleteSentimentJobStmt,
 		deleteSubjectStmt:                         q.deleteSubjectStmt,
 		deleteTQSPStmt:                            q.deleteTQSPStmt,
 		dequeueImagesStmt:                         q.dequeueImagesStmt,
@@ -1780,7 +1724,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getPopularRecentPostsByLanguageStmt:       q.getPopularRecentPostsByLanguageStmt,
 		getPostStmt:                               q.getPostStmt,
 		getPostWithRepliesStmt:                    q.getPostWithRepliesStmt,
-		getPostWithSentimentStmt:                  q.getPostWithSentimentStmt,
 		getPostsByActorStmt:                       q.getPostsByActorStmt,
 		getPostsByActorsFollowingTargetStmt:       q.getPostsByActorsFollowingTargetStmt,
 		getPostsFromNonMootsStmt:                  q.getPostsFromNonMootsStmt,
@@ -1800,7 +1743,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getRepostsBySubjectStmt:                   q.getRepostsBySubjectStmt,
 		getRunningCleanupJobsStmt:                 q.getRunningCleanupJobsStmt,
 		getRunningCleanupJobsByRepoStmt:           q.getRunningCleanupJobsByRepoStmt,
-		getSentimentForPostStmt:                   q.getSentimentForPostStmt,
 		getSpamFollowersStmt:                      q.getSpamFollowersStmt,
 		getSubjectStmt:                            q.getSubjectStmt,
 		getSubjectByIdStmt:                        q.getSubjectByIdStmt,
@@ -1814,7 +1756,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getTotalPointsForActorStmt:                q.getTotalPointsForActorStmt,
 		getTotalPointsForEventStmt:                q.getTotalPointsForEventStmt,
 		getUnconfirmedEventStmt:                   q.getUnconfirmedEventStmt,
-		getUnprocessedSentimentJobsStmt:           q.getUnprocessedSentimentJobsStmt,
 		incrementFollowerCountByNStmt:             q.incrementFollowerCountByNStmt,
 		incrementFollowingCountByNStmt:            q.incrementFollowingCountByNStmt,
 		incrementLikeCountByNStmt:                 q.incrementLikeCountByNStmt,
@@ -1831,7 +1772,6 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listRecentPostsByLabelHotStmt:             q.listRecentPostsByLabelHotStmt,
 		listTQSPStmt:                              q.listTQSPStmt,
 		refreshStatsForDayStmt:                    q.refreshStatsForDayStmt,
-		setSentimentForPostStmt:                   q.setSentimentForPostStmt,
 		trimMPLSStmt:                              q.trimMPLSStmt,
 		trimOldRecentPostsStmt:                    q.trimOldRecentPostsStmt,
 		trimRecentPostLabelsStmt:                  q.trimRecentPostLabelsStmt,

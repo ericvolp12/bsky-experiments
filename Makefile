@@ -114,8 +114,6 @@ jazbot-up:
 # Generate SQLC Code
 .PHONY: sqlc
 sqlc:
-	@echo "Generating SQLC code for search..."
-	sqlc generate -f pkg/search/sqlc.yaml
 	@echo "Generating SQLC code for store..."
 	sqlc generate -f pkg/consumer/store/sqlc.yaml
 
