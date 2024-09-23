@@ -351,6 +351,7 @@ func Consumer(cctx *cli.Context) error {
 	conf := jetstreamclient.DefaultClientConfig()
 	conf.WantedCollections = []string{"app.bsky.*"}
 	conf.WebsocketURL = u.String()
+	conf.Compress = true
 	jetstreamClient, err := jetstreamclient.NewClient(conf, slog.Default(), scheduler)
 	if err != nil {
 		log.Fatalf("failed to create Jetstream client: %v", err)
