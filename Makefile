@@ -44,6 +44,18 @@ object-detection-gpu-up:
 	@echo "Starting Object Detection API with GPU Acceleration..."
 	docker compose -f build/object-detection/gpu.docker-compose.yml up --build -d
 
+# Build the Translation Python Service
+.PHONY: translation-up
+translation-up:
+	@echo "Starting Translation API..."
+	docker compose -f build/translation/docker-compose.yml up --build -d
+
+# Build the Translation Analysis Python Service with GPU Acceleration
+.PHONY: translation-gpu-up
+translation-gpu-up:
+	@echo "Starting Translation API with GPU Acceleration..."
+	docker compose -f build/translation/gpu.docker-compose.yml up --build -d
+
 # Build the Indexer Go binary
 .PHONY: build-indexer
 build-indexer:

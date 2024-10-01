@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  translation:
+    build:
+      context: ../../
+      dockerfile: build/translation/Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    image: translation
+    restart: always
+    container_name: translation
+    env_file:
+      - ../../.env
+    environment:
+      - PORT=8093
+    ports:
+      - "8093:8093"
+
