@@ -78,17 +78,6 @@ feedgen-go-up:
 	@echo "Starting Go Feed Generator..."
 	docker compose -f build/feedgen-go/docker-compose.yml up --build -d
 
-# Build the PLC Go binary
-.PHONY: build-plc
-build-plc:
-	@echo "Building PLC binary..."
-	$(GO_CMD_W_CGO) build -o plc cmd/plc/*.go
-
-.PHONY: plc-up
-plc-up:
-	@echo "Starting PLC..."
-	docker compose -f build/plc/docker-compose.yml up --build -d
-
 # Start up the Redis Store
 .PHONY: redis-up
 redis-up:
