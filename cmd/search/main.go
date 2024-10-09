@@ -206,9 +206,9 @@ func main() {
 		port = "8080"
 	}
 
-	statsRefreshTicker := time.NewTicker(15 * time.Minute)
+	statsRefreshTicker := time.NewTicker(1 * time.Minute)
 
-	// Create a routine to refresh site stats every 15 minutes
+	// Create a routine to refresh site stats every 1 minute
 	go func() {
 		for {
 			ctx, span := tracer.Start(context.Background(), "refreshSiteStats")

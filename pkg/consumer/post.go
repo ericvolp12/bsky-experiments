@@ -260,6 +260,36 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 		}
 	}
 
+	// Create an "image" for video thumbnails
+	if rec.Embed != nil && rec.Embed.EmbedVideo != nil && rec.Embed.EmbedVideo.Video != nil {
+		alt := ""
+		if rec.Embed.EmbedVideo.Alt != nil {
+			alt = *rec.Embed.EmbedVideo.Alt
+		}
+		err = c.Store.Queries.CreateImage(ctx, store_queries.CreateImageParams{
+			Cid:          rec.Embed.EmbedVideo.Video.Ref.String(),
+			PostActorDid: repo,
+			PostRkey:     rkey,
+			IsVideo:      true,
+			AltText:      sql.NullString{String: alt, Valid: alt != ""},
+			CreatedAt:    sql.NullTime{Time: recCreatedAt, Valid: true},
+		})
+		if err != nil {
+			log.Errorf("failed to create video thumbnail: %+v", err)
+		}
+		err = c.Store.Queries.EnqueueImage(ctx, store_queries.EnqueueImageParams{
+			Cid:          rec.Embed.EmbedVideo.Video.Ref.String(),
+			PostActorDid: repo,
+			PostRkey:     rkey,
+			IsVideo:      true,
+			SubjectID:    subj.ID,
+			AltText:      sql.NullString{String: alt, Valid: alt != ""},
+		})
+		if err != nil {
+			log.Errorf("failed to enqueue video thumbnail: %+v", err)
+		}
+	}
+
 	// Initialize the like count
 	err = c.Store.Queries.CreateLikeCount(ctx, store_queries.CreateLikeCountParams{
 		SubjectID:        subj.ID,
@@ -300,14 +330,6 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 		err = c.shardDB.InsertPost(ctx, shardDBPost)
 		if err != nil {
 			log.Errorf("failed to insert post into sharddb: %+v", err)
-		}
-	}
-
-	// Increment the tag use counts
-	if createParams.Tags != nil {
-		err = c.tags.IncrementTagUseCounts(ctx, repo, createParams.Tags)
-		if err != nil {
-			log.Errorf("failed to increment tag use counts: %+v", err)
 		}
 	}
 

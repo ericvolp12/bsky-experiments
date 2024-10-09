@@ -122,6 +122,7 @@ type Image struct {
 	PostActorDid string         `json:"post_actor_did"`
 	PostRkey     string         `json:"post_rkey"`
 	AltText      sql.NullString `json:"alt_text"`
+	IsVideo      bool           `json:"is_video"`
 	CreatedAt    sql.NullTime   `json:"created_at"`
 	InsertedAt   time.Time      `json:"inserted_at"`
 }
@@ -133,6 +134,7 @@ type ImagesToProcess struct {
 	PostRkey     string         `json:"post_rkey"`
 	SubjectID    int64          `json:"subject_id"`
 	AltText      sql.NullString `json:"alt_text"`
+	IsVideo      bool           `json:"is_video"`
 }
 
 type Like struct {

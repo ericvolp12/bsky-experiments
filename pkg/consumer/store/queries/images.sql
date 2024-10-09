@@ -4,9 +4,10 @@ INSERT INTO images (
         post_actor_did,
         post_rkey,
         alt_text,
+        is_video,
         created_at
     )
-VALUES ($1, $2, $3, $4, $5);
+VALUES ($1, $2, $3, $4, $5, $6);
 -- name: DeleteImage :exec
 DELETE FROM images
 WHERE post_actor_did = $1
@@ -35,9 +36,10 @@ INSERT INTO images_to_process (
         post_actor_did,
         post_rkey,
         subject_id,
-        alt_text
+        alt_text,
+        is_video
     )
-VALUES ($1, $2, $3, $4, $5);
+VALUES ($1, $2, $3, $4, $5, $6);
 -- name: ListImagesToProcess :many
 SELECT *
 FROM images_to_process

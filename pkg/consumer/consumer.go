@@ -44,7 +44,6 @@ type Consumer struct {
 	graphdClient *graphdclient.Client
 	shardDB      *sharddb.ShardDB
 
-	tags      *TagTracker
 	bitmapper *Bitmapper
 }
 
@@ -170,14 +169,6 @@ func NewConsumer(
 		c.graphdClient = graphdclient.NewClient(graphdRoot, &h)
 	}
 
-	// Create the tag tracker
-	tagTracker, err := NewTagTracker(redisClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create tag tracker: %+v", err)
-	}
-
-	c.tags = tagTracker
-
 	// Create a Bitmapper
 	bitmapper, err := NewBitmapper(store)
 	if err != nil {
@@ -245,6 +236,10 @@ func (c *Consumer) OnEvent(ctx context.Context, evt *models.Event) error {
 		now := time.Now()
 		c.Progress.Update(evt.TimeUS, now)
 		t := time.UnixMicro(evt.TimeUS)
+		if evt.Identity.Handle == nil {
+			c.Logger.Error("unexpected missing handle in identity event", "repo", evt.Identity.Did, "seq", evt.TimeUS)
+			return nil
+		}
 		eventsProcessedCounter.WithLabelValues("repo_identity", c.SocketURL).Inc()
 		err := c.Store.Queries.UpsertActor(ctx, store_queries.UpsertActorParams{
 			Did:       evt.Identity.Did,
@@ -297,7 +292,12 @@ func (c *Consumer) OnCommit(ctx context.Context, evt *models.Event) error {
 
 	lastSeqGauge.WithLabelValues(c.SocketURL).Set(float64(evt.TimeUS))
 
-	log := c.Logger.With("repo", evt.Did, "seq", evt.TimeUS, "commit", evt.Commit)
+	if evt.Commit == nil {
+		c.Logger.Error("got commit with empty 'commit' field on it", "repo", evt.Did, "seq", evt.TimeUS)
+		return nil
+	}
+
+	log := c.Logger.With("repo", evt.Did, "seq", evt.TimeUS, "commit", evt.Commit, "action", evt.Commit.OpType, "collection", evt.Commit.Collection)
 
 	// Parse time from the event time string
 	evtCreatedAt := time.UnixMicro(evt.TimeUS)
@@ -305,8 +305,6 @@ func (c *Consumer) OnCommit(ctx context.Context, evt *models.Event) error {
 	lastEvtCreatedAtGauge.WithLabelValues(c.SocketURL).Set(float64(evtCreatedAt.UnixNano()))
 	lastEvtProcessedAtGauge.WithLabelValues(c.SocketURL).Set(float64(processedAt.UnixNano()))
 	lastEvtCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(processedAt.Sub(evtCreatedAt).Seconds()))
-
-	log = log.With("action", evt.Commit.OpType, "collection", evt.Commit.Collection)
 
 	metricCollection := evt.Commit.Collection
 	if _, ok := knownCollections[evt.Commit.Collection]; !ok {

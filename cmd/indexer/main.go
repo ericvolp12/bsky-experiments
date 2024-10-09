@@ -288,11 +288,15 @@ func (index *Index) IndexImages(ctx context.Context, pageSize int32) {
 
 	imageMetas := make([]*objectdetection.ImageMeta, len(unprocessedImages))
 	for i, image := range unprocessedImages {
+		url := fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", image.PostActorDid, image.Cid)
+		if image.IsVideo {
+			url = fmt.Sprintf("https://video.bsky.app/watch/%s/%s/thumbnail.jpg", image.PostActorDid, image.Cid)
+		}
 		imageMetas[i] = &objectdetection.ImageMeta{
 			PostID:   image.PostRkey,
 			ActorDID: image.PostActorDid,
 			CID:      image.Cid,
-			URL:      fmt.Sprintf("https://cdn.bsky.app/img/feed_thumbnail/plain/%s/%s@jpeg", image.PostActorDid, image.Cid),
+			URL:      url,
 		}
 	}
 

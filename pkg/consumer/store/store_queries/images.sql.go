@@ -18,9 +18,10 @@ INSERT INTO images (
         post_actor_did,
         post_rkey,
         alt_text,
+        is_video,
         created_at
     )
-VALUES ($1, $2, $3, $4, $5)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type CreateImageParams struct {
@@ -28,6 +29,7 @@ type CreateImageParams struct {
 	PostActorDid string         `json:"post_actor_did"`
 	PostRkey     string         `json:"post_rkey"`
 	AltText      sql.NullString `json:"alt_text"`
+	IsVideo      bool           `json:"is_video"`
 	CreatedAt    sql.NullTime   `json:"created_at"`
 }
 
@@ -37,6 +39,7 @@ func (q *Queries) CreateImage(ctx context.Context, arg CreateImageParams) error 
 		arg.PostActorDid,
 		arg.PostRkey,
 		arg.AltText,
+		arg.IsVideo,
 		arg.CreatedAt,
 	)
 	return err
@@ -92,9 +95,10 @@ INSERT INTO images_to_process (
         post_actor_did,
         post_rkey,
         subject_id,
-        alt_text
+        alt_text,
+        is_video
     )
-VALUES ($1, $2, $3, $4, $5)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type EnqueueImageParams struct {
@@ -103,6 +107,7 @@ type EnqueueImageParams struct {
 	PostRkey     string         `json:"post_rkey"`
 	SubjectID    int64          `json:"subject_id"`
 	AltText      sql.NullString `json:"alt_text"`
+	IsVideo      bool           `json:"is_video"`
 }
 
 func (q *Queries) EnqueueImage(ctx context.Context, arg EnqueueImageParams) error {
@@ -112,12 +117,13 @@ func (q *Queries) EnqueueImage(ctx context.Context, arg EnqueueImageParams) erro
 		arg.PostRkey,
 		arg.SubjectID,
 		arg.AltText,
+		arg.IsVideo,
 	)
 	return err
 }
 
 const getImage = `-- name: GetImage :one
-SELECT cid, post_actor_did, post_rkey, alt_text, created_at, inserted_at
+SELECT cid, post_actor_did, post_rkey, alt_text, is_video, created_at, inserted_at
 FROM images
 WHERE post_actor_did = $1
     AND post_rkey = $2
@@ -138,6 +144,7 @@ func (q *Queries) GetImage(ctx context.Context, arg GetImageParams) (Image, erro
 		&i.PostActorDid,
 		&i.PostRkey,
 		&i.AltText,
+		&i.IsVideo,
 		&i.CreatedAt,
 		&i.InsertedAt,
 	)
@@ -145,7 +152,7 @@ func (q *Queries) GetImage(ctx context.Context, arg GetImageParams) (Image, erro
 }
 
 const getImagesForPost = `-- name: GetImagesForPost :many
-SELECT cid, post_actor_did, post_rkey, alt_text, created_at, inserted_at
+SELECT cid, post_actor_did, post_rkey, alt_text, is_video, created_at, inserted_at
 FROM images
 WHERE post_actor_did = $1
     AND post_rkey = $2
@@ -173,6 +180,7 @@ func (q *Queries) GetImagesForPost(ctx context.Context, arg GetImagesForPostPara
 			&i.PostActorDid,
 			&i.PostRkey,
 			&i.AltText,
+			&i.IsVideo,
 			&i.CreatedAt,
 			&i.InsertedAt,
 		); err != nil {
@@ -190,7 +198,7 @@ func (q *Queries) GetImagesForPost(ctx context.Context, arg GetImagesForPostPara
 }
 
 const listImagesToProcess = `-- name: ListImagesToProcess :many
-SELECT id, cid, post_actor_did, post_rkey, subject_id, alt_text
+SELECT id, cid, post_actor_did, post_rkey, subject_id, alt_text, is_video
 FROM images_to_process
 ORDER BY id ASC
 LIMIT $1
@@ -212,6 +220,7 @@ func (q *Queries) ListImagesToProcess(ctx context.Context, limit int32) ([]Image
 			&i.PostRkey,
 			&i.SubjectID,
 			&i.AltText,
+			&i.IsVideo,
 		); err != nil {
 			return nil, err
 		}

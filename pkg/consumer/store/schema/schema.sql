@@ -186,6 +186,7 @@ CREATE TABLE images (
     post_actor_did TEXT NOT NULL,
     post_rkey TEXT NOT NULL,
     alt_text TEXT,
+    is_video BOOLEAN DEFAULT FALSE NOT NULL,
     created_at TIMESTAMPTZ,
     inserted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL,
     PRIMARY KEY (post_actor_did, post_rkey, cid)
@@ -197,7 +198,8 @@ CREATE TABLE images_to_process (
     post_actor_did TEXT NOT NULL,
     post_rkey TEXT NOT NULL,
     subject_id BIGINT NOT NULL,
-    alt_text TEXT
+    alt_text TEXT,
+    is_video BOOLEAN DEFAULT FALSE NOT NULL
 );
 -- Backfill Status
 CREATE TABLE repo_backfill_status (
