@@ -4,6 +4,11 @@
 GO_CMD_W_CGO = CGO_ENABLED=1 GOOS=linux go
 GO_CMD = CGO_ENABLED=0 GOOS=linux go
 
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
+
 # Build the Search API Go binary
 .PHONY: build-search
 build-search:
@@ -163,3 +168,7 @@ pagerank-up:
 pagerank-down:
 	@echo "Stopping Pagerank..."
 	docker compose -f build/pagerank/docker-compose.yml down
+
+.PHONY: skypub
+skypub: .env
+	go run cmd/skypub/main.go
