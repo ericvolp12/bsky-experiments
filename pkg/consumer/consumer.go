@@ -297,7 +297,7 @@ func (c *Consumer) OnCommit(ctx context.Context, evt *models.Event) error {
 		return nil
 	}
 
-	log := c.Logger.With("repo", evt.Did, "seq", evt.TimeUS, "commit", evt.Commit, "action", evt.Commit.OpType, "collection", evt.Commit.Collection)
+	log := c.Logger.With("repo", evt.Did, "seq", evt.TimeUS, "commit", evt.Commit, "action", evt.Commit.Operation, "collection", evt.Commit.Collection)
 
 	// Parse time from the event time string
 	evtCreatedAt := time.UnixMicro(evt.TimeUS)
@@ -310,16 +310,16 @@ func (c *Consumer) OnCommit(ctx context.Context, evt *models.Event) error {
 	if _, ok := knownCollections[evt.Commit.Collection]; !ok {
 		metricCollection = "unknown"
 	}
-	opsProcessedCounter.WithLabelValues(evt.Commit.OpType, metricCollection, c.SocketURL).Inc()
+	opsProcessedCounter.WithLabelValues(evt.Commit.Operation, metricCollection, c.SocketURL).Inc()
 
 	// recordURI := "at://" + evt.Repo + "/" + op.Path
 	span.SetAttributes(attribute.String("repo", evt.Did))
 	span.SetAttributes(attribute.String("collection", evt.Commit.Collection))
 	span.SetAttributes(attribute.String("rkey", evt.Commit.RKey))
 	span.SetAttributes(attribute.Int64("seq", evt.TimeUS))
-	span.SetAttributes(attribute.String("event_kind", evt.Commit.OpType))
-	switch evt.Commit.OpType {
-	case models.CommitCreateRecord:
+	span.SetAttributes(attribute.String("event_kind", evt.Commit.Operation))
+	switch evt.Commit.Operation {
+	case models.CommitOperationCreate:
 		recCreatedAt, err := c.HandleCreateRecord(ctx, evt.Did, evt.Commit.Collection, evt.Commit.RKey, evt.Commit.Record)
 		if err != nil {
 			log.Errorf("failed to handle create record: %+v", err)
@@ -330,7 +330,7 @@ func (c *Consumer) OnCommit(ctx context.Context, evt *models.Event) error {
 			lastEvtCreatedRecordCreatedGapGauge.WithLabelValues(c.SocketURL).Set(float64(evtCreatedAt.Sub(*recCreatedAt).Seconds()))
 			lastRecordCreatedEvtProcessedGapGauge.WithLabelValues(c.SocketURL).Set(float64(processedAt.Sub(*recCreatedAt).Seconds()))
 		}
-	case models.CommitUpdateRecord:
+	case models.CommitOperationUpdate:
 		// Unpack the record and process it
 		switch evt.Commit.Collection {
 		case "app.bsky.actor.profile":
@@ -372,7 +372,7 @@ func (c *Consumer) OnCommit(ctx context.Context, evt *models.Event) error {
 				log.Errorf("failed to upsert actor from firehose: %+v", err)
 			}
 		}
-	case models.CommitDeleteRecord:
+	case models.CommitOperationDelete:
 		err := c.HandleDeleteRecord(ctx, evt.Did, evt.Commit.Collection, evt.Commit.RKey)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {

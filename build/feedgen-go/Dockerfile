@@ -1,4 +1,4 @@
-FROM golang:1.22 as bin-builder
+FROM golang:1.23.2 as bin-builder
 
 WORKDIR /app
 

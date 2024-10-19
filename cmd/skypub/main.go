@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"log/slog"
 	"os"
@@ -80,11 +79,11 @@ func Skypub(cctx *cli.Context) error {
 		return err
 	}
 
-	// feedConsumer.AddFeed("https://jazco.dev/feed", "did:plc:q6gjnaw2blty4crticxkmujt")
-	_, err = feedConsumer.AddUser(ctx, cctx.String("handle"), cctx.String("app-password"))
-	if err != nil {
-		return fmt.Errorf("failed to add user: %w", err)
-	}
+	feedConsumer.AddFeed("https://www.theverge.com/rss/index.xml", "did:plc:cph4u2yadis3hopldcbz7b5h")
+	// _, err = feedConsumer.AddUser(ctx, cctx.String("handle"), cctx.String("app-password"))
+	// if err != nil {
+	// 	return fmt.Errorf("failed to add user: %w", err)
+	// }
 
 	go feedConsumer.Start()
 

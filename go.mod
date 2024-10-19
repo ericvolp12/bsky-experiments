@@ -8,7 +8,7 @@ require (
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/bits-and-blooms/bloom/v3 v3.5.0
 	github.com/bluesky-social/indigo v0.0.0-20240905024844-a4f38639767f
-	github.com/bluesky-social/jetstream v0.0.0-20240922064035-41ad263b38d5
+	github.com/bluesky-social/jetstream v0.0.0-20241016204641-011b54588f28
 	github.com/ericvolp12/go-gin-prometheus v0.0.0-20221219081010-fc0e0436c283
 	github.com/ericvolp12/jwt-go-secp256k1 v0.0.2
 	github.com/gin-contrib/cors v1.4.0

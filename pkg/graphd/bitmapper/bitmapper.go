@@ -9,6 +9,7 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/hashicorp/golang-lru/arc/v2"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -57,7 +58,7 @@ type Group struct {
 	// LRU Cache for Entity Bitmaps
 	entities  *arc.ARCCache[uint32, *Entity]
 	cacheLock sync.Mutex
-	dbCache   *arc.ARCCache[int, *sql.DB]
+	dbCache   *lru.Cache[int, *sql.DB]
 
 	// Bookkeeping for Persisting the Group
 	dbDir     string
@@ -100,7 +101,9 @@ func NewGroup(ctx context.Context, cfg GroupConfig) (*Group, error) {
 		return nil, fmt.Errorf("failed to create entity cache: %w", err)
 	}
 
-	dbCache, err := arc.NewARC[int, *sql.DB](100)
+	dbCache, err := lru.NewWithEvict(1000, func(key int, db *sql.DB) {
+		db.Close()
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create db cache: %w", err)
 	}

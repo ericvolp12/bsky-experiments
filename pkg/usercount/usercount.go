@@ -100,6 +100,18 @@ var PDSHostList = []string{
 	"https://lobster.us-east.host.bsky.network",
 	"https://magic.us-west.host.bsky.network",
 	"https://woodear.us-west.host.bsky.network",
+	"https://cordyceps.us-west.host.bsky.network",
+	"https://ganoderma.us-west.host.bsky.network",
+	"https://bracket.us-west.host.bsky.network",
+	"https://button.us-west.host.bsky.network",
+	"https://chanterelle.us-west.host.bsky.network",
+	"https://cremini.us-west.host.bsky.network",
+	"https://gomphus.us-west.host.bsky.network",
+	"https://matsutake.us-west.host.bsky.network",
+	"https://milkcap.us-west.host.bsky.network",
+	"https://shaggymane.us-west.host.bsky.network",
+	"https://stinkhorn.us-west.host.bsky.network",
+	"https://witchesbutter.us-west.host.bsky.network",
 }
 
 type PDS struct {
