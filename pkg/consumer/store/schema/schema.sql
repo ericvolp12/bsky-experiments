@@ -84,7 +84,7 @@ WHERE parent_post_actor_did IS NOT NULL
     AND parent_post_rkey IS NOT NULL;
 -- Subjects
 CREATE TABLE collections (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     UNIQUE (name)
 );
