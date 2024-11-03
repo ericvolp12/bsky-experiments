@@ -199,7 +199,8 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 	}
 
 	// If the actor has a label, update the label feed (for root posts only)
-	if rec.Reply == nil {
+	// Filter out posts with a createdAt very far in the past
+	if rec.Reply == nil && recCreatedAt.After(time.Now().Add(-time.Hour*24*7)) {
 		// Fetch the labels for the actor
 		labels, err := c.Store.Queries.ListActorLabels(ctx, repo)
 		if err != nil {
