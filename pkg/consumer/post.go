@@ -93,6 +93,8 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 		recCreatedAt = indexedAt
 	}
 
+	wasBackfilled := recCreatedAt.Before(time.Now().Add(-time.Hour * 24 * 3))
+
 	createParams := store_queries.CreatePostParams{
 		ActorDid:           repo,
 		Rkey:               rkey,
@@ -160,26 +162,28 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 		log.Errorf("failed to create post: %+v", err)
 	}
 
-	err = c.Store.Queries.CreateRecentPost(ctx, store_queries.CreateRecentPostParams{
-		ActorDid:           createParams.ActorDid,
-		Rkey:               createParams.Rkey,
-		Content:            createParams.Content,
-		ParentPostActorDid: createParams.ParentPostActorDid,
-		ParentPostRkey:     createParams.ParentPostRkey,
-		QuotePostActorDid:  createParams.QuotePostActorDid,
-		QuotePostRkey:      createParams.QuotePostRkey,
-		RootPostActorDid:   createParams.RootPostActorDid,
-		RootPostRkey:       createParams.RootPostRkey,
-		HasEmbeddedMedia:   createParams.HasEmbeddedMedia,
-		Facets:             createParams.Facets,
-		Embed:              createParams.Embed,
-		Langs:              createParams.Langs,
-		Tags:               createParams.Tags,
-		CreatedAt:          createParams.CreatedAt,
-		SubjectID:          sql.NullInt64{Int64: subj.ID, Valid: true},
-	})
-	if err != nil {
-		log.Errorf("failed to create recent post: %+v", err)
+	if !wasBackfilled {
+		err = c.Store.Queries.CreateRecentPost(ctx, store_queries.CreateRecentPostParams{
+			ActorDid:           createParams.ActorDid,
+			Rkey:               createParams.Rkey,
+			Content:            createParams.Content,
+			ParentPostActorDid: createParams.ParentPostActorDid,
+			ParentPostRkey:     createParams.ParentPostRkey,
+			QuotePostActorDid:  createParams.QuotePostActorDid,
+			QuotePostRkey:      createParams.QuotePostRkey,
+			RootPostActorDid:   createParams.RootPostActorDid,
+			RootPostRkey:       createParams.RootPostRkey,
+			HasEmbeddedMedia:   createParams.HasEmbeddedMedia,
+			Facets:             createParams.Facets,
+			Embed:              createParams.Embed,
+			Langs:              createParams.Langs,
+			Tags:               createParams.Tags,
+			CreatedAt:          createParams.CreatedAt,
+			SubjectID:          sql.NullInt64{Int64: subj.ID, Valid: true},
+		})
+		if err != nil {
+			log.Errorf("failed to create recent post: %+v", err)
+		}
 	}
 
 	earliestTS := time.Now()
@@ -200,7 +204,7 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 
 	// If the actor has a label, update the label feed (for root posts only)
 	// Filter out posts with a createdAt very far in the past
-	if rec.Reply == nil && recCreatedAt.After(time.Now().Add(-time.Hour*24*7)) {
+	if rec.Reply == nil && !wasBackfilled {
 		// Fetch the labels for the actor
 		labels, err := c.Store.Queries.ListActorLabels(ctx, repo)
 		if err != nil {
@@ -302,7 +306,7 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 		log.Errorf("failed to create like count: %+v", err)
 	}
 
-	if c.shardDB != nil {
+	if c.shardDB != nil && !wasBackfilled {
 		bucket, err := sharddb.GetBucketFromRKey(rkey)
 		if err != nil {
 			log.Errorf("failed to get bucket from rkey %q: %+v", rkey, err)
