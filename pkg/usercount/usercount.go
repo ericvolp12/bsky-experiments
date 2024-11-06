@@ -46,8 +46,12 @@ func NewUserCount(ctx context.Context, redisClient *redis.Client) *UserCount {
 		pds := NewPDS(host, 25)
 		_, err := fmt.Sscanf(pdsString, "%d|%d|%s", &pds.UserCount, &pds.LastPageSize, &pds.LastCursor)
 		if err != nil {
-			log.Printf("error parsing pds string: %s\n", err)
-			continue
+			_, err := fmt.Sscanf(pdsString, "%d|%d|", &pds.UserCount, &pds.LastPageSize)
+			if err != nil {
+				log.Printf("error parsing pds string: %s\n", err)
+				continue
+			}
+			pds.LastCursor = ""
 		}
 		pdsSlice = append(pdsSlice, pds)
 	}
@@ -112,6 +116,16 @@ var PDSHostList = []string{
 	"https://shaggymane.us-west.host.bsky.network",
 	"https://stinkhorn.us-west.host.bsky.network",
 	"https://witchesbutter.us-west.host.bsky.network",
+	"https://earthstar.us-east.host.bsky.network",
+	"https://meadow.us-east.host.bsky.network",
+	"https://parasol.us-east.host.bsky.network",
+	"https://reishi.us-east.host.bsky.network",
+	"https://scarletina.us-east.host.bsky.network",
+	"https://splitgill.us-east.host.bsky.network",
+	"https://truffle.us-east.host.bsky.network",
+	"https://velvetfoot.us-east.host.bsky.network",
+	"https://helvella.us-east.host.bsky.network",
+	"https://panthercap.us-east.host.bsky.network",
 }
 
 type PDS struct {
