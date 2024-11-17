@@ -391,6 +391,15 @@ func Consumer(cctx *cli.Context) error {
 	}
 
 	log.Info("shutting down, waiting for workers to clean up...")
+
+	// Force shutdown if we don't finish in 30 seconds
+	go func() {
+		select {
+		case <-time.After(30 * time.Second):
+			log.Fatal("failed to shut down in time, forcing exit")
+		}
+	}()
+
 	close(shutdownRepoStream)
 	close(shutdownLivenessChecker)
 	close(shutdownCursorManager)

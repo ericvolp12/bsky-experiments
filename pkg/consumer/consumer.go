@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -24,7 +22,6 @@ import (
 	"github.com/labstack/gommon/log"
 	"github.com/redis/go-redis/v9"
 
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
@@ -75,7 +72,8 @@ type Delete struct {
 var tracer = otel.Tracer("consumer")
 
 func (c *Consumer) Shutdown() error {
-	return c.bitmapper.Shutdown()
+	// return c.bitmapper.Shutdown()
+	return nil
 }
 
 // WriteCursor writes the cursor to redis
@@ -134,23 +132,27 @@ func NewConsumer(
 	graphdRoot string,
 	shardDBNodes []string,
 ) (*Consumer, error) {
-	h := http.Client{
-		Transport: otelhttp.NewTransport(http.DefaultTransport),
-	}
+	// h := http.Client{
+	// 	Transport: otelhttp.NewTransport(&http.Transport{
+	// 		MaxConnsPerHost:     100,
+	// 		MaxIdleConnsPerHost: 100,
+	// 	}),
+	// 	Timeout: time.Millisecond * 250,
+	// }
 
 	var shardDB *sharddb.ShardDB
 	var err error
-	if len(shardDBNodes) > 0 {
-		shardDB, err = sharddb.NewShardDB(ctx, shardDBNodes, slog.Default())
-		if err != nil {
-			return nil, fmt.Errorf("failed to create sharddb: %+v", err)
-		}
+	// if len(shardDBNodes) > 0 {
+	// 	shardDB, err = sharddb.NewShardDB(ctx, shardDBNodes, slog.Default())
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("failed to create sharddb: %+v", err)
+	// 	}
 
-		err := shardDB.CreatePostTable(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create post table: %+v", err)
-		}
-	}
+	// 	err := shardDB.CreatePostTable(ctx)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("failed to create post table: %+v", err)
+	// 	}
+	// }
 
 	c := Consumer{
 		SocketURL: socketURL,
@@ -165,9 +167,9 @@ func NewConsumer(
 		shardDB: shardDB,
 	}
 
-	if graphdRoot != "" {
-		c.graphdClient = graphdclient.NewClient(graphdRoot, &h)
-	}
+	// if graphdRoot != "" {
+	// 	c.graphdClient = graphdclient.NewClient(graphdRoot, &h)
+	// }
 
 	// Create a Bitmapper
 	bitmapper, err := NewBitmapper(store)

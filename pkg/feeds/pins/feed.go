@@ -3,6 +3,7 @@ package pins
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
@@ -15,6 +16,8 @@ type Feed struct {
 	FeedActorDID string
 	Store        *store.Store
 }
+
+var pinnedPost = "at://did:plc:q6gjnaw2blty4crticxkmujt/app.bsky.feed.post/3lb3pxkepac2c"
 
 type NotFoundError struct {
 	error
@@ -51,10 +54,26 @@ func (f *Feed) GetPage(ctx context.Context, feed string, userDID string, limit i
 		Limit:    int32(limit),
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("error getting pinned posts: %w", err)
+		slog.Error("error getting pins", "error", err)
+		feedPosts := []*appbsky.FeedDefs_SkeletonFeedPost{
+			{
+				Post: pinnedPost,
+				Reason: &appbsky.FeedDefs_SkeletonFeedPost_Reason{
+					FeedDefs_SkeletonReasonPin: &appbsky.FeedDefs_SkeletonReasonPin{},
+				},
+			},
+		}
+		return feedPosts, nil, nil
 	}
 
-	feedPosts := []*appbsky.FeedDefs_SkeletonFeedPost{}
+	feedPosts := []*appbsky.FeedDefs_SkeletonFeedPost{
+		{
+			Post: pinnedPost,
+			Reason: &appbsky.FeedDefs_SkeletonFeedPost_Reason{
+				FeedDefs_SkeletonReasonPin: &appbsky.FeedDefs_SkeletonReasonPin{},
+			},
+		},
+	}
 	newCursor := ""
 	for _, post := range posts {
 		postAtURL := fmt.Sprintf("at://%s/app.bsky.feed.post/%s", post.ActorDid, post.Rkey)

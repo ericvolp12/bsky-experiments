@@ -673,7 +673,7 @@ func (api *API) cleanupNextBatch(ctx context.Context, job store_queries.RepoClea
 	limiter := rate.NewLimiter(rate.Limit(4), 1)
 	for _, batch := range deleteBatches {
 		limiter.Wait(ctx)
-		err := comatproto.RepoApplyWrites(ctx, &client, batch)
+		_, err := comatproto.RepoApplyWrites(ctx, &client, batch)
 		if err != nil {
 			log.Error("Error applying writes", "error", err)
 			err = fmt.Errorf("Errored out after deleting (%d) records: %w", numDeleted, err)

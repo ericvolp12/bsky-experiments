@@ -87,14 +87,19 @@ func (q *Queries) ListRecentPostLabels(ctx context.Context, arg ListRecentPostLa
 }
 
 const listRecentPostsByLabelHot = `-- name: ListRecentPostsByLabelHot :many
+WITH filtered_posts AS (
+    SELECT subject_id,
+        score
+    FROM recent_posts_with_score
+    WHERE score < coalesce($3::float, 100000)
+)
 SELECT l.actor_did,
     l.rkey,
-    rp.score
-FROM recent_post_labels l
-    JOIN recent_posts_with_score rp ON l.subject_id = rp.subject_id
-WHERE label = $1
-    AND score < coalesce($3::float, 100000)
-ORDER BY score DESC
+    fp.score
+FROM filtered_posts fp
+    JOIN recent_post_labels l ON l.subject_id = fp.subject_id
+WHERE l.label = $1
+ORDER BY fp.score DESC
 LIMIT $2
 `
 

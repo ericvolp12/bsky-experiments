@@ -13,14 +13,19 @@ WHERE actor_did = $1
     AND rkey = $2
 ORDER BY label ASC;
 -- name: ListRecentPostsByLabelHot :many
+WITH filtered_posts AS (
+    SELECT subject_id,
+        score
+    FROM recent_posts_with_score
+    WHERE score < coalesce(sqlc.narg('score')::float, 100000)
+)
 SELECT l.actor_did,
     l.rkey,
-    rp.score
-FROM recent_post_labels l
-    JOIN recent_posts_with_score rp ON l.subject_id = rp.subject_id
-WHERE label = $1
-    AND score < coalesce(sqlc.narg('score')::float, 100000)
-ORDER BY score DESC
+    fp.score
+FROM filtered_posts fp
+    JOIN recent_post_labels l ON l.subject_id = fp.subject_id
+WHERE l.label = $1
+ORDER BY fp.score DESC
 LIMIT $2;
 -- name: TrimRecentPostLabels :exec
 DELETE FROM recent_post_labels
