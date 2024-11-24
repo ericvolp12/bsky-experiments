@@ -19,8 +19,10 @@ import (
 	graphdclient "github.com/ericvolp12/bsky-experiments/pkg/graphd/client"
 	"github.com/ericvolp12/bsky-experiments/pkg/sharddb"
 	"github.com/goccy/go-json"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/labstack/gommon/log"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/semaphore"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -41,7 +43,23 @@ type Consumer struct {
 	graphdClient *graphdclient.Client
 	shardDB      *sharddb.ShardDB
 
+	followerCountQueue chan *followerCountPayload
+	likeCountQueue     chan *likeCountPayload
+
 	bitmapper *Bitmapper
+
+	colCache  *lru.Cache[string, int64]
+	subjCache *lru.Cache[string, int64]
+}
+
+type followerCountPayload struct {
+	SubjectDID string
+	Count      int
+}
+
+type likeCountPayload struct {
+	SubjectURI string
+	Count      int
 }
 
 // Progress is the cursor for the consumer
@@ -154,6 +172,16 @@ func NewConsumer(
 	// 	}
 	// }
 
+	colCache, err := lru.New[string, int64](100)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create colCache: %+v", err)
+	}
+
+	subjCache, err := lru.New[string, int64](100_000)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create subjCache: %+v", err)
+	}
+
 	c := Consumer{
 		SocketURL: socketURL,
 		Progress: &Progress{
@@ -164,8 +192,19 @@ func NewConsumer(
 		ProgressKey: fmt.Sprintf("%s:progress", redisPrefix),
 		Store:       store,
 
+		followerCountQueue: make(chan *followerCountPayload, 10_000),
+		likeCountQueue:     make(chan *likeCountPayload, 10_000),
+
+		colCache:  colCache,
+		subjCache: subjCache,
+
 		shardDB: shardDB,
 	}
+
+	// Run a follow count indexer
+	go c.runFollowCountIndexer(ctx)
+	// Run a like count indexer
+	go c.runLikeCountIndexer(ctx)
 
 	// if graphdRoot != "" {
 	// 	c.graphdClient = graphdclient.NewClient(graphdRoot, &h)
@@ -189,6 +228,200 @@ func NewConsumer(
 	}
 
 	return &c, nil
+}
+
+func (c *Consumer) runFollowCountIndexer(ctx context.Context) {
+	ctx, span := tracer.Start(ctx, "runFollowCountIndexer")
+	defer span.End()
+
+	// Batch up to 20_000 payloads at a time, or every 5 seconds
+	tick := time.NewTicker(5 * time.Second)
+	defer tick.Stop()
+
+	var payloads []*followerCountPayload
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			if len(payloads) > 0 {
+				batch := map[string]int{}
+				for _, p := range payloads {
+					batch[p.SubjectDID] += p.Count
+				}
+
+				sem := semaphore.NewWeighted(30)
+
+				for subjectDID, count := range batch {
+					err := sem.Acquire(ctx, 1)
+					if err != nil {
+						c.Logger.Error("failed to acquire semaphore", "err", err)
+						continue
+					}
+
+					go func(sub string, cnt int) {
+						defer sem.Release(1)
+						err := c.Store.Queries.IncrementFollowerCountByN(ctx, store_queries.IncrementFollowerCountByNParams{
+							ActorDid:     sub,
+							NumFollowers: int32(cnt),
+							UpdatedAt:    time.Now(),
+						})
+						if err != nil {
+							c.Logger.Error("failed to upsert follower count", "err", err)
+						}
+					}(subjectDID, count)
+				}
+
+				err := sem.Acquire(ctx, 30)
+				if err != nil {
+					c.Logger.Error("failed to acquire semaphore", "err", err)
+				}
+
+				payloads = payloads[:0]
+			}
+		case job := <-c.followerCountQueue:
+			payloads = append(payloads, job)
+			if len(payloads) >= 20_000 {
+				batch := map[string]int{}
+				for _, p := range payloads {
+					batch[p.SubjectDID] += p.Count
+				}
+
+				sem := semaphore.NewWeighted(30)
+
+				for subjectDID, count := range batch {
+					err := sem.Acquire(ctx, 1)
+					if err != nil {
+						c.Logger.Error("failed to acquire semaphore", "err", err)
+						continue
+					}
+
+					go func(sub string, cnt int) {
+						defer sem.Release(1)
+						err := c.Store.Queries.IncrementFollowerCountByN(ctx, store_queries.IncrementFollowerCountByNParams{
+							ActorDid:     sub,
+							NumFollowers: int32(cnt),
+							UpdatedAt:    time.Now(),
+						})
+						if err != nil {
+							c.Logger.Error("failed to upsert follower count", "err", err)
+						}
+					}(subjectDID, count)
+				}
+
+				err := sem.Acquire(ctx, 30)
+				if err != nil {
+					c.Logger.Error("failed to acquire semaphore", "err", err)
+				}
+
+				payloads = payloads[:0]
+			}
+		}
+	}
+}
+
+func (c *Consumer) runLikeCountIndexer(ctx context.Context) {
+	ctx, span := tracer.Start(ctx, "runLikeCountIndexer")
+	defer span.End()
+
+	// Batch up to 20_000 payloads at a time, or every 5 seconds
+	tick := time.NewTicker(5 * time.Second)
+	defer tick.Stop()
+
+	var payloads []*likeCountPayload
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			if len(payloads) > 0 {
+				batch := map[string]int{}
+				for _, p := range payloads {
+					batch[p.SubjectURI] += p.Count
+				}
+
+				sem := semaphore.NewWeighted(30)
+
+				for subjectDID, count := range batch {
+					err := sem.Acquire(ctx, 1)
+					if err != nil {
+						c.Logger.Error("failed to acquire semaphore", "err", err)
+						continue
+					}
+
+					go func(sub string, cnt int) {
+						defer sem.Release(1)
+						uri, err := GetURI(sub)
+						if err != nil {
+							c.Logger.Error("failed to get URI", "err", err)
+							return
+						}
+
+						err = c.Store.Queries.IncrementLikeCountByN(ctx, store_queries.IncrementLikeCountByNParams{
+							ActorDid:   uri.Did,
+							Collection: uri.Collection,
+							Rkey:       uri.RKey,
+							NumLikes:   int64(cnt),
+						})
+						if err != nil {
+							c.Logger.Error("failed to upsert likeer count", "err", err)
+						}
+					}(subjectDID, count)
+				}
+
+				err := sem.Acquire(ctx, 30)
+				if err != nil {
+					c.Logger.Error("failed to acquire semaphore", "err", err)
+				}
+
+				payloads = payloads[:0]
+			}
+		case job := <-c.likeCountQueue:
+			payloads = append(payloads, job)
+			if len(payloads) >= 20_000 {
+				batch := map[string]int{}
+				for _, p := range payloads {
+					batch[p.SubjectURI] += p.Count
+				}
+
+				sem := semaphore.NewWeighted(30)
+
+				for subjectDID, count := range batch {
+					err := sem.Acquire(ctx, 1)
+					if err != nil {
+						c.Logger.Error("failed to acquire semaphore", "err", err)
+						continue
+					}
+
+					go func(sub string, cnt int) {
+						defer sem.Release(1)
+						uri, err := GetURI(sub)
+						if err != nil {
+							c.Logger.Error("failed to get URI", "err", err)
+							return
+						}
+
+						err = c.Store.Queries.IncrementLikeCountByN(ctx, store_queries.IncrementLikeCountByNParams{
+							ActorDid:   uri.Did,
+							Collection: uri.Collection,
+							Rkey:       uri.RKey,
+							NumLikes:   int64(cnt),
+						})
+						if err != nil {
+							c.Logger.Error("failed to upsert likeer count", "err", err)
+						}
+					}(subjectDID, count)
+				}
+
+				err := sem.Acquire(ctx, 30)
+				if err != nil {
+					c.Logger.Error("failed to acquire semaphore", "err", err)
+				}
+
+				payloads = payloads[:0]
+			}
+		}
+	}
 }
 
 // TrimRecentPosts trims the recent posts from the recent_posts table and the active posters from redis
@@ -608,36 +841,73 @@ func (c *Consumer) HandleCreateRecord(
 			return nil, nil
 		}
 
+		// Get the collection of the subject
+		col, ok := c.colCache.Get(subjectURI.Collection)
+		if !ok {
+			subjectCollection, err := c.Store.Queries.GetCollection(ctx, subjectURI.Collection)
+			if err != nil {
+				if err == sql.ErrNoRows {
+					subjectCollection, err = c.Store.Queries.CreateCollection(ctx, subjectURI.Collection)
+					if err != nil {
+						return nil, fmt.Errorf("failed to create collection: %w", err)
+					}
+				} else {
+					return nil, fmt.Errorf("failed to get collection: %w", err)
+				}
+			}
+			col = subjectCollection.ID
+			c.colCache.Add(subjectURI.Collection, col)
+		}
+
+		subj, ok := c.subjCache.Get(like.Subject.Uri)
+		if !ok {
+			// Get the subject
+			subject, err := c.Store.Queries.GetSubject(ctx, store_queries.GetSubjectParams{
+				ActorDid: subjectURI.Did,
+				Col:      int32(col),
+				Rkey:     subjectURI.RKey,
+			})
+			if err != nil {
+				if err == sql.ErrNoRows {
+					subject, err = c.Store.Queries.CreateSubject(ctx, store_queries.CreateSubjectParams{
+						ActorDid: subjectURI.Did,
+						Col:      int32(col),
+						Rkey:     subjectURI.RKey,
+					})
+					if err != nil {
+						return nil, fmt.Errorf("failed to create subject: %w", err)
+					}
+				} else {
+					return nil, fmt.Errorf("failed to get subject: %w", err)
+				}
+			}
+			subj = subject.ID
+			c.subjCache.Add(like.Subject.Uri, subj)
+		}
+
 		err = c.Store.Queries.CreateLike(ctx, store_queries.CreateLikeParams{
-			ActorDid:        repo,
-			Rkey:            rkey,
-			SubjectActorDid: subjectURI.Did,
-			Collection:      subjectURI.Collection,
-			SubjectRkey:     subjectURI.RKey,
-			CreatedAt:       sql.NullTime{Time: recCreatedAt, Valid: true},
+			ActorDid:  repo,
+			Rkey:      rkey,
+			Subj:      subj,
+			CreatedAt: sql.NullTime{Time: recCreatedAt, Valid: true},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create like: %w", err)
 		}
 
 		// Increment the like count
-		err = c.Store.Queries.IncrementLikeCountByN(ctx, store_queries.IncrementLikeCountByNParams{
-			ActorDid:   subjectURI.Did,
-			Collection: subjectURI.Collection,
-			Rkey:       subjectURI.RKey,
-			NumLikes:   1,
-		})
-		if err != nil {
-			log.Errorf("failed to increment like count: %+v", err)
+		c.likeCountQueue <- &likeCountPayload{
+			SubjectURI: like.Subject.Uri,
+			Count:      1,
 		}
 
 		// Track the user in the likers bitmap
-		hourlyLikeBMKey := fmt.Sprintf("likes_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
+		// hourlyLikeBMKey := fmt.Sprintf("likes_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
 
-		err = c.bitmapper.AddMember(ctx, hourlyLikeBMKey, repo)
-		if err != nil {
-			log.Errorf("failed to add member to likers bitmap: %+v", err)
-		}
+		// err = c.bitmapper.AddMember(ctx, hourlyLikeBMKey, repo)
+		// if err != nil {
+		// 	log.Errorf("failed to add member to likers bitmap: %+v", err)
+		// }
 	case "app.bsky.feed.repost":
 		span.SetAttributes(attribute.String("record_type", "feed_repost"))
 		recordsProcessedCounter.WithLabelValues("feed_repost", c.SocketURL).Inc()
@@ -699,12 +969,12 @@ func (c *Consumer) HandleCreateRecord(
 		}
 
 		// Track the user in the reposters bitmap
-		hourlyRepostBMKey := fmt.Sprintf("reposts_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
+		// hourlyRepostBMKey := fmt.Sprintf("reposts_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
 
-		err = c.bitmapper.AddMember(ctx, hourlyRepostBMKey, repo)
-		if err != nil {
-			log.Errorf("failed to add member to reposters bitmap: %+v", err)
-		}
+		// err = c.bitmapper.AddMember(ctx, hourlyRepostBMKey, repo)
+		// if err != nil {
+		// 	log.Errorf("failed to add member to reposters bitmap: %+v", err)
+		// }
 	case "app.bsky.graph.block":
 		span.SetAttributes(attribute.String("record_type", "graph_block"))
 		recordsProcessedCounter.WithLabelValues("graph_block", c.SocketURL).Inc()
@@ -742,12 +1012,12 @@ func (c *Consumer) HandleCreateRecord(
 		}
 
 		// Track the user in the blockers bitmap
-		hourlyBlocksBMKey := fmt.Sprintf("blocks_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
+		// hourlyBlocksBMKey := fmt.Sprintf("blocks_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
 
-		err = c.bitmapper.AddMember(ctx, hourlyBlocksBMKey, repo)
-		if err != nil {
-			log.Errorf("failed to add member to blockers bitmap: %+v", err)
-		}
+		// err = c.bitmapper.AddMember(ctx, hourlyBlocksBMKey, repo)
+		// if err != nil {
+		// 	log.Errorf("failed to add member to blockers bitmap: %+v", err)
+		// }
 	case "app.bsky.graph.follow":
 		span.SetAttributes(attribute.String("record_type", "graph_follow"))
 		recordsProcessedCounter.WithLabelValues("graph_follow", c.SocketURL).Inc()
@@ -783,14 +1053,13 @@ func (c *Consumer) HandleCreateRecord(
 		if err != nil {
 			log.Errorf("failed to create follow: %+v", err)
 		}
-		err = c.Store.Queries.IncrementFollowerCountByN(ctx, store_queries.IncrementFollowerCountByNParams{
-			ActorDid:     follow.Subject,
-			NumFollowers: 1,
-			UpdatedAt:    time.Now(),
-		})
-		if err != nil {
-			log.Errorf("failed to increment follower count: %+v", err)
+
+		// Increment the follower count by adding the follower to the follower count queue
+		c.followerCountQueue <- &followerCountPayload{
+			SubjectDID: follow.Subject,
+			Count:      1,
 		}
+
 		err = c.Store.Queries.IncrementFollowingCountByN(ctx, store_queries.IncrementFollowingCountByNParams{
 			ActorDid:     repo,
 			NumFollowing: 1,
@@ -808,12 +1077,12 @@ func (c *Consumer) HandleCreateRecord(
 		}
 
 		// Track the user in the followers bitmap
-		hourlyFollowsBMKey := fmt.Sprintf("follows_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
+		// hourlyFollowsBMKey := fmt.Sprintf("follows_hourly:%s", recCreatedAt.Format("2006_01_02_15"))
 
-		err = c.bitmapper.AddMember(ctx, hourlyFollowsBMKey, repo)
-		if err != nil {
-			log.Errorf("failed to add member to followers bitmap: %+v", err)
-		}
+		// err = c.bitmapper.AddMember(ctx, hourlyFollowsBMKey, repo)
+		// if err != nil {
+		// 	log.Errorf("failed to add member to followers bitmap: %+v", err)
+		// }
 	case "app.bsky.actor.profile":
 		span.SetAttributes(attribute.String("record_type", "actor_profile"))
 		recordsProcessedCounter.WithLabelValues("actor_profile", c.SocketURL).Inc()

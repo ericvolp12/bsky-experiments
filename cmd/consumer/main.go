@@ -346,7 +346,7 @@ func Consumer(cctx *cli.Context) error {
 	}
 	defer con.Close()
 
-	scheduler := parallel.NewScheduler(400, "jetstream-prod", slog.Default(), c.OnEvent)
+	scheduler := parallel.NewScheduler(200, "jetstream-prod", slog.Default(), c.OnEvent)
 
 	conf := jetstreamclient.DefaultClientConfig()
 	conf.WantedCollections = []string{"app.bsky.*"}

@@ -12,57 +12,28 @@ import (
 )
 
 const createLike = `-- name: CreateLike :exec
-WITH collection_ins AS (
-    INSERT INTO collections (name)
-    VALUES ($4) ON CONFLICT (name) DO NOTHING
-    RETURNING id
-),
-subject_ins AS (
-    INSERT INTO subjects (actor_did, rkey, col)
-    VALUES (
-            $5,
-            $6,
-            COALESCE(
-                (
-                    SELECT id
-                    FROM collection_ins
-                ),
-                (
-                    SELECT id
-                    FROM collections
-                    WHERE name = $4
-                )
-            )
-        ) ON CONFLICT (actor_did, col, rkey) DO
-    UPDATE
-    SET actor_did = EXCLUDED.actor_did
-    RETURNING id
-)
 INSERT INTO likes (actor_did, rkey, subj, created_at)
-SELECT $1,
-    $2,
-    subject_ins.id,
-    $3
-FROM subject_ins
+VALUES (
+        $1,
+        $2,
+        $3,
+        $4
+    )
 `
 
 type CreateLikeParams struct {
-	ActorDid        string       `json:"actor_did"`
-	Rkey            string       `json:"rkey"`
-	CreatedAt       sql.NullTime `json:"created_at"`
-	Collection      string       `json:"collection"`
-	SubjectActorDid string       `json:"subject_actor_did"`
-	SubjectRkey     string       `json:"subject_rkey"`
+	ActorDid  string       `json:"actor_did"`
+	Rkey      string       `json:"rkey"`
+	Subj      int64        `json:"subj"`
+	CreatedAt sql.NullTime `json:"created_at"`
 }
 
 func (q *Queries) CreateLike(ctx context.Context, arg CreateLikeParams) error {
 	_, err := q.exec(ctx, q.createLikeStmt, createLike,
 		arg.ActorDid,
 		arg.Rkey,
+		arg.Subj,
 		arg.CreatedAt,
-		arg.Collection,
-		arg.SubjectActorDid,
-		arg.SubjectRkey,
 	)
 	return err
 }

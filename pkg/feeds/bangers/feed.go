@@ -126,19 +126,19 @@ func (f *Feed) GetPage(ctx context.Context, feed string, userDID string, limit i
 
 	cacheKey := feed
 	if feed == "bangers" {
-		feedPosts := []*appbsky.FeedDefs_SkeletonFeedPost{
-			{
-				Post: pinnedPost,
-				Reason: &appbsky.FeedDefs_SkeletonFeedPost_Reason{
-					FeedDefs_SkeletonReasonPin: &appbsky.FeedDefs_SkeletonReasonPin{},
-				},
-			},
-		}
-		return feedPosts, nil, nil
-		// if userDID == "" {
-		// 	return nil, nil, fmt.Errorf("authorization required for feed: %s", feed)
+		// feedPosts := []*appbsky.FeedDefs_SkeletonFeedPost{
+		// 	{
+		// 		Post: pinnedPost,
+		// 		Reason: &appbsky.FeedDefs_SkeletonFeedPost_Reason{
+		// 			FeedDefs_SkeletonReasonPin: &appbsky.FeedDefs_SkeletonReasonPin{},
+		// 		},
+		// 	},
 		// }
-		// cacheKey += ":" + userDID
+		// return feedPosts, nil, nil
+		if userDID == "" {
+			return nil, nil, fmt.Errorf("authorization required for feed: %s", feed)
+		}
+		cacheKey += ":" + userDID
 	}
 
 	cached, err := f.Redis.LRange(ctx, cacheKey, offset, offset+limit-1).Result()

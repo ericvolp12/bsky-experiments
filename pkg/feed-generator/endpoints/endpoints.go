@@ -21,6 +21,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/gin-gonic/gin"
+	"github.com/kwertop/gostatix"
 	"github.com/whyrusleeping/go-did"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -37,6 +38,9 @@ type Endpoints struct {
 	FeedUsers       map[string][]string
 	usersLk         sync.RWMutex
 	UniqueSeenUsers *bloom.BloomFilter
+
+	tkLk              sync.RWMutex
+	TopKUsersAndFeeds *gostatix.TopK
 
 	dir *identity.CacheDirectory
 
@@ -66,7 +70,11 @@ func NewEndpoints(feedGenerator *feedgenerator.FeedGenerator, graphJSONUrl strin
 	}
 	dir := identity.NewCacheDirectory(&base, 250_000, time.Hour*24, time.Minute*2, time.Minute*5)
 
-	return &Endpoints{
+	newTopK := func() *gostatix.TopK {
+		return gostatix.NewTopK(512, 0.0001, 0.999)
+	}
+
+	ep := Endpoints{
 		FeedGenerator:       feedGenerator,
 		GraphJSONUrl:        graphJSONUrl,
 		UniqueSeenUsers:     uniqueSeenUsers,
@@ -74,7 +82,31 @@ func NewEndpoints(feedGenerator *feedgenerator.FeedGenerator, graphJSONUrl strin
 		dir:                 &dir,
 		Store:               store,
 		DescriptionCacheTTL: 30 * time.Minute,
-	}, nil
+		TopKUsersAndFeeds:   newTopK(),
+	}
+
+	// Start a routine to periodically flush the top k users and feeds
+	go func() {
+		t := time.NewTicker(time.Minute * 2)
+		for {
+			select {
+			case <-t.C:
+				ep.tkLk.Lock()
+				vals := ep.TopKUsersAndFeeds.Values()
+				ep.TopKUsersAndFeeds = newTopK()
+				ep.tkLk.Unlock()
+				topDIDFeedPairs := make([]string, 0, len(vals))
+				for _, v := range vals {
+					if v.Count > 5 {
+						topDIDFeedPairs = append(topDIDFeedPairs, fmt.Sprintf("%s_%d", v.Element, v.Count))
+					}
+				}
+				slog.Info("Top users and feeds", "top", strings.Join(topDIDFeedPairs, ", "))
+			}
+		}
+	}()
+
+	return &ep, nil
 }
 
 func (ep *Endpoints) GetWellKnownDID(c *gin.Context) {
@@ -246,6 +278,12 @@ func (ep *Endpoints) ProcessUser(feedName string, userDID string) {
 		ep.UniqueSeenUsers.AddString(userDID)
 		uniqueFeedUserCounter.Inc()
 	}
+
+	ep.tkLk.RLock()
+	// Update the top k users and feeds
+	key := fmt.Sprintf("%s_%s", userDID, feedName)
+	ep.TopKUsersAndFeeds.Insert([]byte(key), 1)
+	ep.tkLk.RUnlock()
 
 	ep.usersLk.Lock()
 	defer ep.usersLk.Unlock()

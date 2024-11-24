@@ -2,13 +2,9 @@ package postlabel
 
 import (
 	"context"
-	"database/sql"
-	"fmt"
-	"strconv"
 
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store"
-	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	"go.opentelemetry.io/otel"
 )
 
@@ -29,6 +25,8 @@ var labels = []string{
 
 var tracer = otel.Tracer("post-label-feed")
 
+var pinnedPost = "at://did:plc:q6gjnaw2blty4crticxkmujt/app.bsky.feed.post/3lbi35q4vp22j"
+
 func NewFeed(ctx context.Context, feedActorDID string, store *store.Store) (*Feed, []string, error) {
 	return &Feed{
 		FeedActorDID: feedActorDID,
@@ -40,40 +38,52 @@ func (f *Feed) GetPage(ctx context.Context, feed string, userDID string, limit i
 	ctx, span := tracer.Start(ctx, "GetPage")
 	defer span.End()
 
-	var err error
-	score := float64(-1)
-	if cursor != "" {
-		score, err = strconv.ParseFloat(cursor, 64)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error parsing cursor: %w", err)
-		}
+	// Temporary hardcoded pinned post
+	feedPosts := []*appbsky.FeedDefs_SkeletonFeedPost{
+		{
+			Post: pinnedPost,
+			Reason: &appbsky.FeedDefs_SkeletonFeedPost_Reason{
+				FeedDefs_SkeletonReasonPin: &appbsky.FeedDefs_SkeletonReasonPin{},
+			},
+		},
 	}
 
-	dbPosts, err := f.Store.Queries.ListRecentPostsByLabelHot(ctx, store_queries.ListRecentPostsByLabelHotParams{
-		Label: feed,
-		Limit: int32(limit),
-		Score: sql.NullFloat64{Float64: score, Valid: score > 0},
-	})
+	return feedPosts, nil, nil
 
-	// Convert to appbsky.FeedDefs_SkeletonFeedPost
-	posts := []*appbsky.FeedDefs_SkeletonFeedPost{}
-	lastScore := -1.0
-	for _, post := range dbPosts {
-		postAtURL := fmt.Sprintf("at://%s/app.bsky.feed.post/%s", post.ActorDid, post.Rkey)
-		posts = append(posts, &appbsky.FeedDefs_SkeletonFeedPost{Post: postAtURL})
-		lastScore = post.Score
-	}
+	// var err error
+	// score := float64(-1)
+	// if cursor != "" {
+	// 	score, err = strconv.ParseFloat(cursor, 64)
+	// 	if err != nil {
+	// 		return nil, nil, fmt.Errorf("error parsing cursor: %w", err)
+	// 	}
+	// }
 
-	if len(posts) < int(limit) {
-		return posts, nil, nil
-	}
+	// dbPosts, err := f.Store.Queries.ListRecentPostsByLabelHot(ctx, store_queries.ListRecentPostsByLabelHotParams{
+	// 	Label: feed,
+	// 	Limit: int32(limit),
+	// 	Score: sql.NullFloat64{Float64: score, Valid: score > 0},
+	// })
 
-	newCursor := ""
-	if lastScore > 0 {
-		newCursor = fmt.Sprintf("%0.10f", lastScore)
-	}
+	// // Convert to appbsky.FeedDefs_SkeletonFeedPost
+	// posts := []*appbsky.FeedDefs_SkeletonFeedPost{}
+	// lastScore := -1.0
+	// for _, post := range dbPosts {
+	// 	postAtURL := fmt.Sprintf("at://%s/app.bsky.feed.post/%s", post.ActorDid, post.Rkey)
+	// 	posts = append(posts, &appbsky.FeedDefs_SkeletonFeedPost{Post: postAtURL})
+	// 	lastScore = post.Score
+	// }
 
-	return posts, &newCursor, nil
+	// if len(posts) < int(limit) {
+	// 	return posts, nil, nil
+	// }
+
+	// newCursor := ""
+	// if lastScore > 0 {
+	// 	newCursor = fmt.Sprintf("%0.10f", lastScore)
+	// }
+
+	// return posts, &newCursor, nil
 }
 
 func (f *Feed) Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error) {

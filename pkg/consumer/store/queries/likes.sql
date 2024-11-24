@@ -1,36 +1,11 @@
 -- name: CreateLike :exec
-WITH collection_ins AS (
-    INSERT INTO collections (name)
-    VALUES (sqlc.arg('collection')) ON CONFLICT (name) DO NOTHING
-    RETURNING id
-),
-subject_ins AS (
-    INSERT INTO subjects (actor_did, rkey, col)
-    VALUES (
-            sqlc.arg('subject_actor_did'),
-            sqlc.arg('subject_rkey'),
-            COALESCE(
-                (
-                    SELECT id
-                    FROM collection_ins
-                ),
-                (
-                    SELECT id
-                    FROM collections
-                    WHERE name = sqlc.arg('collection')
-                )
-            )
-        ) ON CONFLICT (actor_did, col, rkey) DO
-    UPDATE
-    SET actor_did = EXCLUDED.actor_did
-    RETURNING id
-)
 INSERT INTO likes (actor_did, rkey, subj, created_at)
-SELECT sqlc.arg('actor_did'),
-    sqlc.arg('rkey'),
-    subject_ins.id,
-    sqlc.arg('created_at')
-FROM subject_ins;
+VALUES (
+        sqlc.arg('actor_did'),
+        sqlc.arg('rkey'),
+        sqlc.arg('subj'),
+        sqlc.arg('created_at')
+    );
 -- name: InsertLike :exec
 INSERT INTO likes (actor_did, rkey, subj, created_at)
 VALUES ($1, $2, $3, $4);

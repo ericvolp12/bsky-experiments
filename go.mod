@@ -23,6 +23,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/ipfs/go-cid v0.4.1
 	github.com/joho/godotenv v1.5.1
+	github.com/kwertop/gostatix v1.0.0
 	github.com/labstack/echo-contrib v0.15.0
 	github.com/labstack/echo/v4 v4.11.3
 	github.com/labstack/gommon v0.4.1
@@ -70,6 +71,7 @@ require (
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.3 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 // indirect
+	github.com/dgryski/go-metro v0.0.0-20211217172704-adc40b04c140 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
@@ -179,3 +181,5 @@ require (
 )
 
 replace github.com/gocql/gocql => github.com/scylladb/gocql v1.12.0
+
+replace github.com/kwertop/gostatix => github.com/ericvolp12/gostatix v0.0.0-20241123223234-f419cf48141a
