@@ -39,7 +39,7 @@ type Endpoints struct {
 	usersLk         sync.RWMutex
 	UniqueSeenUsers *bloom.BloomFilter
 
-	tkLk              sync.RWMutex
+	tkLk              sync.Mutex
 	TopKUsersAndFeeds *gostatix.TopK
 
 	dir *identity.CacheDirectory
@@ -279,11 +279,11 @@ func (ep *Endpoints) ProcessUser(feedName string, userDID string) {
 		uniqueFeedUserCounter.Inc()
 	}
 
-	ep.tkLk.RLock()
+	ep.tkLk.Lock()
 	// Update the top k users and feeds
 	key := fmt.Sprintf("%s_%s", userDID, feedName)
 	ep.TopKUsersAndFeeds.Insert([]byte(key), 1)
-	ep.tkLk.RUnlock()
+	ep.tkLk.Unlock()
 
 	ep.usersLk.Lock()
 	defer ep.usersLk.Unlock()
