@@ -20,6 +20,7 @@ import (
 	"github.com/ericvolp12/bsky-experiments/pkg/sharddb"
 	"github.com/goccy/go-json"
 	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/kwertop/gostatix"
 	"github.com/labstack/gommon/log"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/semaphore"
@@ -50,6 +51,9 @@ type Consumer struct {
 
 	colCache  *lru.Cache[string, int64]
 	subjCache *lru.Cache[string, int64]
+
+	tkLk                    sync.Mutex
+	topKUsersAndCollections *gostatix.TopK
 }
 
 type followerCountPayload struct {
@@ -182,6 +186,10 @@ func NewConsumer(
 		return nil, fmt.Errorf("failed to create subjCache: %+v", err)
 	}
 
+	newTopK := func() *gostatix.TopK {
+		return gostatix.NewTopK(512, 0.0001, 0.999)
+	}
+
 	c := Consumer{
 		SocketURL: socketURL,
 		Progress: &Progress{
@@ -199,6 +207,8 @@ func NewConsumer(
 		subjCache: subjCache,
 
 		shardDB: shardDB,
+
+		topKUsersAndCollections: newTopK(),
 	}
 
 	// Run a follow count indexer
@@ -226,6 +236,27 @@ func NewConsumer(
 		}
 		logger.Warn("cursor not found in redis, starting from live")
 	}
+
+	// Start a routine to periodically flush the top k users and collections
+	go func() {
+		t := time.NewTicker(time.Second * 30)
+		for {
+			select {
+			case <-t.C:
+				c.tkLk.Lock()
+				vals := c.topKUsersAndCollections.Values()
+				c.topKUsersAndCollections = newTopK()
+				c.tkLk.Unlock()
+				topDIDCollectionPairs := make([]string, 0, len(vals))
+				for _, v := range vals {
+					if v.Count > 50 {
+						topDIDCollectionPairs = append(topDIDCollectionPairs, fmt.Sprintf("%s_%d", v.Element, v.Count))
+					}
+				}
+				c.Logger.Infow("Top users and collections", "top", strings.Join(topDIDCollectionPairs, "\n"))
+			}
+		}
+	}()
 
 	return &c, nil
 }
@@ -533,6 +564,12 @@ func (c *Consumer) OnCommit(ctx context.Context, evt *models.Event) error {
 	}
 
 	log := c.Logger.With("repo", evt.Did, "seq", evt.TimeUS, "commit", evt.Commit, "action", evt.Commit.Operation, "collection", evt.Commit.Collection)
+
+	c.tkLk.Lock()
+	// Update the top k
+	key := fmt.Sprintf("%s_%s_%s", evt.Did, evt.Commit.Collection, evt.Commit.Operation)
+	c.topKUsersAndCollections.Insert([]byte(key), 1)
+	c.tkLk.Unlock()
 
 	// Parse time from the event time string
 	evtCreatedAt := time.UnixMicro(evt.TimeUS)
