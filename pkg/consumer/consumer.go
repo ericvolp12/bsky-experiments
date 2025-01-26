@@ -52,8 +52,14 @@ type Consumer struct {
 	colCache  *lru.Cache[string, int64]
 	subjCache *lru.Cache[string, int64]
 
-	tkLk                    sync.Mutex
-	topKUsersAndCollections *gostatix.TopK
+	tkOpLk         sync.Mutex
+	topKOperations *gostatix.TopK
+
+	tkFollowLk        sync.Mutex
+	topKFollowedUsers *gostatix.TopK
+
+	tkLikeLk      sync.Mutex
+	topKLikedEnts *gostatix.TopK
 }
 
 type followerCountPayload struct {
@@ -208,7 +214,9 @@ func NewConsumer(
 
 		shardDB: shardDB,
 
-		topKUsersAndCollections: newTopK(),
+		topKOperations:    newTopK(),
+		topKFollowedUsers: newTopK(),
+		topKLikedEnts:     newTopK(),
 	}
 
 	// Run a follow count indexer
@@ -243,17 +251,46 @@ func NewConsumer(
 		for {
 			select {
 			case <-t.C:
-				c.tkLk.Lock()
-				vals := c.topKUsersAndCollections.Values()
-				c.topKUsersAndCollections = newTopK()
-				c.tkLk.Unlock()
-				topDIDCollectionPairs := make([]string, 0, len(vals))
-				for _, v := range vals {
+				c.tkOpLk.Lock()
+				opVals := c.topKOperations.Values()
+				c.topKOperations = newTopK()
+				c.tkOpLk.Unlock()
+				c.tkFollowLk.Lock()
+				followVals := c.topKFollowedUsers.Values()
+				c.topKFollowedUsers = newTopK()
+				c.tkFollowLk.Unlock()
+				c.tkLikeLk.Lock()
+				likeVals := c.topKLikedEnts.Values()
+				c.topKLikedEnts = newTopK()
+				c.tkLikeLk.Unlock()
+
+				topOps := make([]string, 0, len(opVals))
+				for _, v := range opVals {
 					if v.Count > 50 {
-						topDIDCollectionPairs = append(topDIDCollectionPairs, fmt.Sprintf("%s_%d", v.Element, v.Count))
+						topOps = append(topOps, fmt.Sprintf("%s | %d", v.Element, v.Count))
 					}
 				}
-				c.Logger.Infow("Top users and collections", "top", strings.Join(topDIDCollectionPairs, "\n"))
+
+				topFollows := make([]string, 0, len(followVals))
+				for _, v := range followVals {
+					if v.Count > 20 {
+						topFollows = append(topFollows, fmt.Sprintf("%s | %d", v.Element, v.Count))
+					}
+				}
+
+				topLikes := make([]string, 0, len(likeVals))
+				for _, v := range likeVals {
+					if v.Count > 20 {
+						topLikes = append(topLikes, fmt.Sprintf("%s | %d", v.Element, v.Count))
+					}
+				}
+
+				c.Logger.Infow(
+					"topk summary",
+					"top_ops", strings.Join(topOps, "\n"),
+					"top_follows", strings.Join(topFollows, "\n"),
+					"top_likes", strings.Join(topLikes, "\n"),
+				)
 			}
 		}
 	}()
@@ -565,11 +602,11 @@ func (c *Consumer) OnCommit(ctx context.Context, evt *models.Event) error {
 
 	log := c.Logger.With("repo", evt.Did, "seq", evt.TimeUS, "commit", evt.Commit, "action", evt.Commit.Operation, "collection", evt.Commit.Collection)
 
-	c.tkLk.Lock()
+	c.tkOpLk.Lock()
 	// Update the top k
 	key := fmt.Sprintf("%s_%s_%s", evt.Did, evt.Commit.Collection, evt.Commit.Operation)
-	c.topKUsersAndCollections.Insert([]byte(key), 1)
-	c.tkLk.Unlock()
+	c.topKOperations.Insert([]byte(key), 1)
+	c.tkOpLk.Unlock()
 
 	// Parse time from the event time string
 	evtCreatedAt := time.UnixMicro(evt.TimeUS)
@@ -864,6 +901,10 @@ func (c *Consumer) HandleCreateRecord(
 			return nil, fmt.Errorf("invalid like subject: %+v", like.Subject)
 		}
 
+		c.tkLikeLk.Lock()
+		c.topKLikedEnts.Insert([]byte(like.Subject.Uri), 1)
+		c.tkLikeLk.Unlock()
+
 		// Check if we've already processed this record
 		_, err = c.Store.Queries.GetLike(ctx, store_queries.GetLikeParams{
 			ActorDid: repo,
@@ -1064,6 +1105,10 @@ func (c *Consumer) HandleCreateRecord(
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmarshal follow: %w", err)
 		}
+
+		c.tkFollowLk.Lock()
+		c.topKFollowedUsers.Insert([]byte(follow.Subject), 1)
+		c.tkFollowLk.Unlock()
 
 		recCreatedAt, parseError = dateparse.ParseAny(follow.CreatedAt)
 
