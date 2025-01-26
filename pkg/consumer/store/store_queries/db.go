@@ -468,8 +468,17 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.incrementRepostCountByNStmt, err = db.PrepareContext(ctx, incrementRepostCountByN); err != nil {
 		return nil, fmt.Errorf("error preparing query IncrementRepostCountByN: %w", err)
 	}
+	if q.insertFollowerOutliersStmt, err = db.PrepareContext(ctx, insertFollowerOutliers); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertFollowerOutliers: %w", err)
+	}
 	if q.insertLikeStmt, err = db.PrepareContext(ctx, insertLike); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertLike: %w", err)
+	}
+	if q.insertLikeOutliersStmt, err = db.PrepareContext(ctx, insertLikeOutliers); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertLikeOutliers: %w", err)
+	}
+	if q.insertOperationOutliersStmt, err = db.PrepareContext(ctx, insertOperationOutliers); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertOperationOutliers: %w", err)
 	}
 	if q.listActorLabelsStmt, err = db.PrepareContext(ctx, listActorLabels); err != nil {
 		return nil, fmt.Errorf("error preparing query ListActorLabels: %w", err)
@@ -1282,9 +1291,24 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing incrementRepostCountByNStmt: %w", cerr)
 		}
 	}
+	if q.insertFollowerOutliersStmt != nil {
+		if cerr := q.insertFollowerOutliersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertFollowerOutliersStmt: %w", cerr)
+		}
+	}
 	if q.insertLikeStmt != nil {
 		if cerr := q.insertLikeStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing insertLikeStmt: %w", cerr)
+		}
+	}
+	if q.insertLikeOutliersStmt != nil {
+		if cerr := q.insertLikeOutliersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertLikeOutliersStmt: %w", cerr)
+		}
+	}
+	if q.insertOperationOutliersStmt != nil {
+		if cerr := q.insertOperationOutliersStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertOperationOutliersStmt: %w", cerr)
 		}
 	}
 	if q.listActorLabelsStmt != nil {
@@ -1584,7 +1608,10 @@ type Queries struct {
 	incrementLikeCountByNStmt                 *sql.Stmt
 	incrementLikeCountByNWithSubjectStmt      *sql.Stmt
 	incrementRepostCountByNStmt               *sql.Stmt
+	insertFollowerOutliersStmt                *sql.Stmt
 	insertLikeStmt                            *sql.Stmt
+	insertLikeOutliersStmt                    *sql.Stmt
+	insertOperationOutliersStmt               *sql.Stmt
 	listActorLabelsStmt                       *sql.Stmt
 	listActorsByLabelStmt                     *sql.Stmt
 	listImagesToProcessStmt                   *sql.Stmt
@@ -1761,7 +1788,10 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		incrementLikeCountByNStmt:                 q.incrementLikeCountByNStmt,
 		incrementLikeCountByNWithSubjectStmt:      q.incrementLikeCountByNWithSubjectStmt,
 		incrementRepostCountByNStmt:               q.incrementRepostCountByNStmt,
+		insertFollowerOutliersStmt:                q.insertFollowerOutliersStmt,
 		insertLikeStmt:                            q.insertLikeStmt,
+		insertLikeOutliersStmt:                    q.insertLikeOutliersStmt,
+		insertOperationOutliersStmt:               q.insertOperationOutliersStmt,
 		listActorLabelsStmt:                       q.listActorLabelsStmt,
 		listActorsByLabelStmt:                     q.listActorsByLabelStmt,
 		listImagesToProcessStmt:                   q.listImagesToProcessStmt,

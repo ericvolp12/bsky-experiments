@@ -98,6 +98,14 @@ type FollowerCount struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+type FollowerOutlier struct {
+	ID           int64     `json:"id"`
+	Subject      string    `json:"subject"`
+	NumFollowers int64     `json:"num_followers"`
+	Period       int64     `json:"period"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 type FollowerStat struct {
 	P25   float64 `json:"p25"`
 	P50   float64 `json:"p50"`
@@ -152,6 +160,14 @@ type LikeCount struct {
 	SubjectCreatedAt sql.NullTime `json:"subject_created_at"`
 }
 
+type LikeOutlier struct {
+	ID        int64     `json:"id"`
+	Subject   string    `json:"subject"`
+	NumLikes  int64     `json:"num_likes"`
+	Period    int64     `json:"period"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type MonthlySummary struct {
 	Date                      time.Time `json:"date"`
 	LikesPerMonth             int64     `json:"Likes per Month"`
@@ -171,6 +187,16 @@ type MonthlySummary struct {
 type Mpl struct {
 	ActorDid string `json:"actor_did"`
 	Rkey     string `json:"rkey"`
+}
+
+type OperationOutlier struct {
+	ID         int64     `json:"id"`
+	ActorDid   string    `json:"actor_did"`
+	Collection string    `json:"collection"`
+	Operation  string    `json:"operation"`
+	NumOps     int64     `json:"num_ops"`
+	Period     int64     `json:"period"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type Pin struct {

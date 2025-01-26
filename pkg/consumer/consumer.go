@@ -247,7 +247,8 @@ func NewConsumer(
 
 	// Start a routine to periodically flush the top k users and collections
 	go func() {
-		t := time.NewTicker(time.Second * 30)
+		period := time.Second * 30
+		t := time.NewTicker(period)
 		for {
 			select {
 			case <-t.C:
@@ -264,10 +265,26 @@ func NewConsumer(
 				c.topKLikedEnts = newTopK()
 				c.tkLikeLk.Unlock()
 
+				now := time.Now()
+
 				topOps := make([]string, 0, len(opVals))
 				for _, v := range opVals {
 					if v.Count > 50 {
 						topOps = append(topOps, fmt.Sprintf("%s | %d", v.Element, v.Count))
+						parts := strings.Split(v.Element, "_")
+						if len(parts) != 3 {
+							continue
+						}
+						if err := c.Store.Queries.InsertOperationOutliers(ctx, store_queries.InsertOperationOutliersParams{
+							ActorDid:   parts[0],
+							Collection: parts[1],
+							Operation:  parts[2],
+							NumOps:     int64(v.Count),
+							Period:     period.Nanoseconds(),
+							CreatedAt:  now,
+						}); err != nil {
+							c.Logger.Error("failed to insert operation outlier", "err", err)
+						}
 					}
 				}
 
@@ -275,6 +292,14 @@ func NewConsumer(
 				for _, v := range followVals {
 					if v.Count > 20 {
 						topFollows = append(topFollows, fmt.Sprintf("%s | %d", v.Element, v.Count))
+						if err := c.Store.Queries.InsertFollowerOutliers(ctx, store_queries.InsertFollowerOutliersParams{
+							Subject:      v.Element,
+							NumFollowers: int64(v.Count),
+							Period:       period.Nanoseconds(),
+							CreatedAt:    now,
+						}); err != nil {
+							c.Logger.Error("failed to insert follow outlier", "err", err)
+						}
 					}
 				}
 
@@ -282,6 +307,14 @@ func NewConsumer(
 				for _, v := range likeVals {
 					if v.Count > 20 {
 						topLikes = append(topLikes, fmt.Sprintf("%s | %d", v.Element, v.Count))
+						if err := c.Store.Queries.InsertLikeOutliers(ctx, store_queries.InsertLikeOutliersParams{
+							Subject:   v.Element,
+							NumLikes:  int64(v.Count),
+							Period:    period.Nanoseconds(),
+							CreatedAt: now,
+						}); err != nil {
+							c.Logger.Error("failed to insert like outlier", "err", err)
+						}
 					}
 				}
 

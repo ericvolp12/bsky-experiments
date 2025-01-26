@@ -338,3 +338,33 @@ CREATE TABLE stats_bitmaps (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 CREATE INDEX stats_bitmaps_updated_at ON stats_bitmaps (updated_at DESC);
+-- Outlier Detection
+CREATE TABLE operation_outliers (
+    id BIGSERIAL PRIMARY KEY,
+    actor_did TEXT NOT NULL,
+    collection TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    num_ops BIGINT NOT NULL,
+    period BIGINT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE TABLE follower_outliers (
+    id BIGSERIAL PRIMARY KEY,
+    subject TEXT NOT NULL,
+    num_followers BIGINT NOT NULL,
+    period BIGINT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE TABLE like_outliers (
+    id BIGSERIAL PRIMARY KEY,
+    subject TEXT NOT NULL,
+    num_likes BIGINT NOT NULL,
+    period BIGINT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+CREATE INDEX operation_outliers_created_at ON operation_outliers (created_at DESC);
+CREATE INDEX follower_outliers_created_at ON follower_outliers (created_at DESC);
+CREATE INDEX like_outliers_created_at ON like_outliers (created_at DESC);
+CREATE INDEX operation_outliers_op ON operation_outliers (actor_did, collection, operation);
+CREATE INDEX follower_outliers_subject ON follower_outliers (subject);
+CREATE INDEX like_outliers_subject ON like_outliers (subject);
