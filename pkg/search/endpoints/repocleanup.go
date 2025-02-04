@@ -482,6 +482,12 @@ func (api *API) cleanupNextBatch(ctx context.Context, job store_queries.RepoClea
 		job.NumDeletedToday = 0
 	}
 
+	ident, err := api.Directory.LookupDID(ctx, syntax.DID(job.Repo))
+	if err != nil {
+		log.Error("Error looking up DID", "error", err)
+		return nil, fmt.Errorf("error looking up DID: %w", err)
+	}
+
 	// Create a new client
 	client := xrpc.Client{
 		Client: &http.Client{
@@ -496,15 +502,14 @@ func (api *API) cleanupNextBatch(ctx context.Context, job store_queries.RepoClea
 		client.Headers = map[string]string{"x-ratelimit-bypass": api.MagicHeaderVal}
 	}
 
-	ident, err := api.Directory.LookupDID(ctx, syntax.DID(job.Repo))
-	if err != nil {
-		log.Error("Error looking up DID", "error", err)
-		return nil, fmt.Errorf("error looking up DID: %w", err)
-	}
-
 	client.Auth = &xrpc.AuthInfo{
 		Did:       job.Repo,
 		AccessJwt: job.RefreshToken,
+	}
+
+	// Talk directly to the user's PDS if the PDS isn't hosted by bsky
+	if !strings.HasSuffix(ident.PDSEndpoint(), ".bsky.network") {
+		client.Host = ident.PDSEndpoint()
 	}
 
 	out, err := comatproto.ServerRefreshSession(ctx, &client)
@@ -534,10 +539,10 @@ func (api *API) cleanupNextBatch(ctx context.Context, job store_queries.RepoClea
 
 	job.RefreshToken = out.RefreshJwt
 
-	// Use the user's PDS for further requests
-	client.Host = ident.PDSEndpoint()
-
 	log = log.With("pds", client.Host)
+
+	// Talk to the PDS hosting the repo
+	client.Host = ident.PDSEndpoint()
 
 	// Get the user's Repo from the PDS
 	repoBytes, err := comatproto.SyncGetRepo(ctx, &client, job.Repo, "")
@@ -579,7 +584,8 @@ func (api *API) cleanupNextBatch(ctx context.Context, job store_queries.RepoClea
 				return nil
 			}
 
-			hasMedia := rec.Embed != nil && rec.Embed.EmbedImages != nil && len(rec.Embed.EmbedImages.Images) > 0
+			hasMedia := rec.Embed != nil && ((rec.Embed.EmbedImages != nil && len(rec.Embed.EmbedImages.Images) > 0) ||
+				(rec.Embed.EmbedRecordWithMedia != nil && rec.Embed.EmbedRecordWithMedia.Media != nil))
 
 			if hasMedia {
 				if slices.Contains(job.CleanupTypes, "post_with_media") {

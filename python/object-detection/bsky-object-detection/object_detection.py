@@ -26,7 +26,7 @@ tracer = trace.get_tracer("bsky-object-detection")
 
 imageClasses = [
     "a picture of a cat",
-    "a picture of a dog",
+    "a picture of a dog but not the word dog or doge",
     "a picture of a bird",
     "a picture of food",
     "a picture of a cute animal",
