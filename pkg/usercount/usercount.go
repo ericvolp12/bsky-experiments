@@ -145,6 +145,11 @@ var PDSHostList = []string{
 	"https://dapperling.us-west.host.bsky.network",
 	"https://goldenear.us-west.host.bsky.network",
 	"https://pioppino.us-west.host.bsky.network",
+	"https://psathyrella.us-west.host.bsky.network",
+	"https://hollowfoot.us-west.host.bsky.network",
+	"https://panus.us-west.host.bsky.network",
+	"https://mazegill.us-west.host.bsky.network",
+	"https://fuzzyfoot.us-west.host.bsky.network",
 }
 
 type PDS struct {
