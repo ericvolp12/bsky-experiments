@@ -28,8 +28,8 @@ RUN mkdir -p /models
 ENV MODEL_FROM_DISK=True
 
 COPY --from=model-downloader /model/clip-vit-large-patch14 /app/openai/clip-vit-large-patch14
-COPY python/object-detection/bsky-object-detection /app/bsky-object-detection
+COPY python/object-detection/bskyobjectdetection /app/bskyobjectdetection
 
 ENV PYTHONPATH=/app
 
-CMD ["uvicorn", "bsky-object-detection.app:app", "--host", "0.0.0.0", "--port", "8093"]
+CMD ["uvicorn", "bskyobjectdetection.app:app", "--host", "0.0.0.0", "--port", "8093"]
