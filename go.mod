@@ -36,6 +36,7 @@ require (
 	github.com/prometheus/client_golang v1.19.1
 	github.com/redis/go-redis/extra/redisotel/v9 v9.0.5
 	github.com/redis/go-redis/v9 v9.3.0
+	github.com/rs/xid v1.6.0
 	github.com/sqlc-dev/pqtype v0.2.0
 	github.com/urfave/cli/v2 v2.26.0
 	github.com/whyrusleeping/cbor-gen v0.2.1-0.20241030202151-b7a6831be65e

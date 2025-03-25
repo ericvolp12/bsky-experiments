@@ -9,6 +9,7 @@ import (
 
 	"github.com/araddon/dateparse"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
+	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/ericvolp12/bsky-experiments/pkg/consumer/store/store_queries"
 	"github.com/ericvolp12/bsky-experiments/pkg/sharddb"
 
@@ -26,8 +27,20 @@ func (c *Consumer) HandleCreatePost(ctx context.Context, repo, rkey string, inde
 
 	log := c.Logger.With("repo", repo, "rkey", rkey, "method", "HandleCreatePost")
 
+	tid, err := syntax.ParseTID(rkey)
+	if err != nil {
+		log.Warn("post rkey was not a TID, skipping processing", "err", err)
+		return nil
+	}
+
+	// Skip posts with a TID that's more than a minute in the future
+	if tid.Time().Sub(time.Now()) > time.Minute {
+		log.Warn("post rkey TID was too far in the future, skipping processing", "err", err)
+		return nil
+	}
+
 	// Check if we've already processed this record
-	_, err := c.Store.Queries.GetPost(ctx, store_queries.GetPostParams{
+	_, err = c.Store.Queries.GetPost(ctx, store_queries.GetPostParams{
 		ActorDid: repo,
 		Rkey:     rkey,
 	})
