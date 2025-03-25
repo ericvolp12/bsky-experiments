@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "bsky-object-detection"
+name = "bskyobjectdetection"
 version = "0.1.0"
 description = ""
 authors = ["Jaz <ericvolp12@gmail.com>"]
