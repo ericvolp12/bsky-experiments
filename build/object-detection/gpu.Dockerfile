@@ -7,7 +7,7 @@ COPY python/object-detection/poetry.lock python/object-detection/pyproject.toml 
 
 RUN pip install poetry \
     && poetry config virtualenvs.create false \
-    && poetry install
+    && poetry install --no-root
 
 RUN pip install torch==2.0.0 torchvision==0.15.1 torchaudio==2.0.1
 
